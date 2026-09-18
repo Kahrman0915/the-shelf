@@ -1,0 +1,160 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* The Shelf tokens. Paper (show mode) is the default; midnight (home mode) is <html data-theme="midnight">.
+   Source of truth: the design system artifact. Change values there first, then here. */
+:root {
+  --surface: #eee4cc;
+  --surface-raised: #f6efdd;
+  --surface-sunk: #e3d7ba;
+  --line: #d6c9ac;
+  --line-strong: #8c7f63;
+  --ink: #1b2536;
+  --ink-muted: #5a5140;
+  --bourbon: #d29a2e;
+  --on-bourbon: #1b2536;
+  --bourbon-ink: #855a0c;
+  --bourbon-soft: #f1ddae;
+  --brick: #b5412b;
+  --brick-ink: #9e3824;
+  --brick-soft: #f0cdbf;
+  --teal: #2c6a6d;
+  --teal-ink: #235a5d;
+  --teal-soft: #cfe0d9;
+
+  --genre-jazz: #2f4f86;
+  --genre-rock: var(--brick);
+  --genre-popsoul: #a8741a;
+  --genre-popularpop: #c2566f;
+  --genre-misc: #7a705e;
+  --genre-country: #6e7a34;
+  --genre-reggae: #2f7a4a;
+  --genre-soundtracks: #6b3f72;
+  --genre-christmas: #8e2336;
+  --label-impulse: #c45a12;
+  --label-bluenote: #1f5ca6;
+  --label-argo: #6a4c93;
+  --label-other: var(--genre-misc);
+
+  /* shadcn's names, pointed at ours */
+  --background: var(--surface);
+  --foreground: var(--ink);
+  --card: var(--surface-raised);
+  --card-foreground: var(--ink);
+  --popover: var(--surface-raised);
+  --popover-foreground: var(--ink);
+  --primary: var(--bourbon);
+  --primary-foreground: var(--on-bourbon);
+  --secondary: var(--bourbon-soft);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-sunk);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--bourbon-soft);
+  --accent-foreground: var(--ink);
+  --destructive: var(--brick);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--ink);
+  --radius: 0.75rem;
+}
+
+[data-theme="midnight"] {
+  --surface: #111a26;
+  --surface-raised: #1a2433;
+  --surface-sunk: #0b121c;
+  --line: #2a3749;
+  --line-strong: #5c6d84;
+  --ink: #eee4cc;
+  --ink-muted: #a8b2bf;
+  --bourbon: #e0ae4f;
+  --on-bourbon: #111a26;
+  --bourbon-ink: #e8b95c;
+  --bourbon-soft: #3a2c12;
+  --brick: #e27352;
+  --brick-ink: #ee8a6b;
+  --brick-soft: #3d1d16;
+  --teal: #5ea7a9;
+  --teal-ink: #7cc0c1;
+  --teal-soft: #16302f;
+
+  --genre-jazz: #7f9fd8;
+  --genre-popsoul: #e0ae4f;
+  --genre-popularpop: #e58fa5;
+  --genre-misc: #a39a88;
+  --genre-country: #aab66a;
+  --genre-reggae: #6db88a;
+  --genre-soundtracks: #b58cc2;
+  --genre-christmas: #d9667a;
+  --label-impulse: #f0944f;
+  --label-bluenote: #6e9fe0;
+  --label-argo: #a98bd3;
+
+  --ring: var(--bourbon);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunk: var(--surface-sunk);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-bourbon: var(--bourbon);
+  --color-on-bourbon: var(--on-bourbon);
+  --color-bourbon-ink: var(--bourbon-ink);
+  --color-bourbon-soft: var(--bourbon-soft);
+  --color-brick: var(--brick);
+  --color-brick-ink: var(--brick-ink);
+  --color-brick-soft: var(--brick-soft);
+  --color-teal: var(--teal);
+  --color-teal-ink: var(--teal-ink);
+  --color-teal-soft: var(--teal-soft);
+
+  --radius-xs: 4px;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: 24px;
+
+  --font-display: "Bebas Neue", "League Gothic", "Arial Narrow", sans-serif;
+  --font-sans: "Libre Franklin", "Franklin Gothic Medium", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
