@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Dependencies and builds
+node_modules/
+dist/
+
+# Secrets: never commit keys
+.env
+.env.*
+!.env.example
+
+# Local Claude Code settings
+.claude/settings.local.json
