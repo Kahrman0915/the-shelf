@@ -1,10 +1,8 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ShelfRecord } from '@/data/schema';
 import { SpineRow } from './SpineRow';
-
-afterEach(() => cleanup());
 
 const pershing: ShelfRecord = {
   id: '00000000-0000-4000-8000-000000000001', shelfId: 's', status: 'owned', wantsUpgrade: false, upgradeNote: null,
