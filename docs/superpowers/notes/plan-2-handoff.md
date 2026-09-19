@@ -16,3 +16,22 @@ From the final review of Plan 1 (2026-09-19). Plan 2 (Supabase, sign-in, sync) m
 - Search `normalise` drops non-Latin letters (ø, æ, ß).
 - Native search clear (×) button is browser blue.
 - 590 kB main bundle.
+
+# Plan 2 → Plan 3 handoff
+
+From Plan 2's final review (2026-09-19). Plan 3 adds the outbox and the first writes.
+
+## Must do in Plan 3
+- **Clearing the phone must not destroy unsent changes.** Sign-out and "no session at startup" both call `clearPhone`. Before clearing, check the outbox: warn, or refuse until it has sent.
+- **Push before pull.** `pullShelf` bulk-puts server rows and replaces all ratings; it would overwrite local edits not yet sent. Send the outbox first and skip the pull if sending fails, or re-apply pending changes on top of what was pulled.
+- **No `.upsert()` for ratings or records.** Column-level UPDATE grants freeze `records.id/shelf_id/added_by/created_at/import_key` and allow only `ratings.value`; Postgres checks UPDATE privilege on every upsert column, so upserts fail. Insert new rows; PATCH only the changed editable fields.
+- **New functions are callable by every signed-in person by default** (anon is locked out). Any new SECURITY DEFINER function must revoke/grant explicitly and check `auth.uid()`.
+- `updated_at` is stamped by the server on insert and update; the phone's clock never decides what syncs.
+- Ask the browser to keep storage (`navigator.storage.persist()`) before the outbox can hold unsent changes.
+
+## Worth doing in Plan 3
+- `SyncNotice` shows "Couldn't reach the shelf" for every sync error; show real failures (bad rows, permission) differently.
+- `useRecord` isn't scoped to the current shelf.
+- `settle()` falls back to the phone's copy on any server error, not only no-signal.
+- Missing tests: `bootstrap()` shared-shelf-not-deleted, others' empty shelf untouched, JWT without email, accepted invite not re-processed; a `useSync` unit test.
+- Tidy: `shelves.created_by`/`records.added_by` FK delete behaviour; members leaving a shelf; `(select auth.uid())` in policies.

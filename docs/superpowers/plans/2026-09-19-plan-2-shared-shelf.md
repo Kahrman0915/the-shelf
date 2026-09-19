@@ -3020,3 +3020,13 @@ printf '%s' "$VITE_SUPABASE_PUBLISHABLE_KEY" | gh secret set SUPABASE_PUBLISHABL
 
 - **Plan 3, buying and logging:** the outbox (changes made offline wait and send), Bought it, New arrivals, rating a record (per person, full-size dots, both people's ratings on the Record screen), want list and upgrades, add/edit, cover photos, poster placeholder. Carry-overs from `docs/superpowers/notes/plan-2-handoff.md` (roving tabindex in GradePicker, SpineRow accessible name, `navigator.storage.persist()` before the outbox holds unsent changes).
 - **When friends join:** a domain plus Resend for sign-in email, and a way to belong to more than one shelf.
+
+## Go-live corrections (from the final review, 2026-09-19)
+
+Apply these to Task 10:
+1. **Before Step 1:** `gh auth login` (the GitHub CLI's sign-in has lapsed; Step 5 and the final push need it).
+2. **Step 3:** also check **Email OTP Expiration = 3600** (the email says the code works for one hour).
+3. **Codes are rate-limited** by Supabase's built-in sender (check Authentication → Rate Limits; roughly a couple per hour, and ~60 s between codes to one address). Steps 6, 7 and 9 need several codes (localhost and the live site keep separate sign-ins), so space them out or expect "Email rate limit exceeded".
+4. **New step after Step 9:** Authentication → turn **off** "Allow new users to sign up" once Kahrman and Megan are both in. Existing people still sign in. Turn it back on when friends join.
+5. **Step 9 extra check:** sign out while offline, then reopen online: the app must land on the sign-in screen.
+6. **Keep-awake:** GitHub disables scheduled workflows after 60 days without repo activity; re-enable from the Actions tab if GitHub emails about it.
