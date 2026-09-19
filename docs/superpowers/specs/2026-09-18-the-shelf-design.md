@@ -240,3 +240,15 @@ A deterministic SVG generated from a hash of artist + title: genre colour plus t
 1. **Discogs prices.** Match records to releases (search by catalog/barcode/artist+title), price suggestions per grade, marketplace stats. Requires Kahrman's Discogs account with seller settings filled in; personal token stored as a Supabase Edge Function secret. 60 requests/minute. Show the required notice: "This application uses Discogs' API but is not affiliated with, sponsored or endorsed by Discogs. 'Discogs' is a trademark of Zink Media, LLC." Friends will likely need their own Discogs connection (OAuth).
 2. **AI** (Claude via Supabase Edge Function; key never on the phone). In order: **voice to inventory** (iPhone keyboard dictation → Claude drafts records with suggested grades → review stack → confirm each; nothing saved silently), want-list suggestions from both people's ratings ("Megan loves this, Kahrman loves that"), mood picks from the shelf that skip anything either person rated 1–2.
 3. **Friends.** Own shelves; read-only viewing of each other's shelf; trade/sell flags (lowest priority; "Didn't love it" records are the natural trade pile).
+
+## 15. Decisions for Plan 2 (2026-09-19)
+
+- **Supabase project:** `rlhhrzkaosngafcoxaas` (https://rlhhrzkaosngafcoxaas.supabase.co).
+- **Email:** Supabase's built-in sender for now; Megan is added to the Supabase team so her codes arrive. A custom domain + Resend comes when friends join. Both email templates (Magic Link, Confirm signup) show the 6-digit `{{ .Token }}`.
+- **First-time import:** a one-time script run from Kahrman's Mac with the secret key (never in git or the app) copies `collection.json` into his shelf, skipping anything already imported (`unique (shelf_id, import_key)`). Kahrman's existing ratings come with it.
+- **Joining:** `bootstrap()` runs on every sign-in and app open while online: makes the profile, accepts any open invite for the person's email, removes their own empty unshared shelf if they were invited elsewhere, and creates a shelf if they have none. One shelf per person in Plan 2.
+- **Sync in Plan 2 is pull-only:** records incrementally by `updated_at` (with a 5-minute overlap), ratings and members fully refreshed, on open, on reconnect, when the app comes back to the foreground and every 60 s while visible. The outbox ships in Plan 3 with the first write features. Invites are online-only.
+- **Keep-awake:** a scheduled GitHub Action calls a harmless `ping()` function every 3 days so the free project never pauses.
+- **Keys:** the publishable key goes to Vercel and `.env.local`; the secret key lives only in `.env.local` on Kahrman's Mac.
+- **Plan 1 clean-up:** Dexie v2 clears the local-only rows; the bundled seed and the placeholder ids leave the app; ids are uuids everywhere; signing out clears the phone.
+- **Opening:** the last task of Plan 2 dresses the sign-in screen with the shelf-filling intro (plays once per device, instant under reduced motion).
