@@ -6,7 +6,7 @@ function Swatch({ color }: { color: string }) {
   return <span aria-hidden className="size-3 flex-none rounded-full" style={{ background: color }} />;
 }
 
-const itemClass = 'min-h-11 rounded-sm pl-3 text-base';
+export const GENRE_ITEM_CLASS = 'min-h-12 rounded-sm pl-3 text-base';
 
 /** Genre is the mood. A dropdown, never chips: nine is too many for a thumb-width row. */
 export function GenreSelect({ value, onChange }: { value: GenreFilter; onChange: (v: GenreFilter) => void }) {
@@ -19,12 +19,12 @@ export function GenreSelect({ value, onChange }: { value: GenreFilter; onChange:
         <SelectValue />
       </SelectTrigger>
       <SelectContent className="rounded-lg">
-        <SelectItem value="all" className={itemClass}>
+        <SelectItem value="all" className={GENRE_ITEM_CLASS}>
           <Swatch color="var(--ink)" />
           All genres
         </SelectItem>
         {GENRE_KEYS.map((key) => (
-          <SelectItem key={key} value={key} className={itemClass}>
+          <SelectItem key={key} value={key} className={GENRE_ITEM_CLASS}>
             <Swatch color={`var(--genre-${key})`} />
             {GENRE_LABELS[key]}
           </SelectItem>
