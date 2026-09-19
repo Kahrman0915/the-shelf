@@ -106,7 +106,9 @@ export function useSession(backend: Backend, db: ShelfDB) {
     try {
       await backend.signOut();
     } catch {
-      // Offline: the login is already gone locally. There's nothing more to show for it.
+      // Backend.signOut() already removed the stored login itself before throwing (see
+      // supabaseBackend.signOut()), even when the server round-trip failed offline. Nothing more
+      // to show for the failure here.
     } finally {
       await clearPhone(db);
       setSession({ state: 'signed-out' });

@@ -1,6 +1,6 @@
 import { isAuthRetryableFetchError, type SupabaseClient } from '@supabase/supabase-js';
 import { BackendError, NO_SIGNAL, type Backend, type Invite, type Member, type SignedIn } from './backend';
-import { supabase } from './supabase';
+import { AUTH_STORAGE_KEY, supabase } from './supabase';
 
 const PAGE = 1000;
 
@@ -58,7 +58,9 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
       for (let from = 0; ; from += PAGE) {
         let query = client.from('records').select('*').eq('shelf_id', shelfId);
         if (since) query = query.gt('updated_at', since);
-        const { data, error } = await query.order('updated_at').range(from, from + PAGE - 1);
+        // A secondary sort on id breaks ties within the same updated_at instant, so paging never
+        // skips or repeats a row when many records share a timestamp.
+        const { data, error } = await query.order('updated_at').order('id').range(from, from + PAGE - 1);
         if (error) fail('Couldn’t fetch records', error);
         rows.push(...(data as Record<string, unknown>[]));
         if (data.length < PAGE) return rows;
@@ -66,12 +68,22 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
     },
 
     async ratings(shelfId) {
-      const { data, error } = await client
-        .from('ratings')
-        .select('record_id, user_id, value, updated_at, records!inner(shelf_id)')
-        .eq('records.shelf_id', shelfId);
-      if (error) fail('Couldn’t fetch ratings', error);
-      return (data as Record<string, unknown>[]).map(({ records: _shelf, ...rating }) => rating);
+      // Paged like recordsSince: the hosted cap of 1000 rows per response would otherwise
+      // silently truncate a shelf's ratings, and sync would read that as everything past row
+      // 1000 having been deleted.
+      const rows: Record<string, unknown>[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await client
+          .from('ratings')
+          .select('record_id, user_id, value, updated_at, records!inner(shelf_id)')
+          .eq('records.shelf_id', shelfId)
+          .order('record_id')
+          .order('user_id')
+          .range(from, from + PAGE - 1);
+        if (error) fail('Couldn’t fetch ratings', error);
+        rows.push(...(data as Record<string, unknown>[]).map(({ records: _shelf, ...rating }) => rating));
+        if (data.length < PAGE) return rows;
+      }
     },
 
     async members(shelfId): Promise<Member[]> {
@@ -96,7 +108,17 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
 
     async signOut() {
       const { error } = await client.auth.signOut();
-      if (error) fail('Couldn’t sign out', error);
+      if (error) {
+        // auth-js's own signOut() gives up on a session error (an expired token offline, say)
+        // before it removes the stored session, so the next online open would silently sign the
+        // person back in. Remove it ourselves so the local sign-out always sticks.
+        try {
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+        } catch {
+          // Private browsing or no localStorage: nothing more we can do locally either way.
+        }
+        fail('Couldn’t sign out', error);
+      }
     },
   };
 }

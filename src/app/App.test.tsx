@@ -147,6 +147,24 @@ describe('signing out', () => {
     expect(await screen.findByLabelText('Your email')).toBeInTheDocument();
     expect(await db.records.count()).toBe(0);
   });
+
+  it('does not silently sign back in once online again, after signing out offline', async () => {
+    const backend = returning();
+    const first = renderApp(backend);
+    await screen.findByText('Ahmad Jamal Trio');
+    first.unmount();
+
+    backend.online = false;
+    const second = renderApp(backend, '/settings');
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+    await screen.findByLabelText('Your email');
+    second.unmount();
+
+    backend.online = true;
+    renderApp(backend);
+    expect(await screen.findByLabelText('Your email')).toBeInTheDocument();
+    expect(screen.queryByText('Ahmad Jamal Trio')).not.toBeInTheDocument();
+  });
 });
 
 describe('switching who’s signed in', () => {

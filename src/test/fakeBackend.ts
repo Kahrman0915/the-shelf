@@ -113,8 +113,11 @@ export class FakeBackend implements Backend {
   }
 
   async signOut() {
-    this.guard();
+    // Local sign-out happens even offline (mirrors supabaseBackend.signOut(), which removes the
+    // stored login itself before throwing): the phone forgets who's signed in whether or not the
+    // server heard about it.
     this.signedIn = null;
+    this.guard();
   }
 
   /** Test helper: change a record on the "server" as if another phone had. */
