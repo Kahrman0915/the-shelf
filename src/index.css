@@ -202,7 +202,8 @@
   background: var(--surface-raised);
   box-shadow: 0 -8px 28px #000000b3;
 }
-/* The screens inside the panel don't need their own full-height layout or title. */
+/* The screens inside the panel don't need their own full-height layout or title. This two-class
+   selector must out-rank the wrapped screen's own single-class Tailwind utilities (min-h-dvh, pt-[…]). */
 .shelf-intro__panel > main { min-height: 0; padding-top: 24px; }
 .shelf-intro__panel > main > h1 { display: none; }
 

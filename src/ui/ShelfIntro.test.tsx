@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ShelfIntro, makeShelves } from './ShelfIntro';
 
@@ -52,5 +52,30 @@ describe('ShelfIntro', () => {
     expect(screen.getByRole('heading', { name: 'The Shelf' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Send my code' })).toBeInTheDocument();
     expect(document.querySelector('.shelf-intro__wall')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('keeps the panel inert while it rises in full mode, then usable once it has', () => {
+    vi.useFakeTimers();
+    try {
+      render(<ShelfIntro>form</ShelfIntro>);
+      expect(document.querySelector('.shelf-intro__panel')).toHaveAttribute('inert', '');
+      act(() => {
+        vi.advanceTimersByTime(2600);
+      });
+      expect(document.querySelector('.shelf-intro__panel')).not.toHaveAttribute('inert');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never makes the panel inert in quick or still mode', () => {
+    localStorage.setItem('shelf:intro-played', '1');
+    const { unmount } = render(<ShelfIntro>form</ShelfIntro>);
+    expect(document.querySelector('.shelf-intro__panel')).not.toHaveAttribute('inert');
+    unmount();
+
+    mockReducedMotion(true);
+    render(<ShelfIntro>form</ShelfIntro>);
+    expect(document.querySelector('.shelf-intro__panel')).not.toHaveAttribute('inert');
   });
 });

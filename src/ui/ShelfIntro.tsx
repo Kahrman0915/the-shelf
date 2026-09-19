@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type AnimationEvent, type ReactNode } from 'react';
 import { GENRE_KEYS } from '@/domain/genres';
+
+/** How long after mount the panel-rise animation (`intro-panel`, 500ms delayed 2000ms) is done. A fallback in case `animationend` never fires. */
+const PANEL_RISE_FALLBACK_MS = 2600;
 
 export type Spine = { width: number; height: number; color: string; band: boolean };
 
@@ -44,6 +47,8 @@ function playedBefore(): boolean {
 /** The opening: record spines fill the shelf, "The Shelf" drops in, then the sign-in panel rises over it. */
 export function ShelfIntro({ children }: { children: ReactNode }) {
   const [mode] = useState<'full' | 'quick' | 'still'>(() => (prefersReducedMotion() ? 'still' : playedBefore() ? 'quick' : 'full'));
+  // While the panel is still rising off-screen in full mode, it must not be reachable by keyboard or screen reader.
+  const [panelInert, setPanelInert] = useState(() => mode === 'full');
   const shelves = useMemo(() => makeShelves(5, 28), []);
 
   useEffect(() => {
@@ -53,6 +58,18 @@ export function ShelfIntro({ children }: { children: ReactNode }) {
       // Private browsing: it just plays in full again next time.
     }
   }, []);
+
+  useEffect(() => {
+    if (mode !== 'full') return;
+    const timer = setTimeout(() => setPanelInert(false), PANEL_RISE_FALLBACK_MS);
+    return () => clearTimeout(timer);
+  }, [mode]);
+
+  function onPanelAnimationEnd(event: AnimationEvent<HTMLDivElement>) {
+    if (event.target === event.currentTarget && event.animationName === 'intro-panel') {
+      setPanelInert(false);
+    }
+  }
 
   return (
     <div className="shelf-intro" data-intro={mode}>
@@ -75,7 +92,9 @@ export function ShelfIntro({ children }: { children: ReactNode }) {
         ))}
       </div>
       <h1 className="shelf-intro__title">The Shelf</h1>
-      <div className="shelf-intro__panel">{children}</div>
+      <div className="shelf-intro__panel" inert={panelInert} onAnimationEnd={onPanelAnimationEnd}>
+        {children}
+      </div>
     </div>
   );
 }

@@ -39,6 +39,8 @@ beforeEach(async () => {
   await db.delete();
   await db.open();
   localStorage.clear();
+  // Run the quick intro (not the ~2s full first-visit one) so the sign-in form is immediately usable.
+  localStorage.setItem('shelf:intro-played', '1');
 });
 
 describe('Shelf settings', () => {
