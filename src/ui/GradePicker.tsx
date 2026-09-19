@@ -7,7 +7,7 @@ export function GradePicker({ value, onChange, part }: { value: Grade; onChange:
   return (
     <div className="flex flex-col gap-2">
       <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted">{part} condition</div>
-      <div role="radiogroup" aria-label={`${part} condition`} className="grid grid-cols-8 gap-1">
+      <div role="radiogroup" aria-label={`${part} condition`} className="grid grid-cols-4 gap-2 sm:grid-cols-8 sm:gap-1">
         {GRADES.map((g) => (
           <button
             key={g.key}
