@@ -123,10 +123,36 @@ describe('who can change what', () => {
     await expect(asUser(db, kahrman, () => db.query('truncate public.records cascade'))).rejects.toThrow(/permission denied/);
   });
 
-  it('a member cannot move a record to another shelf', async () => {
+  it('a member cannot move a record to another shelf (permission denied, not just RLS)', async () => {
     await expect(
       asUser(db, megan, () => db.query('update public.records set shelf_id = $1 where id = $2', [sShelf, kRecord])),
-    ).rejects.toThrow(/row-level security/);
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it('a member cannot rewrite who added a record (permission denied, not just RLS)', async () => {
+    await expect(
+      asUser(db, megan, () => db.query('update public.records set added_by = $1 where id = $2', [megan.id, kRecord])),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it('an owner cannot rewrite who created the shelf (permission denied, not just RLS)', async () => {
+    await expect(
+      asUser(db, kahrman, () => db.query('update public.shelves set created_by = $1 where id = $2', [megan.id, kShelf])),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it('a member can still edit a record’s notes', async () => {
+    await asUser(db, megan, () => db.query(`update public.records set notes = 'Plays great' where id = $1`, [kRecord]));
+    const row = await db.query<{ notes: string }>('select notes from public.records where id = $1', [kRecord]);
+    expect(row.rows[0].notes).toBe('Plays great');
+  });
+
+  it('a member can still edit their own rating value', async () => {
+    await asUser(db, kahrman, () =>
+      db.query('update public.ratings set value = $1 where record_id = $2 and user_id = $3', [3, kRecord, kahrman.id]),
+    );
+    const row = await db.query<{ value: number }>('select value from public.ratings where record_id = $1 and user_id = $2', [kRecord, kahrman.id]);
+    expect(row.rows[0].value).toBe(3);
   });
 
   it('a member cannot change or delete Kahrman’s rating', async () => {
@@ -185,5 +211,30 @@ describe('the database refuses bad data', () => {
     await asUser(db, megan, () => db.query(`update public.records set notes = 'Plays great' where id = $1`, [kRecord]));
     const after = (await db.query<{ updated_at: Date }>('select updated_at from public.records where id = $1', [kRecord])).rows[0].updated_at;
     expect(after.getTime()).toBeGreaterThan(before.getTime());
+  });
+
+  it('ignores a client-sent updated_at on insert and stamps the real time', async () => {
+    const id = crypto.randomUUID();
+    await asUser(db, kahrman, () =>
+      db.query(
+        `insert into public.records (id, shelf_id, status, artist, title, genre, added_by, updated_at) values ($1, $2, 'owned', 'X', 'Y', 'rock', $3, '2001-01-01')`,
+        [id, kShelf, kahrman.id],
+      ),
+    );
+    const row = await db.query<{ updated_at: Date }>('select updated_at from public.records where id = $1', [id]);
+    expect(Math.abs(row.rows[0].updated_at.getTime() - Date.now())).toBeLessThan(60_000);
+  });
+
+  it('rejects a display name longer than 60 characters', async () => {
+    await expect(
+      asUser(db, kahrman, () => db.query('update public.profiles set display_name = $1 where id = $2', ['x'.repeat(61), kahrman.id])),
+    ).rejects.toThrow();
+  });
+});
+
+describe('default privileges', () => {
+  it('a function created after the migrations is still off-limits to anon (default privilege revoke is global)', async () => {
+    await db.exec(`create function public.throwaway() returns int language sql as $$ select 1 $$`);
+    await expect(asUser(db, null, () => db.query('select public.throwaway()'))).rejects.toThrow(/permission denied/);
   });
 });

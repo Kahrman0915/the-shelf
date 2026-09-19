@@ -9,7 +9,7 @@ create type public.member_role as enum ('owner', 'member');
 
 create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
-  display_name text not null check (length(trim(display_name)) > 0),
+  display_name text not null check (length(trim(display_name)) > 0) check (length(display_name) <= 60),
   created_at timestamptz not null default now()
 );
 
@@ -87,8 +87,8 @@ begin
   new.updated_at := clock_timestamp();
   return new;
 end $$;
-create trigger records_touch before update on public.records for each row execute function public.touch_updated_at();
-create trigger ratings_touch before update on public.ratings for each row execute function public.touch_updated_at();
+create trigger records_touch before insert or update on public.records for each row execute function public.touch_updated_at();
+create trigger ratings_touch before insert or update on public.ratings for each row execute function public.touch_updated_at();
 
 -- Helpers run with the owner's rights so policies don't loop through shelf_members' own policy.
 create function public.is_member(p_shelf uuid) returns boolean language sql stable security definer set search_path = '' as $$
@@ -149,8 +149,24 @@ create policy "change your own rating" on public.ratings for update to authentic
 create policy "remove your own rating" on public.ratings for delete to authenticated using (user_id = auth.uid());
 
 revoke all on all tables in schema public from anon, authenticated;
-grant select, insert, update, delete on all tables in schema public to authenticated;
+grant select, insert, delete on all tables in schema public to authenticated;
+-- Column-level UPDATE grants freeze identity columns (who added a record, who owns a shelf, which
+-- shelf a record lives on) even for members who otherwise pass the row-level security check.
+grant update (name) on public.shelves to authenticated;
+grant update (display_name) on public.profiles to authenticated;
+grant update (
+  status, wants_upgrade, upgrade_note, artist, title, label, catalog, year, format, genre,
+  disc_grade, sleeve_grade, price_paid, nm_estimate_low, nm_estimate_high, value_note, notes,
+  discogs_release_id, cover_path, bought_at, updated_at, deleted_at
+) on public.records to authenticated;
+grant update (value) on public.ratings to authenticated;
 alter default privileges in schema public revoke all on tables from anon, authenticated;
+-- The public-schema default-privilege row above only strips grants it was given (anon), it does not
+-- by itself cancel Postgres's own built-in default of EXECUTE-to-PUBLIC on every new function; a
+-- schema-scoped revoke of PUBLIC alone is a no-op against that row (PUBLIC was never an entry in
+-- it). The global (no "in schema") revoke below is what actually removes the implicit PUBLIC grant
+-- for every future function, in every schema, for the role running these migrations.
 alter default privileges in schema public revoke execute on functions from anon, public;
+alter default privileges revoke execute on functions from public;
 revoke all on function public.is_member(uuid), public.is_owner(uuid), public.shares_shelf_with(uuid), public.record_is_visible(uuid) from public, anon;
 grant execute on function public.is_member(uuid), public.is_owner(uuid), public.shares_shelf_with(uuid), public.record_is_visible(uuid) to authenticated;
