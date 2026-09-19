@@ -28,4 +28,12 @@ describe('seedIfEmpty', () => {
     await expect(seedIfEmpty(db, bad, ctx)).rejects.toBeInstanceOf(ImportError);
     expect(await db.records.count()).toBe(0);
   });
+
+  it('lets only one of two concurrent seed calls actually seed', async () => {
+    db = new ShelfDB(`test-${crypto.randomUUID()}`);
+    const results = await Promise.all([seedIfEmpty(db, collection, ctx), seedIfEmpty(db, collection, ctx)]);
+    expect(results.sort()).toEqual(['already-seeded', 'seeded']);
+    expect(await db.records.count()).toBe(11);
+    expect(await db.ratings.count()).toBe(6);
+  });
 });

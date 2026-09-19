@@ -46,18 +46,23 @@ export default function App() {
   const [startInShow, setStartInShow] = useState(() => readMode() === 'show' && pathname === '/');
   useModeTheme();
 
-  if (boot.state === 'error') return <BootError problems={boot.problems} />;
-  if (boot.state === 'loading') return null;
-
   return (
-    <Routes>
-      <Route
-        path="/"
-        element={startInShow ? <RedirectOnce to="/show" onDone={() => setStartInShow(false)} /> : <ShelfScreen />}
-      />
-      <Route path="/show" element={<ShowScreen />} />
-      <Route path="/price/:id" element={<PriceCheckScreen />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      {/* Behind the status bar / Dynamic Island: midnight navy in both modes, so midnight matches the ground and paper gives the (always-light) status-bar text something to sit on. */}
+      <div aria-hidden className="fixed inset-x-0 top-0 z-50 h-[env(safe-area-inset-top)] bg-[#111a26]" />
+      {boot.state === 'error' ? (
+        <BootError kind={boot.kind} problems={boot.problems} />
+      ) : boot.state === 'loading' ? null : (
+        <Routes>
+          <Route
+            path="/"
+            element={startInShow ? <RedirectOnce to="/show" onDone={() => setStartInShow(false)} /> : <ShelfScreen />}
+          />
+          <Route path="/show" element={<ShowScreen />} />
+          <Route path="/price/:id" element={<PriceCheckScreen />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      )}
+    </>
   );
 }

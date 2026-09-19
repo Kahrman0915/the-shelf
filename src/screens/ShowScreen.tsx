@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,16 +8,22 @@ import { spineColor } from '@/domain/labels';
 import { collectionTag, showResults } from '@/domain/shelf';
 import { SpineRow } from '@/ui/SpineRow';
 
-/** Record-show mode: one hand, fast. Search first; every result says where it stands. */
+/** Record-show mode: one hand, fast. Search first; every result says where it stands.
+ *  The query lives in the URL so "Back to search" from a price check can restore it. */
 export function ShowScreen() {
   const items = useShelfItems(LOCAL_SHELF_ID, LOCAL_USER_ID);
-  const [query, setQuery] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const query = searchParams.get('q') ?? '';
   const navigate = useNavigate();
   const results = items ? showResults(items, query) : [];
 
+  function setQuery(next: string) {
+    setSearchParams(next === '' ? {} : { q: next }, { replace: true });
+  }
+
   return (
-    <main className="mx-auto flex min-h-dvh max-w-2xl flex-col pb-12">
-      <header className="flex items-end justify-between gap-4 px-4 pt-12 pb-6">
+    <main className="mx-auto flex min-h-dvh max-w-2xl flex-col pb-[calc(3rem+env(safe-area-inset-bottom))]">
+      <header className="flex items-end justify-between gap-4 px-4 pt-[max(3rem,env(safe-area-inset-top))] pb-6">
         <h1 className="font-display text-[56px] leading-[52px] tracking-[0.01em]">At the show</h1>
         <Button asChild variant="outline" className="h-12 rounded-lg border-[1.5px] border-line-strong bg-transparent px-5 text-[15px] font-semibold">
           <Link to="/">Home</Link>
@@ -49,7 +54,7 @@ export function ShowScreen() {
               rating={item.myRating}
               color={spineColor(item.record, 'all')}
               tag={collectionTag(item.record)}
-              onOpen={() => navigate(`/price/${item.record.id}`)}
+              onOpen={() => navigate(`/price/${item.record.id}${query ? `?q=${encodeURIComponent(query)}` : ''}`)}
             />
           ))}
         </div>

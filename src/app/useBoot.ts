@@ -5,7 +5,7 @@ import { ImportError } from '@/data/importCollection';
 import { seedIfEmpty } from '@/data/seed';
 import { LOCAL_SHELF_ID, LOCAL_USER_ID } from '@/data/session';
 
-type Boot = { state: 'loading' } | { state: 'ready' } | { state: 'error'; problems: string[] };
+type Boot = { state: 'loading' } | { state: 'ready' } | { state: 'error'; kind: 'import' | 'storage'; problems: string[] };
 
 export function useBoot(): Boot {
   const [boot, setBoot] = useState<Boot>({ state: 'loading' });
@@ -15,7 +15,8 @@ export function useBoot(): Boot {
       .then(() => live && setBoot({ state: 'ready' }))
       .catch((e: unknown) => {
         if (!live) return;
-        setBoot({ state: 'error', problems: e instanceof ImportError ? e.problems : [String(e)] });
+        if (e instanceof ImportError) setBoot({ state: 'error', kind: 'import', problems: e.problems });
+        else setBoot({ state: 'error', kind: 'storage', problems: [String(e)] });
       });
     return () => {
       live = false;

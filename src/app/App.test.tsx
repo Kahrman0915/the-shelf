@@ -40,6 +40,19 @@ describe('The Shelf', () => {
     expect(screen.getByText('~$12 – $32')).toBeInTheDocument();
   });
 
+  it('keeps the search query when going back from a price check', async () => {
+    renderAt('/');
+    await screen.findByText('Ahmad Jamal Trio');
+    await userEvent.click(screen.getByRole('link', { name: 'At the show' }));
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search your records' }), 'pershing');
+    const row = await screen.findByRole('button', { name: /At the Pershing/ });
+    await userEvent.click(row);
+    await screen.findByRole('radiogroup', { name: 'Copy in hand condition' });
+    await userEvent.click(screen.getByRole('link', { name: /Back to search/ }));
+    expect(await screen.findByRole('searchbox', { name: 'Search your records' })).toHaveValue('pershing');
+    expect(await screen.findByRole('button', { name: /At the Pershing/ })).toBeInTheDocument();
+  });
+
   it('says plainly when a search finds nothing', async () => {
     renderAt('/show');
     await userEvent.type(await screen.findByRole('searchbox', { name: 'Search your records' }), 'zeppelin');

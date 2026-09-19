@@ -17,8 +17,8 @@ export function ShelfScreen() {
   const rows = items ? shelfRows(items, { genre, query }) : [];
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-2xl flex-col pb-12">
-      <header className="flex items-end justify-between gap-4 px-4 pt-12 pb-6">
+    <main className="mx-auto flex min-h-dvh max-w-2xl flex-col pb-[calc(3rem+env(safe-area-inset-bottom))]">
+      <header className="flex items-end justify-between gap-4 px-4 pt-[max(3rem,env(safe-area-inset-top))] pb-6">
         <h1 className="font-display text-[56px] leading-[52px] tracking-[0.01em]">The Shelf</h1>
         <Button asChild variant="outline" className="h-12 rounded-lg border-[1.5px] border-line-strong bg-transparent px-5 text-[15px] font-semibold">
           <Link to="/show">At the show</Link>
