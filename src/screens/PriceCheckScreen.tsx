@@ -12,7 +12,7 @@ export function PriceCheckScreen() {
   const backHref = query ? `/show?q=${encodeURIComponent(query)}` : '/show';
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-2xl flex-col gap-6 px-4 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[calc(3rem+env(safe-area-inset-bottom))]">
+    <main className="mx-auto flex min-h-dvh max-w-2xl flex-col gap-6 px-4 pt-[max(1.5rem,calc(env(safe-area-inset-top)+1rem))] pb-[calc(3rem+env(safe-area-inset-bottom))]">
       <Button asChild variant="ghost" className="h-12 w-fit rounded-lg px-3 text-[15px] font-semibold">
         <Link to={backHref}>
           <ArrowLeft className="size-5" />

@@ -46,10 +46,10 @@ export default function App() {
   const [startInShow, setStartInShow] = useState(() => readMode() === 'show' && pathname === '/');
   useModeTheme();
 
+  // No band behind the status bar: iOS draws its own frosted edge over home-screen apps and picks
+  // light or dark clock text from what's under it. A painted band only turns grey under that blur.
   return (
     <>
-      {/* Behind the status bar / Dynamic Island: midnight navy in both modes, so midnight matches the ground and paper gives the (always-light) status-bar text something to sit on. */}
-      <div aria-hidden className="fixed inset-x-0 top-0 z-50 h-[env(safe-area-inset-top)] bg-[#111a26]" />
       {boot.state === 'error' ? (
         <BootError kind={boot.kind} problems={boot.problems} />
       ) : boot.state === 'loading' ? null : (

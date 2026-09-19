@@ -23,7 +23,7 @@ export function ShowScreen() {
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-2xl flex-col pb-[calc(3rem+env(safe-area-inset-bottom))]">
-      <header className="flex items-end justify-between gap-4 px-4 pt-[max(3rem,env(safe-area-inset-top))] pb-6">
+      <header className="flex items-end justify-between gap-4 px-4 pt-[max(3rem,calc(env(safe-area-inset-top)+1.5rem))] pb-6">
         <h1 className="font-display text-[56px] leading-[52px] tracking-[0.01em]">At the show</h1>
         <Button asChild variant="outline" className="h-12 rounded-lg border-[1.5px] border-line-strong bg-transparent px-5 text-[15px] font-semibold">
           <Link to="/">Home</Link>
