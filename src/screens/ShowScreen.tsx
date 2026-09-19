@@ -2,8 +2,9 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useCurrentShelf } from '@/app/CurrentShelf';
+import { SyncNotice } from '@/app/SyncContext';
 import { useShelfItems } from '@/data/hooks';
-import { LOCAL_SHELF_ID, LOCAL_USER_ID } from '@/data/session';
 import { spineColor } from '@/domain/labels';
 import { collectionTag, showResults } from '@/domain/shelf';
 import { SpineRow } from '@/ui/SpineRow';
@@ -11,7 +12,8 @@ import { SpineRow } from '@/ui/SpineRow';
 /** Record-show mode: one hand, fast. Search first; every result says where it stands.
  *  The query lives in the URL so "Back to search" from a price check can restore it. */
 export function ShowScreen() {
-  const items = useShelfItems(LOCAL_SHELF_ID, LOCAL_USER_ID);
+  const { shelfId, userId } = useCurrentShelf();
+  const items = useShelfItems(shelfId, userId);
   const [searchParams, setSearchParams] = useSearchParams();
   const query = searchParams.get('q') ?? '';
   const navigate = useNavigate();
@@ -29,6 +31,7 @@ export function ShowScreen() {
           <Link to="/">Home</Link>
         </Button>
       </header>
+      <SyncNotice />
       <label className="relative mx-4 mb-4 block">
         <Search aria-hidden className="pointer-events-none absolute top-1/2 left-4 size-6 -translate-y-1/2 text-ink-muted" />
         <Input

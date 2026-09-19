@@ -3,15 +3,18 @@ import { Link } from 'react-router';
 import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useCurrentShelf } from '@/app/CurrentShelf';
+import { SyncNotice, useSyncStatus } from '@/app/SyncContext';
 import { useShelfItems } from '@/data/hooks';
-import { LOCAL_SHELF_ID, LOCAL_USER_ID } from '@/data/session';
 import { spineColor, type GenreFilter } from '@/domain/labels';
 import { shelfRows, shelfTag } from '@/domain/shelf';
 import { GenreSelect } from '@/ui/GenreSelect';
 import { SpineRow } from '@/ui/SpineRow';
 
 export function ShelfScreen() {
-  const items = useShelfItems(LOCAL_SHELF_ID, LOCAL_USER_ID);
+  const { shelfId, userId } = useCurrentShelf();
+  const items = useShelfItems(shelfId, userId);
+  const { lastSyncedAt } = useSyncStatus();
   const [genre, setGenre] = useState<GenreFilter>('all');
   const [query, setQuery] = useState('');
   const rows = items ? shelfRows(items, { genre, query }) : [];
@@ -24,6 +27,7 @@ export function ShelfScreen() {
           <Link to="/show">At the show</Link>
         </Button>
       </header>
+      <SyncNotice />
       <div className="flex flex-col gap-3 px-4 pb-4 sm:flex-row">
         <GenreSelect value={genre} onChange={setGenre} />
         <label className="relative block flex-1">
@@ -38,7 +42,9 @@ export function ShelfScreen() {
           />
         </label>
       </div>
-      {items === undefined ? null : rows.length === 0 ? (
+      {items === undefined ? null : items.filter((i) => i.record.status === 'owned').length === 0 ? (
+        <p className="px-4 py-8 text-ink-muted">{lastSyncedAt ? 'Nothing on the shelf yet.' : 'Filling the shelf…'}</p>
+      ) : rows.length === 0 ? (
         <p className="px-4 py-8 text-ink-muted">Nothing on the shelf matches that.</p>
       ) : (
         <div className="border-t border-line">

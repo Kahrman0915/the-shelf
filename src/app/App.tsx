@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
-import { BootError } from '@/screens/BootError';
+import { Button } from '@/components/ui/button';
+import { db } from '@/data/db';
+import { NameScreen } from '@/screens/NameScreen';
 import { PriceCheckScreen } from '@/screens/PriceCheckScreen';
 import { ShelfScreen } from '@/screens/ShelfScreen';
 import { ShowScreen } from '@/screens/ShowScreen';
-import { useBoot } from './useBoot';
+import { SignInScreen } from '@/screens/SignInScreen';
+import { useBackend } from './BackendContext';
+import { CurrentShelfProvider } from './CurrentShelf';
+import { SyncProvider } from './SyncContext';
+import { useSession } from './useSession';
 
 const MODE_KEY = 'shelf:mode';
 
@@ -40,19 +46,34 @@ function RedirectOnce({ to, onDone }: { to: string; onDone: () => void }) {
 }
 
 export default function App() {
-  const boot = useBoot();
+  const backend = useBackend();
+  const { session, verified, chooseName, retry, signOut } = useSession(backend, db);
   const { pathname } = useLocation();
   // Read once, before useModeTheme overwrites the stored mode.
   const [startInShow, setStartInShow] = useState(() => readMode() === 'show' && pathname === '/');
   useModeTheme();
 
-  // No band behind the status bar: iOS draws its own frosted edge over home-screen apps and picks
-  // light or dark clock text from what's under it. A painted band only turns grey under that blur.
+  if (session.state === 'loading') return null;
+  if (session.state === 'signed-out') return <SignInScreen backend={backend} onVerified={verified} />;
+  if (session.state === 'needs-name') return <NameScreen onSubmit={chooseName} />;
+  if (session.state === 'error') {
+    return (
+      <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 px-4">
+        <h1 className="font-display text-[44px] leading-[44px]">Couldn’t open your shelf</h1>
+        <p className="text-ink-muted">{session.message}</p>
+        <Button className="h-12 rounded-lg font-display text-[22px] tracking-[0.04em]" onClick={retry}>
+          Try again
+        </Button>
+        <Button variant="ghost" className="h-12" onClick={() => void signOut()}>
+          Sign out
+        </Button>
+      </main>
+    );
+  }
+
   return (
-    <>
-      {boot.state === 'error' ? (
-        <BootError kind={boot.kind} problems={boot.problems} />
-      ) : boot.state === 'loading' ? null : (
+    <CurrentShelfProvider value={{ shelfId: session.shelfId, userId: session.user.userId, email: session.user.email, signOut }}>
+      <SyncProvider source={backend} shelfId={session.shelfId}>
         <Routes>
           <Route
             path="/"
@@ -62,7 +83,7 @@ export default function App() {
           <Route path="/price/:id" element={<PriceCheckScreen />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      )}
-    </>
+      </SyncProvider>
+    </CurrentShelfProvider>
   );
 }

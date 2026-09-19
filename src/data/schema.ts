@@ -9,7 +9,7 @@ const money = z.number().nonnegative().nullable();
 export const RecordSchema = z
   .object({
     id: z.uuid(),
-    shelfId: z.string().min(1),
+    shelfId: z.uuid(),
     status: z.enum(['wanted', 'new_arrival', 'owned']),
     wantsUpgrade: z.boolean(),
     upgradeNote: optionalText,
@@ -30,7 +30,7 @@ export const RecordSchema = z
     discogsReleaseId: z.number().int().positive().nullable(),
     coverPath: optionalText,
     boughtAt: z.string().nullable(),
-    addedBy: z.string().min(1),
+    addedBy: z.uuid(),
     createdAt: z.string(),
     updatedAt: z.string(),
     deletedAt: z.string().nullable(),
@@ -45,7 +45,7 @@ export type ShelfRecord = z.infer<typeof RecordSchema>;
 
 export const RatingSchema = z.object({
   recordId: z.uuid(),
-  userId: z.string().min(1),
+  userId: z.uuid(),
   value: z.number().int().min(1).max(5),
   updatedAt: z.string(),
 });

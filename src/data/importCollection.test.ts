@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import collection from '../../collection.json';
 import { ImportError, importCollection } from './importCollection';
 
+const SHELF = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const USER = '11111111-1111-4111-8111-111111111111';
+
 let n = 0;
-const ctx = { shelfId: 'shelf-1', userId: 'user-k', newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}` };
+const ctx = { shelfId: SHELF, userId: USER, newId: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}` };
 
 function byKey(key: string) {
   const { records } = importCollection(collection, ctx);
@@ -16,7 +19,7 @@ describe('importCollection with the real collection.json', () => {
   it('imports all 11 records as owned', () => {
     const { records } = importCollection(collection, ctx);
     expect(records).toHaveLength(11);
-    expect(records.every((r) => r.status === 'owned' && r.shelfId === 'shelf-1' && r.addedBy === 'user-k')).toBe(true);
+    expect(records.every((r) => r.status === 'owned' && r.shelfId === SHELF && r.addedBy === USER)).toBe(true);
   });
 
   it('turns price 0 into unknown and keeps real prices', () => {
@@ -42,7 +45,7 @@ describe('importCollection with the real collection.json', () => {
     const { records, ratings } = importCollection(collection, ctx);
     expect(ratings).toHaveLength(6);
     const ballads = records.find((r) => r.importKey === 'coltrane-ballads')!;
-    expect(ratings.find((x) => x.recordId === ballads.id)).toMatchObject({ userId: 'user-k', value: 5 });
+    expect(ratings.find((x) => x.recordId === ballads.id)).toMatchObject({ userId: USER, value: 5 });
     const ascension = records.find((r) => r.importKey === 'coltrane-ascension')!;
     expect(ratings.find((x) => x.recordId === ascension.id)).toBeUndefined();
   });
