@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import type { Member } from './backend';
 import { db } from './db';
 import type { ShelfRecord } from './schema';
 
@@ -17,4 +18,8 @@ export function useShelfItems(shelfId: string, userId: string): ShelfItem[] | un
 
 export function useRecord(id: string | undefined): ShelfRecord | null | undefined {
   return useLiveQuery(async () => (id ? ((await db.records.get(id)) ?? null) : null), [id]);
+}
+
+export function useMembers(shelfId: string): Member[] | undefined {
+  return useLiveQuery(() => db.members.where('shelfId').equals(shelfId).toArray(), [shelfId]);
 }
