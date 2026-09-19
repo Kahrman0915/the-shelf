@@ -32,6 +32,7 @@ beforeEach(async () => {
   ]);
   kRecord = await record(kShelf, kahrman.id, 'Coltrane');
   sRecord = await record(sShelf, stranger.id, 'Someone else');
+  await db.query('insert into public.ratings (record_id, user_id, value) values ($1, $2, 5)', [kRecord, kahrman.id]);
 });
 
 describe('who can see what', () => {
@@ -54,6 +55,21 @@ describe('who can see what', () => {
 
   it('signed-out visitors can read nothing at all', async () => {
     await expect(asUser(db, null, () => db.query('select * from public.records'))).rejects.toThrow(/permission denied/);
+  });
+
+  it('a stranger sees no shelves, invites or ratings tied to Kahrman’s shelf', async () => {
+    await db.query(`insert into public.shelf_invites (shelf_id, email, invited_by) values ($1, 'friend@example.com', $2)`, [kShelf, kahrman.id]);
+    const shelves = await asUser(db, stranger, () => db.query('select * from public.shelves where id = $1', [kShelf]));
+    const invites = await asUser(db, stranger, () => db.query('select * from public.shelf_invites where shelf_id = $1', [kShelf]));
+    const ratings = await asUser(db, stranger, () => db.query('select * from public.ratings where record_id = $1', [kRecord]));
+    expect([shelves.rows.length, invites.rows.length, ratings.rows.length]).toEqual([0, 0, 0]);
+  });
+
+  it('a stranger cannot insert into profiles directly', async () => {
+    const nobody = await addUser(db, 'nobody@example.com');
+    await expect(
+      asUser(db, stranger, () => db.query('insert into public.profiles (id, display_name) values ($1, $2)', [nobody.id, 'Fake'])),
+    ).rejects.toThrow(/row-level security/);
   });
 });
 
@@ -101,6 +117,39 @@ describe('who can change what', () => {
     await expect(asUser(db, stranger, () => db.query(`insert into public.shelves (name, created_by) values ('Sneaky', $1)`, [stranger.id]))).rejects.toThrow(
       /row-level security/,
     );
+  });
+
+  it('a signed-in member cannot truncate records', async () => {
+    await expect(asUser(db, kahrman, () => db.query('truncate public.records cascade'))).rejects.toThrow(/permission denied/);
+  });
+
+  it('a member cannot move a record to another shelf', async () => {
+    await expect(
+      asUser(db, megan, () => db.query('update public.records set shelf_id = $1 where id = $2', [sShelf, kRecord])),
+    ).rejects.toThrow(/row-level security/);
+  });
+
+  it('a member cannot change or delete Kahrman’s rating', async () => {
+    const updated = await asUser(db, megan, () =>
+      db.query('update public.ratings set value = 1 where record_id = $1 and user_id = $2', [kRecord, kahrman.id]),
+    );
+    expect(updated.affectedRows).toBe(0);
+    const deleted = await asUser(db, megan, () =>
+      db.query('delete from public.ratings where record_id = $1 and user_id = $2', [kRecord, kahrman.id]),
+    );
+    expect(deleted.affectedRows).toBe(0);
+    const rating = await db.query<{ value: number }>('select value from public.ratings where record_id = $1 and user_id = $2', [kRecord, kahrman.id]);
+    expect(rating.rows).toHaveLength(1);
+    expect(rating.rows[0].value).toBe(5);
+  });
+
+  it('a plain member cannot remove anyone from shelf_members', async () => {
+    const result = await asUser(db, megan, () =>
+      db.query('delete from public.shelf_members where shelf_id = $1 and user_id = $2', [kShelf, kahrman.id]),
+    );
+    expect(result.affectedRows).toBe(0);
+    const members = await db.query('select 1 from public.shelf_members where shelf_id = $1 and user_id = $2', [kShelf, kahrman.id]);
+    expect(members.rows).toHaveLength(1);
   });
 });
 

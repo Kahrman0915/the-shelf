@@ -17,6 +17,10 @@ const AUTH_STANDIN = `
   grant usage on schema auth to anon, authenticated;
   grant execute on all functions in schema auth to anon, authenticated;
   grant usage on schema public to anon, authenticated;
+  -- Mirror hosted Supabase's default privileges, so migrations that forget to lock
+  -- new tables/functions down fail here the same way they would in production.
+  alter default privileges in schema public grant all on tables to anon, authenticated;
+  alter default privileges in schema public grant execute on functions to anon, authenticated;
 `;
 
 export async function freshDb(): Promise<PGlite> {

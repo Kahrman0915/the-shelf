@@ -148,7 +148,9 @@ create policy "change your own rating" on public.ratings for update to authentic
   using (user_id = auth.uid()) with check (user_id = auth.uid() and public.record_is_visible(record_id));
 create policy "remove your own rating" on public.ratings for delete to authenticated using (user_id = auth.uid());
 
-revoke all on all tables in schema public from anon;
+revoke all on all tables in schema public from anon, authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+alter default privileges in schema public revoke execute on functions from anon, public;
 revoke all on function public.is_member(uuid), public.is_owner(uuid), public.shares_shelf_with(uuid), public.record_is_visible(uuid) from public, anon;
 grant execute on function public.is_member(uuid), public.is_owner(uuid), public.shares_shelf_with(uuid), public.record_is_visible(uuid) to authenticated;
