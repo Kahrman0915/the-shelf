@@ -158,3 +158,65 @@
     font-size: 16px;
   }
 }
+
+/* The opening: spines fill the shelf, the title drops, sign-in rises. Flat poster colour, square spines. */
+.shelf-intro {
+  position: relative;
+  display: flex;
+  min-height: 100dvh;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  background: var(--surface);
+}
+.shelf-intro__wall {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: calc(env(safe-area-inset-top) + 12px) 0 12px;
+}
+.shelf-intro__row { display: flex; flex: 1; flex-direction: column; }
+.shelf-intro__spines { display: flex; flex: 1; align-items: flex-end; gap: 3px; overflow: hidden; padding: 0 8px; }
+.shelf-intro__spine { position: relative; flex: none; }
+.shelf-intro__band { position: absolute; top: 16%; right: 0; left: 0; height: 6px; background: var(--surface); opacity: 0.35; }
+.shelf-intro__plank { height: 8px; background: var(--line); }
+.shelf-intro__title {
+  position: relative;
+  z-index: 1;
+  align-self: center;
+  margin-top: max(18vh, calc(env(safe-area-inset-top) + 4rem));
+  padding: 4px 20px 0;
+  background: var(--surface);
+  font-family: var(--font-display);
+  font-size: 88px;
+  line-height: 0.95;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}
+.shelf-intro__panel {
+  position: relative;
+  z-index: 1;
+  border-radius: 24px 24px 0 0;
+  background: var(--surface-raised);
+  box-shadow: 0 -8px 28px #000000b3;
+}
+/* The screens inside the panel don't need their own full-height layout or title. */
+.shelf-intro__panel > main { min-height: 0; padding-top: 24px; }
+.shelf-intro__panel > main > h1 { display: none; }
+
+@keyframes intro-spine { from { opacity: 0; transform: translateX(-24px); } to { opacity: 1; transform: none; } }
+@keyframes intro-title { from { opacity: 0; transform: translateY(-48px); } to { opacity: 1; transform: none; } }
+@keyframes intro-panel { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes intro-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.shelf-intro[data-intro='full'] .shelf-intro__spine { animation: intro-spine 380ms cubic-bezier(0, 0, 0.2, 1) both; }
+.shelf-intro[data-intro='full'] .shelf-intro__title { animation: intro-title 520ms cubic-bezier(0, 0, 0.2, 1) 1500ms both; }
+.shelf-intro[data-intro='full'] .shelf-intro__panel { animation: intro-panel 500ms cubic-bezier(0, 0, 0.2, 1) 2000ms both; }
+.shelf-intro[data-intro='quick'] .shelf-intro__title,
+.shelf-intro[data-intro='quick'] .shelf-intro__panel { animation: intro-fade 200ms ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .shelf-intro * { animation: none !important; }
+}
