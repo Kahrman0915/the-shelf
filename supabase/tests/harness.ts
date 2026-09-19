@@ -6,7 +6,7 @@ import { PGlite } from '@electric-sql/pglite';
 /** Just enough of Supabase's auth schema and roles for our policies to run. Real Supabase provides these. */
 const AUTH_STANDIN = `
   create schema auth;
-  create table auth.users (id uuid primary key, email text not null);
+  create table auth.users (id uuid primary key, email text not null, email_confirmed_at timestamptz);
   create role anon nologin;
   create role authenticated nologin;
   create role service_role nologin bypassrls;
@@ -33,9 +33,16 @@ export async function freshDb(): Promise<PGlite> {
   return db;
 }
 
-export async function addUser(db: PGlite, email: string): Promise<{ id: string; email: string }> {
+export async function addUser(
+  db: PGlite,
+  email: string,
+  options: { confirmed?: boolean } = {},
+): Promise<{ id: string; email: string }> {
   const id = crypto.randomUUID();
-  await db.query('insert into auth.users (id, email) values ($1, $2)', [id, email]);
+  const confirmed = options.confirmed ?? true;
+  await db.query('insert into auth.users (id, email, email_confirmed_at) values ($1, $2, $3)', [
+    id, email, confirmed ? new Date() : null,
+  ]);
   return { id, email };
 }
 

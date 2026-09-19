@@ -69,12 +69,49 @@ describe('bootstrap', () => {
     await asUser(db, kahrman, () =>
       db.query(`insert into public.shelf_invites (shelf_id, email, invited_by) values ($1, 'megan@example.com', $2)`, [shelf, kahrman.id]),
     );
-    expect(await bootstrap(megan)).toBe(shelf);
-    expect((await db.query('select * from public.shelves where id = $1', [own])).rows).toHaveLength(1);
+    expect(await bootstrap(megan)).toBe(own);
+    const invite = await db.query<{ accepted_at: Date | null }>('select accepted_at from public.shelf_invites');
+    expect(invite.rows[0].accepted_at).toBeNull();
+    const membership = await db.query('select 1 from public.shelf_members where shelf_id = $1 and user_id = $2', [shelf, megan.id]);
+    expect(membership.rows).toHaveLength(0);
+  });
+
+  it('keeps its owner on their own shelf even when a stranger invites them', async () => {
+    const shelf = await bootstrap(kahrman, 'Kahrman');
+    await db.query(`insert into public.records (id, shelf_id, status, artist, title, genre, added_by) values ($1, $2, 'owned', 'A', 'B', 'popsoul', $3)`, [
+      crypto.randomUUID(), shelf, kahrman.id,
+    ]);
+    const meganShelf = await bootstrap(megan, 'Megan');
+    await asUser(db, megan, () =>
+      db.query(`insert into public.shelf_invites (shelf_id, email, invited_by) values ($1, 'kahrman@example.com', $2)`, [meganShelf, megan.id]),
+    );
+    expect(await bootstrap(kahrman)).toBe(shelf);
+    const invite = await db.query<{ accepted_at: Date | null }>('select accepted_at from public.shelf_invites');
+    expect(invite.rows[0].accepted_at).toBeNull();
+    const membership = await db.query('select 1 from public.shelf_members where shelf_id = $1 and user_id = $2', [meganShelf, kahrman.id]);
+    expect(membership.rows).toHaveLength(0);
+  });
+
+  it('does not accept an invite for an email the person has not confirmed', async () => {
+    const shelf = await bootstrap(kahrman, 'Kahrman');
+    const dana = await addUser(db, 'dana@example.com', { confirmed: false });
+    await asUser(db, kahrman, () =>
+      db.query(`insert into public.shelf_invites (shelf_id, email, invited_by) values ($1, 'dana@example.com', $2)`, [shelf, kahrman.id]),
+    );
+    const danaShelf = await bootstrap(dana, 'Dana');
+    expect(danaShelf).not.toBe(shelf);
+    const invite = await db.query<{ accepted_at: Date | null }>('select accepted_at from public.shelf_invites where email = $1', ['dana@example.com']);
+    expect(invite.rows[0].accepted_at).toBeNull();
+    const membership = await db.query('select 1 from public.shelf_members where shelf_id = $1 and user_id = $2', [shelf, dana.id]);
+    expect(membership.rows).toHaveLength(0);
+  });
+
+  it('refuses a display name over 60 characters', async () => {
+    await expect(bootstrap(kahrman, 'x'.repeat(61))).rejects.toThrow(/Name is too long/);
   });
 
   it('refuses when nobody is signed in', async () => {
-    await expect(asUser(db, null, () => db.query('select public.bootstrap(null)'))).rejects.toThrow(/permission denied|Not signed in/);
+    await expect(asUser(db, null, () => db.query('select public.bootstrap(null)'))).rejects.toThrow(/permission denied/);
   });
 });
 
