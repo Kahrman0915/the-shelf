@@ -68,4 +68,28 @@ describe('importCollection with bad data', () => {
   it('refuses a file that is not a collection', () => {
     expect(() => importCollection({ hello: 'world' }, ctx)).toThrow(ImportError);
   });
+
+  it('flags a second record with an id already seen and saves nothing', () => {
+    const bad = JSON.parse(JSON.stringify(collection)) as { records: Record<string, unknown>[] };
+    const dupId = bad.records[0].id as string;
+    bad.records[1].id = dupId;
+    let error: unknown;
+    try {
+      importCollection(bad, ctx);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(ImportError);
+    expect((error as ImportError).problems).toContain(`${dupId}: id appears more than once`);
+  });
+
+  it('maps a 0/0 value range to no estimate rather than a $0 estimate', () => {
+    const withZeroRange = JSON.parse(JSON.stringify(collection)) as { records: Record<string, unknown>[] };
+    withZeroRange.records[0].valueLow = 0;
+    withZeroRange.records[0].valueHigh = 0;
+    const { records } = importCollection(withZeroRange, ctx);
+    const r = records.find((x) => x.importKey === 'coltrane-both-directions')!;
+    expect(r.nmEstimateLow).toBeNull();
+    expect(r.nmEstimateHigh).toBeNull();
+  });
 });

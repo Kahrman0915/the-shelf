@@ -5,6 +5,14 @@ import type { Grade } from '@/domain/grades';
 import { estimateRange, nmRangeOf, verdictFor } from '@/domain/price';
 import { GradePicker } from './GradePicker';
 
+/** Digits and at most one dot, so "1.2.3" becomes "1.23" instead of a NaN that silently drops the verdict. */
+function sanitizeAsking(raw: string): string {
+  const cleaned = raw.replace(/[^0-9.]/g, '');
+  const dot = cleaned.indexOf('.');
+  if (dot === -1) return cleaned;
+  return cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1).replace(/\./g, '');
+}
+
 const TONE = {
   teal: { bar: 'bg-teal', word: 'text-teal-ink' },
   bourbon: { bar: 'bg-bourbon', word: 'text-bourbon-ink' },
@@ -42,7 +50,7 @@ export function PriceCheck({ record }: { record: ShelfRecord }) {
               inputMode="decimal"
               value={asking}
               placeholder="0"
-              onChange={(e) => setAsking(e.target.value.replace(/[^0-9.]/g, ''))}
+              onChange={(e) => setAsking(sanitizeAsking(e.target.value))}
               className="min-h-14 w-full rounded-lg border-[1.5px] border-line-strong bg-surface-sunk pr-4 pl-9 font-display text-[30px] tracking-[0.02em] tabular-nums text-ink focus-visible:outline-2 focus-visible:outline-ring"
             />
           </span>

@@ -54,6 +54,7 @@ export function importCollection(
   const problems: string[] = [];
   const records: ShelfRecord[] = [];
   const ratings: Rating[] = [];
+  const seenIds = new Set<string>();
 
   file.data.records.forEach((raw, index) => {
     const rawId = (raw as { id?: unknown } | null)?.id;
@@ -65,6 +66,11 @@ export function importCollection(
       return;
     }
     const s = seed.data;
+    if (seenIds.has(s.id)) {
+      problems.push(`${s.id}: id appears more than once`);
+      return;
+    }
+    seenIds.add(s.id);
     const id = ctx.newId();
     const created = new Date(s.addedAt).toISOString();
     const year = blank(s.year);
@@ -85,8 +91,8 @@ export function importCollection(
       discGrade: s.grade === '' ? null : s.grade,
       sleeveGrade: s.sleeveGrade === '' ? null : s.sleeveGrade,
       pricePaid: s.price > 0 ? s.price : null,
-      nmEstimateLow: s.valueLow,
-      nmEstimateHigh: s.valueHigh,
+      nmEstimateLow: s.valueLow === 0 && s.valueHigh === 0 ? null : s.valueLow,
+      nmEstimateHigh: s.valueLow === 0 && s.valueHigh === 0 ? null : s.valueHigh,
       valueNote: blank(s.valueNote),
       notes: blank(s.notes),
       discogsReleaseId: null,

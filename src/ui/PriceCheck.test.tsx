@@ -35,6 +35,14 @@ describe('PriceCheck', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Overpriced');
   });
 
+  it('keeps at most one dot in the asking price', async () => {
+    render(<PriceCheck record={record()} />);
+    const asking = screen.getByRole('textbox', { name: "They're asking" });
+    await userEvent.type(asking, '1.2.3');
+    expect(asking).toHaveValue('1.23');
+    expect(screen.getByRole('status')).toBeInTheDocument();
+  });
+
   it('never shows $0 when there is no estimate', () => {
     render(<PriceCheck record={record({ nmEstimateLow: null, nmEstimateHigh: null })} />);
     expect(screen.getByText('No price yet: add a Near Mint estimate')).toBeInTheDocument();
