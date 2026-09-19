@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { Search } from 'lucide-react';
+import { Search, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCurrentShelf } from '@/app/CurrentShelf';
@@ -23,9 +23,16 @@ export function ShelfScreen() {
     <main className="mx-auto flex min-h-dvh max-w-2xl flex-col pb-[calc(3rem+env(safe-area-inset-bottom))]">
       <header className="flex items-end justify-between gap-4 px-4 pt-[max(3rem,calc(env(safe-area-inset-top)+1.5rem))] pb-6">
         <h1 className="font-display text-[56px] leading-[52px] tracking-[0.01em]">The Shelf</h1>
-        <Button asChild variant="outline" className="h-12 rounded-lg border-[1.5px] border-line-strong bg-transparent px-5 text-[15px] font-semibold">
-          <Link to="/show">At the show</Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline" className="h-12 rounded-lg border-[1.5px] border-line-strong bg-transparent px-5 text-[15px] font-semibold">
+            <Link to="/show">At the show</Link>
+          </Button>
+          <Button asChild variant="ghost" className="size-12 rounded-lg p-0">
+            <Link to="/settings" aria-label="Shelf settings">
+              <Settings className="size-5" />
+            </Link>
+          </Button>
+        </div>
       </header>
       <SyncNotice />
       <div className="flex flex-col gap-3 px-4 pb-4 sm:flex-row">

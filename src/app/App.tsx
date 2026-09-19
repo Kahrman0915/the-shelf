@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { db } from '@/data/db';
 import { NameScreen } from '@/screens/NameScreen';
 import { PriceCheckScreen } from '@/screens/PriceCheckScreen';
+import { SettingsScreen } from '@/screens/SettingsScreen';
 import { ShelfScreen } from '@/screens/ShelfScreen';
 import { ShowScreen } from '@/screens/ShowScreen';
 import { SignInScreen } from '@/screens/SignInScreen';
@@ -81,6 +82,7 @@ export default function App() {
           />
           <Route path="/show" element={<ShowScreen />} />
           <Route path="/price/:id" element={<PriceCheckScreen />} />
+          <Route path="/settings" element={<SettingsScreen />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </SyncProvider>
