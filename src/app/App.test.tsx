@@ -121,4 +121,58 @@ describe('a signed-in person', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('Ahmad Jamal Trio')).toBeInTheDocument();
   });
+
+  it('opens from the phone’s copy when the stored login can’t refresh offline', async () => {
+    const backend = returning();
+    const first = renderApp(backend);
+    await screen.findByText('Ahmad Jamal Trio');
+    first.unmount();
+    backend.online = false;
+    backend.sessionNeedsRefresh = true;
+    renderApp(backend);
+    expect(await screen.findByText('Ahmad Jamal Trio')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Your email')).not.toBeInTheDocument();
+  });
+});
+
+describe('signing out', () => {
+  it('always clears the phone and returns to sign-in, even when signing out fails offline', async () => {
+    const backend = returning();
+    backend.online = false;
+    renderApp(backend);
+    await screen.findByRole('heading', { name: 'Couldn’t open your shelf' });
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(await screen.findByLabelText('Your email')).toBeInTheDocument();
+    expect(await db.records.count()).toBe(0);
+  });
+});
+
+describe('switching who’s signed in', () => {
+  it('clears the departing person’s records before the next person’s shelf loads', async () => {
+    const OTHER = { userId: '22222222-2222-4222-8222-222222222222', email: 'meg@example.com' };
+    const rows = collectionRows(SHELF, K.userId);
+    const backend = new FakeBackend({
+      users: { [K.email]: K.userId, [OTHER.email]: OTHER.userId },
+      profiles: { [K.userId]: 'Kahrman' },
+      shelfFor: { [K.userId]: SHELF },
+      records: rows.records,
+      ratings: rows.ratings,
+      members: [{ shelfId: SHELF, userId: K.userId, role: 'owner', displayName: 'Kahrman' }],
+      signedIn: K,
+    });
+    const first = renderApp(backend);
+    await screen.findByText('Ahmad Jamal Trio');
+    await backend.signOut();
+    first.unmount();
+
+    renderApp(backend);
+    await userEvent.type(await screen.findByLabelText('Your email'), OTHER.email);
+    await userEvent.click(screen.getByRole('button', { name: 'Send my code' }));
+    await userEvent.type(await screen.findByLabelText('Code'), '123456');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await userEvent.type(await screen.findByLabelText('What should we call you?'), 'Meg');
+    await userEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(await screen.findByText('Nothing on the shelf yet.')).toBeInTheDocument();
+    expect(screen.queryByText('Ahmad Jamal Trio')).not.toBeInTheDocument();
+  });
 });

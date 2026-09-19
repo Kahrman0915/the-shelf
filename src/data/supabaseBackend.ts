@@ -1,18 +1,24 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { isAuthRetryableFetchError, type SupabaseClient } from '@supabase/supabase-js';
 import { BackendError, NO_SIGNAL, type Backend, type Invite, type Member, type SignedIn } from './backend';
 import { supabase } from './supabase';
 
 const PAGE = 1000;
 
+function offlineLooking(error: { message: string }): boolean {
+  return (typeof navigator !== 'undefined' && navigator.onLine === false) || isAuthRetryableFetchError(error) || /fetch|network/i.test(error.message);
+}
+
 function fail(action: string, error: { message: string; code?: string } | null): never {
-  const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-  throw new BackendError(offline || /fetch|network/i.test(error?.message ?? '') ? NO_SIGNAL : `${action}: ${error?.message ?? 'unknown error'}`);
+  throw new BackendError(offlineLooking({ message: error?.message ?? '' }) ? NO_SIGNAL : `${action}: ${error?.message ?? 'unknown error'}`);
 }
 
 export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
   return {
     async currentUser(): Promise<SignedIn | null> {
-      const { data } = await client.auth.getSession();
+      // An expired access token makes getSession() try to refresh; offline that fails with an
+      // error even though the login is still stored. Don't mistake that for "signed out".
+      const { data, error } = await client.auth.getSession();
+      if (error) throw new BackendError(offlineLooking(error) ? NO_SIGNAL : error.message);
       const user = data.session?.user;
       return user ? { userId: user.id, email: user.email ?? '' } : null;
     },

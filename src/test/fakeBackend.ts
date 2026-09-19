@@ -16,6 +16,8 @@ type Options = {
 /** An in-memory stand-in for Supabase. The only code that works is 123456. */
 export class FakeBackend implements Backend {
   online = true;
+  /** Simulates a stored login whose access token expired and can't refresh offline (see currentUser()). */
+  sessionNeedsRefresh = false;
   signedIn: SignedIn | null;
   sentCodesTo: string[] = [];
   private users: Record<string, string>;
@@ -41,6 +43,7 @@ export class FakeBackend implements Backend {
   }
 
   async currentUser() {
+    if (!this.online && this.sessionNeedsRefresh) throw new BackendError(NO_SIGNAL);
     return this.signedIn;
   }
 
@@ -110,6 +113,7 @@ export class FakeBackend implements Backend {
   }
 
   async signOut() {
+    this.guard();
     this.signedIn = null;
   }
 

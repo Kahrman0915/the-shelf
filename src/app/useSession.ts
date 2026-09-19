@@ -7,9 +7,9 @@ export type Session =
   | { state: 'signed-out' }
   | { state: 'needs-name'; user: SignedIn }
   | { state: 'ready'; user: SignedIn; shelfId: string }
-  | { state: 'error'; user: SignedIn; message: string };
+  | { state: 'error'; user: SignedIn | null; message: string };
 
-type Remembered = { userId: string; shelfId: string };
+type Remembered = { userId: string; email: string; shelfId: string };
 const SESSION_KEY = 'session';
 
 async function remembered(db: ShelfDB): Promise<Remembered | null> {
@@ -42,7 +42,7 @@ export function useSession(backend: Backend, db: ShelfDB) {
           return;
         }
         const shelfId = await backend.bootstrap(null);
-        await remember(db, { userId: user.userId, shelfId });
+        await remember(db, { userId: user.userId, email: user.email, shelfId });
         setSession({ state: 'ready', user, shelfId });
       } catch (e) {
         // No signal: open from the phone's copy if it belongs to this person.
@@ -54,40 +54,63 @@ export function useSession(backend: Backend, db: ShelfDB) {
     [backend, db],
   );
 
+  /** Signed-in-or-not check at startup. `isLive` lets the mount effect bail out after an unmount;
+   *  `retry()` calls this too, with nothing to check, when there was no user to fall back to `settle()` with. */
+  const start = useCallback(
+    async (isLive: () => boolean = () => true) => {
+      try {
+        const user = await backend.currentUser();
+        if (!isLive()) return;
+        if (user) {
+          await settle(user);
+        } else {
+          await clearPhone(db);
+          if (isLive()) setSession({ state: 'signed-out' });
+        }
+      } catch (e) {
+        // No signal, and we don't even know who's signed in: fall back to the phone's remembered
+        // session rather than clearing it — the person may just be offline, not signed out.
+        if (!isLive()) return;
+        const cached = await remembered(db);
+        if (!isLive()) return;
+        if (cached) setSession({ state: 'ready', user: { userId: cached.userId, email: cached.email }, shelfId: cached.shelfId });
+        else setSession({ state: 'error', user: null, message: messageOf(e) });
+      }
+    },
+    [backend, db, settle],
+  );
+
   useEffect(() => {
     let live = true;
-    void (async () => {
-      const user = await backend.currentUser();
-      if (!live) return;
-      if (user) {
-        await settle(user);
-      } else {
-        await clearPhone(db);
-        if (live) setSession({ state: 'signed-out' });
-      }
-    })();
+    void start(() => live);
     return () => {
       live = false;
     };
-  }, [backend, db, settle]);
+  }, [start]);
 
   const chooseName = async (name: string) => {
     if (session.state !== 'needs-name') return;
     const shelfId = await backend.bootstrap(name); // errors go back to the name screen
-    await remember(db, { userId: session.user.userId, shelfId });
+    await remember(db, { userId: session.user.userId, email: session.user.email, shelfId });
     setSession({ state: 'ready', user: session.user, shelfId });
   };
 
   const retry = () => {
     if (session.state !== 'error') return;
     setSession({ state: 'loading' });
-    void settle(session.user);
+    if (session.user) void settle(session.user);
+    else void start();
   };
 
   const signOut = async () => {
-    await backend.signOut();
-    await clearPhone(db);
-    setSession({ state: 'signed-out' });
+    try {
+      await backend.signOut();
+    } catch {
+      // Offline: the login is already gone locally. There's nothing more to show for it.
+    } finally {
+      await clearPhone(db);
+      setSession({ state: 'signed-out' });
+    }
   };
 
   return { session, verified: settle, chooseName, retry, signOut };
