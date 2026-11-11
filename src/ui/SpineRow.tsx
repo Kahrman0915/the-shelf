@@ -35,7 +35,7 @@ export function SpineRow({ record, rating, color, tag, onOpen }: Props) {
   );
 
   return onOpen ? (
-    <button type="button" onClick={onOpen} className={cn(rowClass, 'focus-visible:outline-2 focus-visible:outline-ring')}>
+    <button type="button" onClick={onOpen} aria-label={`${record.artist}, ${record.title}`} className={cn(rowClass, 'focus-visible:outline-2 focus-visible:outline-ring')}>
       {inner}
     </button>
   ) : (

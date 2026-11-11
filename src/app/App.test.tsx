@@ -355,3 +355,12 @@ describe('switching who’s signed in', () => {
     expect(screen.queryByText('Ahmad Jamal Trio')).not.toBeInTheDocument();
   });
 });
+
+describe('the Record screen', () => {
+  it('opens from a shelf row, on midnight', async () => {
+    renderApp(returning());
+    await userEvent.click(await screen.findByRole('button', { name: /^Ahmad Jamal Trio, / }));
+    expect(await screen.findByRole('img', { name: /^Poster for Ahmad Jamal Trio, / })).toBeInTheDocument();
+    expect(document.documentElement.dataset.theme).toBe('midnight');
+  });
+});

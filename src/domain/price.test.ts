@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estimateRange, nmRangeOf, verdictFor } from './price';
+import { estimateRange, formatMoney, nmRangeOf, verdictFor } from './price';
 
 const nm = { low: 40, high: 60 };
 
@@ -42,5 +42,12 @@ describe('verdictFor', () => {
     expect(verdictFor(null, range)).toBeNull();
     expect(verdictFor(Number.NaN, range)).toBeNull();
     expect(verdictFor(-1, range)).toBeNull();
+  });
+});
+
+describe('formatMoney', () => {
+  it('drops the cents on whole dollars', () => {
+    expect(formatMoney(15)).toBe('$15');
+    expect(formatMoney(15.5)).toBe('$15.50');
   });
 });

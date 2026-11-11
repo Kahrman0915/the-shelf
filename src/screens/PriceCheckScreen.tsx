@@ -1,12 +1,14 @@
 import { Link, useParams, useSearchParams } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useCurrentShelf } from '@/app/CurrentShelf';
 import { useRecord } from '@/data/hooks';
 import { PriceCheck } from '@/ui/PriceCheck';
 
 export function PriceCheckScreen() {
   const { id } = useParams();
-  const record = useRecord(id);
+  const { shelfId } = useCurrentShelf();
+  const record = useRecord(shelfId, id);
   const [searchParams] = useSearchParams();
   const query = searchParams.get('q') ?? '';
   const backHref = query ? `/show?q=${encodeURIComponent(query)}` : '/show';

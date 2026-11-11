@@ -34,4 +34,9 @@ describe('SpineRow', () => {
     await userEvent.click(screen.getByRole('button'));
     expect(onOpen).toHaveBeenCalledOnce();
   });
+
+  it('names an openable row by artist and title', () => {
+    render(<SpineRow record={{ ...pershing, artist: 'John Coltrane', title: 'Ascension' }} rating={4} color="x" tag={null} onOpen={() => {}} />);
+    expect(screen.getByRole('button', { name: 'John Coltrane, Ascension' })).toBeInTheDocument();
+  });
 });

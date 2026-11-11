@@ -9,9 +9,11 @@ import { ShelfScreen } from '@/screens/ShelfScreen';
 import { ShowScreen } from '@/screens/ShowScreen';
 import { SignInScreen } from '@/screens/SignInScreen';
 import { ConfirmDialog } from '@/ui/ConfirmDialog';
+import { RecordScreen } from '@/screens/RecordScreen';
 import { useBackend } from './BackendContext';
 import { CurrentShelfProvider } from './CurrentShelf';
 import { SignOutButton } from './SignOutButton';
+import { isShowPath } from './routes';
 import { SyncProvider } from './SyncContext';
 import { useSession } from './useSession';
 
@@ -28,7 +30,7 @@ function readMode(): string | null {
 /** Home is midnight; show mode (search and price check) is paper. The last mode is remembered on this phone. */
 function useModeTheme() {
   const { pathname } = useLocation();
-  const show = pathname !== '/';
+  const show = pathname === '/settings' || isShowPath(pathname);
   useEffect(() => {
     if (show) delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = 'midnight';
@@ -103,6 +105,7 @@ export default function App() {
             element={startInShow ? <RedirectOnce to="/show" onDone={() => setStartInShow(false)} /> : <ShelfScreen />}
           />
           <Route path="/show" element={<ShowScreen />} />
+          <Route path="/record/:id" element={<RecordScreen />} />
           <Route path="/price/:id" element={<PriceCheckScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
           <Route path="*" element={<Navigate to="/" replace />} />

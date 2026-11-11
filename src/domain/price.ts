@@ -25,3 +25,8 @@ export function verdictFor(asking: number | null, range: Range): Verdict | null 
   if (asking <= range.high) return { tone: 'bourbon', word: 'Fair', line: 'Inside the fair range for this condition.' };
   return { tone: 'brick', word: 'Overpriced', line: 'Above the fair range. Haggle or walk.' };
 }
+
+/** `$15` for whole dollars, `$15.50` otherwise. */
+export function formatMoney(n: number): string {
+  return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
+}

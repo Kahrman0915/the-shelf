@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { Search, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import { SpineRow } from '@/ui/SpineRow';
 
 export function ShelfScreen() {
   const { shelfId, userId } = useCurrentShelf();
+  const navigate = useNavigate();
   const items = useShelfItems(shelfId, userId);
   const { lastSyncedAt } = useSyncStatus();
   const [genre, setGenre] = useState<GenreFilter>('all');
@@ -56,7 +57,7 @@ export function ShelfScreen() {
       ) : (
         <div className="border-t border-line">
           {rows.map((item) => (
-            <SpineRow key={item.record.id} record={item.record} rating={item.myRating} color={spineColor(item.record, genre)} tag={shelfTag(item)} />
+            <SpineRow key={item.record.id} record={item.record} rating={item.myRating} color={spineColor(item.record, genre)} tag={shelfTag(item)} onOpen={() => navigate(`/record/${item.record.id}`)} />
           ))}
         </div>
       )}
