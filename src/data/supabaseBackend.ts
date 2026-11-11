@@ -4,8 +4,18 @@ import { AUTH_STORAGE_KEY, supabase } from './supabase';
 
 const PAGE = 1000;
 
-function offlineLooking(error: { message: string }): boolean {
-  return (typeof navigator !== 'undefined' && navigator.onLine === false) || isAuthRetryableFetchError(error) || /fetch|network/i.test(error.message);
+/** A request that timed out (see fetchWithTimeout() in supabase.ts) or was cut off. postgrest-js
+ *  reports one as a message starting with the error's name; anything else carries the name itself. */
+const abortedLooking = (error: { message: string; name?: string }) =>
+  error.name === 'TimeoutError' || error.name === 'AbortError' || /^(TimeoutError|AbortError)\b/.test(error.message);
+
+export function offlineLooking(error: { message: string; name?: string }): boolean {
+  return (
+    (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+    isAuthRetryableFetchError(error) ||
+    abortedLooking(error) ||
+    /fetch|network/i.test(error.message)
+  );
 }
 
 function fail(action: string, error: { message: string; code?: string } | null): never {
@@ -148,7 +158,8 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
     },
 
     async signOut() {
-      const { error } = await client.auth.signOut();
+      // This phone only: the default ('global') would sign the person out on every device.
+      const { error } = await client.auth.signOut({ scope: 'local' });
       if (error) {
         // auth-js's own signOut() gives up on a session error (an expired token offline, say)
         // before it removes the stored session, so the next online open would silently sign the

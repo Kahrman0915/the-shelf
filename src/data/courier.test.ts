@@ -162,6 +162,34 @@ describe('pushOutbox', () => {
     expect((await outbox()).map((p) => p.state)).toEqual(['rejected', 'waiting']);
   });
 
+  it('a phone-side failure after a send fails the run, not the postcard, and the next run resends it', async () => {
+    await savePostcards(db, [patch(B, { notes: 'X' })]);
+    const broken = vi.spyOn(db.outbox, 'delete').mockRejectedValueOnce(new Error('Disk is full'));
+    await expect(pushOutbox(db, backend)).rejects.toThrow('Disk is full');
+    broken.mockRestore();
+    expect(backend.recordRow(B)?.notes).toBe('X');
+    expect((await outbox()).map((p) => [p.state, p.reason])).toEqual([['waiting', null]]);
+    expect(await pushOutbox(db, backend)).toEqual({ sent: 1, rejected: 0, noSignal: false });
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('an app error while sending is rejected in plain words, and logged', async () => {
+    await savePostcards(db, [patch(B, { notes: 'X' })]);
+    const bug = new TypeError('Cannot read properties of undefined');
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const writer: ShelfWriter = {
+      insertRecord: (row) => backend.insertRecord(row),
+      setRating: (recordId, userId, value) => backend.setRating(recordId, userId, value),
+      patchRecord: async () => {
+        throw bug;
+      },
+    };
+    expect(await pushOutbox(db, writer)).toEqual({ sent: 0, rejected: 1, noSignal: false });
+    expect((await outbox()).map((p) => [p.state, p.reason])).toEqual([['rejected', 'The shelf refused this change. (app error)']]);
+    expect(logged).toHaveBeenCalledWith(bug);
+    logged.mockRestore();
+  });
+
   it('a patch for a record the shelf no longer has is rejected in plain words', async () => {
     await db.records.put(record(A));
     await savePostcards(db, [patch(A, { notes: 'Hello' })]);

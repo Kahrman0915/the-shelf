@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeBackend, collectionRows } from '@/test/fakeBackend';
 import type { ShelfSource } from './backend';
 import { ShelfDB, clearPhone, writeSession } from './db';
@@ -101,12 +101,15 @@ describe('pullShelf', () => {
     const bad = await db.outbox.add({ kind: 'record.patch', shelfId: SHELF, recordId: first.id, userId: K, createdAt: WHEN, fields: { artist: '' }, state: 'waiting', reason: null });
     await db.outbox.add({ kind: 'record.patch', shelfId: SHELF, recordId: second.id, userId: K, createdAt: WHEN, fields: { notes: 'Mine' }, state: 'waiting', reason: null });
     backend.touchRecord(first.id, { notes: 'From the other phone' });
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     await pullShelf(db, backend, SHELF);
 
     const setAside = await db.outbox.get(bad);
     expect(setAside?.state).toBe('rejected');
-    expect(setAside?.reason).toMatch(/^Record rules broken: artist/);
+    expect(setAside?.reason).toBe('This change doesn’t fit the record any more.');
+    expect(warned).toHaveBeenCalledWith(expect.stringMatching(/^Record rules broken: artist/));
+    warned.mockRestore();
     expect((await db.records.get(first.id))?.notes).toBe('From the other phone');
     expect((await db.records.get(first.id))?.artist).toBe(first.artist);
     expect((await db.records.get(second.id))?.notes).toBe('Mine');

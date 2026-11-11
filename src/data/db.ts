@@ -73,12 +73,13 @@ export async function clearPhone(database: ShelfDB): Promise<void> {
   await database.transaction('rw', everything(database), () => clearAll(database));
 }
 
-/** Empty the notebook only if no change is waiting to send, checked in the same transaction. Says whether it cleared. */
-export async function clearPhoneIfNothingWaiting(database: ShelfDB): Promise<boolean> {
+/** Empty the notebook only if no change is waiting to send, checked in the same transaction.
+ *  Returns how many are waiting, counted in that transaction: 0 means it cleared the phone. */
+export async function clearPhoneIfNothingWaiting(database: ShelfDB): Promise<number> {
   return database.transaction('rw', everything(database), async () => {
-    if ((await database.outbox.count()) > 0) return false;
-    await clearAll(database);
-    return true;
+    const waiting = await database.outbox.count();
+    if (waiting === 0) await clearAll(database);
+    return waiting;
   });
 }
 
@@ -90,9 +91,11 @@ export class PreviousPersonUnsent extends BackendError {
   }
 }
 
-/** How many unsent changes belong to someone other than this person. Call inside a transaction over meta + outbox. */
+/** How many unsent changes were made by someone other than this person. Read from the postcards
+ *  themselves, not the remembered session: a sign-out can clear that while a change is being saved.
+ *  Call inside a transaction over the outbox. */
 async function othersWaiting(d: ShelfDB, userId: string): Promise<number> {
-  return (await readSession(d))?.userId === userId ? 0 : d.outbox.count();
+  return d.outbox.filter((p) => p.userId !== userId).count();
 }
 
 /** For deciding early whether to ask: the count of unsent changes that aren't this person's. */

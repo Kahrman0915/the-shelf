@@ -251,6 +251,32 @@ describe('signing out', () => {
     expect(await db.outbox.count()).toBe(1);
   });
 
+  it('after that, the same person signing back in is not warned, and the change is sent', async () => {
+    const backend = returning();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let signingOut = false;
+    const signOut = backend.signOut.bind(backend);
+    backend.signOut = async () => {
+      signingOut = true;
+      await gate;
+      return signOut();
+    };
+    renderApp(backend, '/settings');
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+    await waitFor(() => expect(signingOut).toBe(true));
+    const id = (await backend.recordsSince(SHELF, null))[0].id as string;
+    await savePostcards(db, [{ kind: 'record.patch', shelfId: SHELF, recordId: id, userId: K.userId, createdAt: new Date().toISOString(), fields: { notes: 'Late' } }]);
+    release();
+    await screen.findByLabelText('Your email');
+
+    await signInAs(K.email);
+    expect(await screen.findByRole('heading', { name: 'Shelf settings' })).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(backend.recordRow(id)?.notes).toBe('Late'));
+    await waitFor(async () => expect(await db.outbox.count()).toBe(0));
+  });
+
   it('Sign out and delete clears the phone', async () => {
     const backend = returning();
     await leaveAChangeWaiting(backend);
@@ -278,6 +304,18 @@ describe('when the sign-in has expired', () => {
     expect(await screen.findByText('Ahmad Jamal Trio')).toBeInTheDocument();
     await waitFor(() => expect(backend.recordRow(id)?.notes).toBe('Play side B first'));
     await waitFor(async () => expect(await db.outbox.count()).toBe(0));
+  });
+
+  it('a login the server has revoked opens sign-in, not the phone’s copy, and keeps waiting changes', async () => {
+    const backend = returning();
+    await leaveAChangeWaiting(backend);
+    backend.currentUser = async () => {
+      throw new BackendError('Invalid Refresh Token: Refresh Token Not Found');
+    };
+    renderApp(backend);
+    expect(await screen.findByLabelText('Your email')).toBeInTheDocument();
+    expect(screen.queryByText('Ahmad Jamal Trio')).not.toBeInTheDocument();
+    expect(await db.outbox.count()).toBe(1);
   });
 
   it('a different person signing in is warned; Go back keeps the changes; Continue and delete clears them', async () => {

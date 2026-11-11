@@ -38,11 +38,13 @@ function checkRecord(record: unknown): ShelfRecord {
 export async function applyPostcard(db: ShelfDB, p: NewPostcard | Postcard): Promise<void> {
   switch (p.kind) {
     case 'record.create': {
+      if (p.fields.id !== p.recordId) throw new BackendError('Record rules broken: id doesn’t match the change’s record');
       if (await db.records.get(p.recordId)) return;
       await db.records.put(checkRecord(p.fields));
       return;
     }
     case 'record.patch': {
+      if ('id' in p.fields && p.fields.id !== p.recordId) throw new BackendError('Record rules broken: a change can’t move a record to a new id');
       const existing = await db.records.get(p.recordId);
       if (!existing) return;
       await db.records.put(checkRecord({ ...existing, ...p.fields }));
@@ -69,7 +71,9 @@ export async function savePostcards(db: ShelfDB, postcards: NewPostcard[]): Prom
     for (const p of postcards) await applyPostcard(db, p);
     for (const p of postcards) await db.outbox.add({ ...p, state: 'waiting', reason: null } as Postcard);
   });
-  await ensureStorageKept(db);
+  // Not awaited: the postcards are saved. A failed or prompting persist() must neither hold the
+  // save up nor make it look failed (a retry would log the change twice).
+  void ensureStorageKept(db).catch(console.error);
 }
 
 const STORAGE_KEY = 'storagePersisted';

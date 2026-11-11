@@ -48,4 +48,6 @@ export const REJECTED = {
   range: 'The shelf refused a value that’s out of range.',
   unknownValue: 'The shelf refused a value it doesn’t recognise.',
   other: (code: string) => `The shelf refused this change. (${code})`,
+  /** Set on the phone, not by the shelf: a waiting change no longer fits the record after a pull. */
+  noLongerFits: 'This change doesn’t fit the record any more.',
 };

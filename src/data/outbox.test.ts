@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendError } from './backend';
 import { ShelfDB } from './db';
 import { applyPostcard, ensureStorageKept, savePostcards, storageKept, type NewPostcard } from './outbox';
@@ -100,6 +100,25 @@ describe('applyPostcard', () => {
     }
   });
 
+  it('a create whose record has a different id from the postcard’s throws and writes nothing', async () => {
+    const OTHER = '44444444-4444-4444-8444-444444444444';
+    await expect(apply(create(record({ id: OTHER })))).rejects.toBeInstanceOf(BackendError);
+    expect(await db.records.count()).toBe(0);
+  });
+
+  it('a patch that would change the record’s id throws and writes nothing', async () => {
+    const OTHER = '44444444-4444-4444-8444-444444444444';
+    await db.records.put(record());
+    await expect(apply(patch({ id: OTHER }))).rejects.toBeInstanceOf(BackendError);
+    expect(await db.records.toArray()).toEqual([record()]);
+  });
+
+  it('a patch naming the record’s own id is fine', async () => {
+    await db.records.put(record());
+    await apply(patch({ id: REC, notes: 'Same record' }));
+    expect((await db.records.get(REC))?.notes).toBe('Same record');
+  });
+
   it('a patch that breaks the record rules throws and writes nothing', async () => {
     await db.records.put(record());
     await expect(apply(patch({ artist: '' }))).rejects.toBeInstanceOf(BackendError);
@@ -123,6 +142,33 @@ describe('savePostcards', () => {
     expect(queued.every((q) => q.state === 'waiting' && q.reason === null)).toBe(true);
     expect(queued[0].seq).toBeLessThan(queued[1].seq);
     expect((await db.records.get(REC))?.wantsUpgrade).toBe(true);
+  });
+
+  describe('when the browser’s keep-data request misbehaves', () => {
+    function stubPersist(persist: () => Promise<boolean>) {
+      Object.defineProperty(navigator, 'storage', { value: { persist }, configurable: true });
+    }
+    afterEach(() => {
+      Reflect.deleteProperty(navigator, 'storage');
+      vi.restoreAllMocks();
+    });
+
+    it('a refused request still saves, and is logged', async () => {
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const blocked = new Error('blocked');
+      stubPersist(() => Promise.reject(blocked));
+      await db.records.put(record());
+      await expect(savePostcards(db, [patch({ wantsUpgrade: true })])).resolves.toBeUndefined();
+      expect(await db.outbox.count()).toBe(1);
+      await vi.waitFor(() => expect(logged).toHaveBeenCalledWith(blocked));
+    });
+
+    it('a request that never answers (a permission prompt) doesn’t hold the save up', async () => {
+      stubPersist(() => new Promise<boolean>(() => {}));
+      await db.records.put(record());
+      await expect(savePostcards(db, [patch({ wantsUpgrade: true })])).resolves.toBeUndefined();
+      expect(await db.outbox.count()).toBe(1);
+    });
   });
 });
 

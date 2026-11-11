@@ -21,6 +21,21 @@ export function readConfig(env: Record<string, string | undefined>): { url: stri
  *  server round-trip fails offline (auth-js's own signOut() gives up before clearing it then). */
 export const AUTH_STORAGE_KEY = 'the-shelf-auth';
 
+/** How long any request to the shelf may take. A show's weak signal can leave one hanging
+ *  for minutes; past this it counts as no signal (see offlineLooking() in supabaseBackend.ts). */
+export const FETCH_TIMEOUT_MS = 15_000;
+
+/** `fetch`, but giving up with a TimeoutError after `ms`. A caller's own signal still cancels it. */
+export function fetchWithTimeout(ms = FETCH_TIMEOUT_MS, base: typeof fetch = (input, init) => fetch(input, init)): typeof fetch {
+  return (input, init) => {
+    const timeout = AbortSignal.timeout(ms);
+    const own = init?.signal;
+    // AbortSignal.any is newer than AbortSignal.timeout; without it, the caller's signal wins.
+    const signal = own ? (typeof AbortSignal.any === 'function' ? AbortSignal.any([own, timeout]) : own) : timeout;
+    return base(input, { ...init, signal });
+  };
+}
+
 let client: SupabaseClient | null = null;
 
 /** The one Supabase client. Screens never call this; only src/data/supabaseBackend.ts does. */
@@ -29,6 +44,7 @@ export function supabase(): SupabaseClient {
     const { url, key } = readConfig(import.meta.env as Record<string, string | undefined>);
     client = createClient(url, key, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: AUTH_STORAGE_KEY },
+      global: { fetch: fetchWithTimeout() },
     });
   }
   return client;

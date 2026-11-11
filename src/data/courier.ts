@@ -52,17 +52,23 @@ async function pushRun(db: ShelfDB, writer: ShelfWriter): Promise<PushResult> {
     if (!p) return result;
     after = p.seq;
 
-    let reason: string;
+    // Only the send is caught: a phone-side failure after it fails the whole run, and the postcard,
+    // still waiting, is sent again (safely) next run.
+    let reason: string | null; // null: sent
     try {
-      if ((await send(writer, p)) === 'sent') {
-        await db.outbox.delete(p.seq);
-        result.sent++;
-        continue;
-      }
-      reason = REJECTED.missing;
+      reason = (await send(writer, p)) === 'missing' ? REJECTED.missing : null;
     } catch (e) {
       if (e instanceof BackendError && e.message === NO_SIGNAL) return { ...result, noSignal: true };
-      reason = e instanceof Error ? e.message : String(e);
+      if (e instanceof BackendError) reason = e.message;
+      else {
+        console.error(e);
+        reason = REJECTED.other('app error');
+      }
+    }
+    if (reason === null) {
+      await db.outbox.delete(p.seq);
+      result.sent++;
+      continue;
     }
     await db.outbox.update(p.seq, { state: 'rejected', reason });
     held.add(p.recordId);

@@ -56,31 +56,43 @@ export function useSession(backend: Backend, db: ShelfDB) {
     [backend, db],
   );
 
+  /** Signed out or expired elsewhere. Unsent changes stay until whoever signs in next decides. */
+  const signedOutElsewhere = useCallback(
+    async (isLive: () => boolean) => {
+      await clearPhoneIfNothingWaiting(db);
+      if (isLive()) setSession({ state: 'signed-out' });
+    },
+    [db],
+  );
+
   /** Signed-in-or-not check at startup. `isLive` lets the mount effect bail out after an unmount;
    *  `retry()` calls this too, with nothing to check, when there was no user to fall back to `settle()` with. */
   const start = useCallback(
     async (isLive: () => boolean = () => true) => {
+      let user: SignedIn | null;
       try {
-        const user = await backend.currentUser();
-        if (!isLive()) return;
-        if (user) {
-          await settle(user);
-        } else {
-          // Signed out or expired elsewhere. Unsent changes stay until whoever signs in next decides.
-          await clearPhoneIfNothingWaiting(db);
-          if (isLive()) setSession({ state: 'signed-out' });
-        }
+        user = await backend.currentUser();
       } catch (e) {
+        if (!isLive()) return;
+        // A login the server turned down (revoked, say) is no login: opening the phone's copy with
+        // it would get every waiting change rejected. Only no signal falls back to the phone's copy.
+        if (!(e instanceof BackendError && e.message === NO_SIGNAL)) {
+          await signedOutElsewhere(isLive);
+          return;
+        }
         // No signal, and we don't even know who's signed in: fall back to the phone's remembered
         // session rather than clearing it — the person may just be offline, not signed out.
-        if (!isLive()) return;
         const cached = await remembered(db);
         if (!isLive()) return;
         if (cached) setSession({ state: 'ready', user: { userId: cached.userId, email: cached.email }, shelfId: cached.shelfId });
         else setSession({ state: 'error', user: null, message: messageOf(e) });
+        return;
       }
+      if (!isLive()) return;
+      if (user) await settle(user);
+      else await signedOutElsewhere(isLive);
     },
-    [backend, db, settle],
+    [backend, db, settle, signedOutElsewhere],
   );
 
   useEffect(() => {
@@ -134,7 +146,9 @@ export function useSession(backend: Backend, db: ShelfDB) {
    *  so a change saved meanwhile survives. */
   const signOut = async (): Promise<{ unsent: number } | null> => {
     await pushOutbox(db, backend);
-    if (!(await clearPhoneIfNothingWaiting(db))) return { unsent: await db.outbox.count() };
+    // Counted in the clearing transaction, so a send landing just after can't make it "0 changes".
+    const unsent = await clearPhoneIfNothingWaiting(db);
+    if (unsent > 0) return { unsent };
     await forgetLogin();
     setSession({ state: 'signed-out' });
     return null;

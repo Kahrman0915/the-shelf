@@ -1,6 +1,15 @@
 import Dexie from 'dexie';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PreviousPersonUnsent, ShelfDB, clearPhone, clearPhoneIfNothingWaiting, readSession, rememberSession, writeSession } from './db';
+import {
+  PreviousPersonUnsent,
+  ShelfDB,
+  clearPhone,
+  clearPhoneIfNothingWaiting,
+  readSession,
+  rememberSession,
+  unsentFromPreviousPerson,
+  writeSession,
+} from './db';
 
 const name = `upgrade-${crypto.randomUUID()}`;
 
@@ -59,18 +68,18 @@ async function phoneOf(who: typeof K, waiting: number): Promise<ShelfDB> {
 }
 
 describe('clearPhoneIfNothingWaiting', () => {
-  it('clears the phone when nothing is waiting', async () => {
+  it('clears the phone when nothing is waiting, and says none are', async () => {
     const db = await phoneOf(K, 0);
-    expect(await clearPhoneIfNothingWaiting(db)).toBe(true);
+    expect(await clearPhoneIfNothingWaiting(db)).toBe(0);
     expect(await db.members.count()).toBe(0);
     expect(await readSession(db)).toBeNull();
     await db.delete();
   });
 
-  it('keeps everything when a change is waiting', async () => {
-    const db = await phoneOf(K, 1);
-    expect(await clearPhoneIfNothingWaiting(db)).toBe(false);
-    expect(await db.outbox.count()).toBe(1);
+  it('keeps everything when changes are waiting, and says how many', async () => {
+    const db = await phoneOf(K, 2);
+    expect(await clearPhoneIfNothingWaiting(db)).toBe(2);
+    expect(await db.outbox.count()).toBe(2);
     expect(await db.members.count()).toBe(1);
     expect(await readSession(db)).toEqual(K);
     await db.delete();
@@ -94,6 +103,17 @@ describe('rememberSession', () => {
     await rememberSession(db, MEG);
     expect(await readSession(db)).toEqual(MEG);
     expect(await db.members.count()).toBe(0);
+    await db.delete();
+  });
+
+  it('with no remembered session, counts only someone else’s waiting changes', async () => {
+    const db = await phoneOf(K, 2);
+    await db.meta.delete('session');
+    expect(await unsentFromPreviousPerson(db, K.userId)).toBe(0);
+    expect(await unsentFromPreviousPerson(db, MEG.userId)).toBe(2);
+    await rememberSession(db, K);
+    expect(await db.outbox.count()).toBe(2);
+    expect(await readSession(db)).toEqual(K);
     await db.delete();
   });
 

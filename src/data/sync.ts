@@ -1,4 +1,4 @@
-import { BackendError, type ShelfSource } from './backend';
+import { BackendError, REJECTED, type ShelfSource } from './backend';
 import { readSession, type ShelfDB } from './db';
 import { applyPostcard } from './outbox';
 import { ratingFromRow, recordFromRow } from './rowMapping';
@@ -47,7 +47,8 @@ async function reapplyOutbox(db: ShelfDB): Promise<void> {
       await applyPostcard(db, p);
     } catch (e) {
       if (!(e instanceof BackendError)) throw e;
-      await db.outbox.update(p.seq, { state: 'rejected', reason: e.message });
+      console.warn(e.message);
+      await db.outbox.update(p.seq, { state: 'rejected', reason: REJECTED.noLongerFits });
     }
   }
 }

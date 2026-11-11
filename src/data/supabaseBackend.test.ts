@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendError, NO_SIGNAL, REJECTED } from './backend';
 import { AUTH_STORAGE_KEY } from './supabase';
-import { rejectionReason, supabaseBackend } from './supabaseBackend';
+import { offlineLooking, rejectionReason, supabaseBackend } from './supabaseBackend';
 
 /** A chainable stand-in for a Supabase PostgrestFilterBuilder: every filter/order method returns
  *  the same object, and it resolves (like the real one does when awaited) when range() is called,
@@ -82,6 +82,12 @@ describe('supabaseBackend().ratings', () => {
 
 describe('supabaseBackend().signOut', () => {
   beforeEach(() => localStorage.clear());
+
+  it('signs out this phone only, not the person’s other devices', async () => {
+    const signOut = vi.fn().mockResolvedValue({ error: null });
+    await supabaseBackend({ auth: { signOut }, from: vi.fn() } as never).signOut();
+    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
+  });
 
   it('removes the stored login itself and still fails loudly when the server round-trip errors', async () => {
     localStorage.setItem(AUTH_STORAGE_KEY, '{"fake":"session"}');
@@ -214,6 +220,26 @@ describe('supabaseBackend().setRating', () => {
   it('throws a plain reason when the shelf refuses the value', async () => {
     const { client } = writeClient({ update: [{ error: { code: '23514', message: 'check violation' } }] });
     await expect(supabaseBackend(client).setRating('rec-1', 'user-1', 9)).rejects.toThrow(new BackendError(REJECTED.range));
+  });
+});
+
+describe('offlineLooking', () => {
+  it('reads a request that timed out or was cut off as no signal', () => {
+    // How postgrest-js reports a fetch that our timeout aborted.
+    expect(offlineLooking({ message: 'TimeoutError: signal timed out' })).toBe(true);
+    expect(offlineLooking({ message: 'AbortError: This operation was aborted' })).toBe(true);
+    // The DOMException itself, if one ever reaches it directly.
+    expect(offlineLooking(new DOMException('signal timed out', 'TimeoutError'))).toBe(true);
+    expect(offlineLooking(new DOMException('This operation was aborted', 'AbortError'))).toBe(true);
+  });
+
+  it('doesn’t mistake a refusal for no signal', () => {
+    expect(offlineLooking({ message: 'new row violates row-level security policy' })).toBe(false);
+  });
+
+  it('turns a timed-out write into no signal, so the change waits instead of being rejected', async () => {
+    const { client } = writeClient({ insert: [{ error: { code: '', message: 'TimeoutError: signal timed out' } }] });
+    await expect(supabaseBackend(client).insertRecord(NEW_ROW)).rejects.toThrow(new BackendError(NO_SIGNAL));
   });
 });
 
