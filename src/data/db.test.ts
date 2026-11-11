@@ -25,3 +25,22 @@ describe('ShelfDB version 2', () => {
     v2.close();
   });
 });
+
+describe('clearPhone', () => {
+  it('empties the outbox too', async () => {
+    const db = new ShelfDB(`clear-${crypto.randomUUID()}`);
+    await db.outbox.add({
+      kind: 'rating.set',
+      shelfId: 's',
+      recordId: 'r',
+      userId: 'u',
+      createdAt: 't',
+      state: 'waiting',
+      reason: null,
+      fields: { value: 3 },
+    } as never);
+    await clearPhone(db);
+    expect(await db.outbox.count()).toBe(0);
+    await db.delete();
+  });
+});

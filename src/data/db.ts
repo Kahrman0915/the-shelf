@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable, type Table } from 'dexie';
 import type { Member } from './backend';
+import type { Postcard } from './outbox';
 import type { Rating, ShelfRecord } from './schema';
 
 export type Meta = { key: string; value: string };
@@ -10,6 +11,7 @@ export class ShelfDB extends Dexie {
   ratings!: Table<Rating, [string, string]>;
   members!: Table<Member, [string, string]>;
   meta!: EntityTable<Meta, 'key'>;
+  outbox!: EntityTable<Postcard, 'seq'>;
 
   constructor(name = 'the-shelf') {
     super(name);
@@ -29,6 +31,13 @@ export class ShelfDB extends Dexie {
         await tx.table('records').clear();
         await tx.table('ratings').clear();
       });
+    this.version(3).stores({
+      records: 'id, shelfId, status, genre, importKey',
+      ratings: '[recordId+userId], recordId, userId',
+      members: '[shelfId+userId], shelfId',
+      meta: 'key',
+      outbox: '++seq, recordId, state',
+    });
   }
 }
 
@@ -36,7 +45,13 @@ export const db = new ShelfDB();
 
 /** Empty the notebook: used on sign-out and when a different person signs in. */
 export async function clearPhone(database: ShelfDB): Promise<void> {
-  await database.transaction('rw', [database.records, database.ratings, database.members, database.meta], async () => {
-    await Promise.all([database.records.clear(), database.ratings.clear(), database.members.clear(), database.meta.clear()]);
+  await database.transaction('rw', [database.records, database.ratings, database.members, database.meta, database.outbox], async () => {
+    await Promise.all([
+      database.records.clear(),
+      database.ratings.clear(),
+      database.members.clear(),
+      database.meta.clear(),
+      database.outbox.clear(),
+    ]);
   });
 }
