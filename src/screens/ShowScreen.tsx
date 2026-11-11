@@ -1,12 +1,17 @@
+import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCurrentShelf } from '@/app/CurrentShelf';
-import { SyncNotice } from '@/app/SyncContext';
+import { SyncNotice, useSyncStatus } from '@/app/SyncContext';
+import { useUndo } from '@/app/UndoContext';
+import { boughtNew, perform, type NewBuy } from '@/data/actions';
+import { db } from '@/data/db';
 import { useShelfItems } from '@/data/hooks';
 import { spineColor } from '@/domain/labels';
 import { collectionTag, showResults } from '@/domain/shelf';
+import { BuyNewSheet } from '@/ui/BuyNewSheet';
 import { SpineRow } from '@/ui/SpineRow';
 
 /** Record-show mode: one hand, fast. Search first; every result says where it stands.
@@ -17,10 +22,21 @@ export function ShowScreen() {
   const [searchParams, setSearchParams] = useSearchParams();
   const query = searchParams.get('q') ?? '';
   const navigate = useNavigate();
+  const { runNow } = useSyncStatus();
+  const { offer } = useUndo();
+  const [buying, setBuying] = useState(false);
   const results = items ? showResults(items, query) : [];
 
   function setQuery(next: string) {
     setSearchParams(next === '' ? {} : { q: next }, { replace: true });
+  }
+
+  async function onSave(buy: NewBuy) {
+    const result = boughtNew(buy, { me: userId, now: new Date().toISOString(), shelfId, newId: crypto.randomUUID() });
+    await perform(db, result.postcards, runNow);
+    const undo = result.undo;
+    if (undo) offer('In New arrivals', () => perform(db, undo, runNow));
+    setBuying(false);
   }
 
   return (
@@ -47,7 +63,12 @@ export function ShowScreen() {
       {query.trim() === '' ? (
         <p className="px-4 text-ink-muted">Do you own it? Is it on the want list? Type an artist, title or catalog number.</p>
       ) : results.length === 0 ? (
-        <p className="px-4 text-ink-muted">Not in your collection or want list.</p>
+        <div className="flex flex-col items-start gap-4 px-4">
+          <p className="text-ink-muted">Not in your collection or want list.</p>
+          <Button className="h-12 rounded-lg px-6 font-display text-[22px] tracking-[0.04em]" onClick={() => setBuying(true)}>
+            Bought it
+          </Button>
+        </div>
       ) : (
         <div className="border-t border-line">
           {results.map((item) => (
@@ -62,6 +83,7 @@ export function ShowScreen() {
           ))}
         </div>
       )}
+      <BuyNewSheet open={buying} initialArtist={query.trim()} onOpenChange={setBuying} onSave={onSave} />
     </main>
   );
 }

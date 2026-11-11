@@ -1,0 +1,229 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { FakeBackend } from '@/test/fakeBackend';
+import { boughtIt, boughtNew, buyKind, didntBuyIt, perform, rate, type Ctx } from './actions';
+import { BackendError } from './backend';
+import { pushOutbox } from './courier';
+import { ShelfDB, writeSession } from './db';
+import { recordToRow } from './rowMapping';
+import type { ShelfRecord } from './schema';
+import { pullShelf } from './sync';
+
+const SHELF = '11111111-1111-4111-8111-111111111111';
+const ME = '22222222-2222-4222-8222-222222222222';
+const A = '33333333-3333-4333-8333-333333333333';
+const NEW_ID = '55555555-5555-4555-8555-555555555555';
+const OLD = '2026-10-01T10:00:00.000Z';
+const NOW = '2026-11-11T10:00:00.000Z';
+const ctx: Ctx = { me: ME, now: NOW };
+
+function record(over: Partial<ShelfRecord> = {}): ShelfRecord {
+  return {
+    id: A,
+    shelfId: SHELF,
+    status: 'owned',
+    wantsUpgrade: false,
+    upgradeNote: null,
+    artist: 'Miles Davis',
+    title: 'Kind of Blue',
+    label: null,
+    catalog: null,
+    year: null,
+    format: null,
+    genre: 'jazz',
+    discGrade: null,
+    sleeveGrade: null,
+    pricePaid: null,
+    nmEstimateLow: null,
+    nmEstimateHigh: null,
+    valueNote: null,
+    notes: null,
+    discogsReleaseId: null,
+    coverPath: null,
+    boughtAt: null,
+    addedBy: ME,
+    createdAt: OLD,
+    updatedAt: OLD,
+    deletedAt: null,
+    importKey: null,
+    ...over,
+  };
+}
+
+const want = (over: Partial<ShelfRecord> = {}) => record({ status: 'wanted', discGrade: 'G', pricePaid: 4, ...over });
+const upgrade = (over: Partial<ShelfRecord> = {}) =>
+  record({ wantsUpgrade: true, upgradeNote: 'find a cleaner copy', discGrade: 'VG', sleeveGrade: 'VG', pricePaid: 8, boughtAt: OLD, ...over });
+
+describe('buyKind', () => {
+  it('names the two cases where Bought it applies', () => {
+    expect(buyKind(record({ status: 'wanted' }))).toBe('want');
+    expect(buyKind(record({ wantsUpgrade: true }))).toBe('upgrade');
+    expect(buyKind(record())).toBeNull();
+    expect(buyKind(record({ status: 'new_arrival' }))).toBeNull();
+  });
+});
+
+describe('boughtIt', () => {
+  it('moves a want to new arrivals and can put it back', () => {
+    const r = want();
+    const { postcards, undo } = boughtIt(r, { grade: 'VG+', pricePaid: 15 }, ctx);
+    expect(postcards).toEqual([
+      { kind: 'record.patch', shelfId: SHELF, recordId: A, userId: ME, createdAt: NOW, fields: { status: 'new_arrival', boughtAt: NOW, discGrade: 'VG+', pricePaid: 15 } },
+    ]);
+    expect(undo).toEqual([
+      { kind: 'record.patch', shelfId: SHELF, recordId: A, userId: ME, createdAt: NOW, fields: { status: 'wanted', boughtAt: null, discGrade: 'G', pricePaid: 4 } },
+    ]);
+  });
+
+  it('logs an upgrade in place and restores all six fields', () => {
+    const r = upgrade();
+    const { postcards, undo } = boughtIt(r, { grade: 'NM', pricePaid: 20 }, ctx);
+    expect(postcards).toHaveLength(1);
+    expect(postcards[0].fields).toEqual({ discGrade: 'NM', sleeveGrade: null, pricePaid: 20, boughtAt: NOW, wantsUpgrade: false, upgradeNote: null });
+    expect(postcards[0].fields).not.toHaveProperty('status');
+    expect(undo).toEqual([
+      {
+        kind: 'record.patch',
+        shelfId: SHELF,
+        recordId: A,
+        userId: ME,
+        createdAt: NOW,
+        fields: { discGrade: 'VG', sleeveGrade: 'VG', pricePaid: 8, boughtAt: OLD, wantsUpgrade: true, upgradeNote: 'find a cleaner copy' },
+      },
+    ]);
+  });
+
+  it('refuses a record that is neither a want nor an upgrade', () => {
+    expect(() => boughtIt(record(), { grade: 'NM', pricePaid: null }, ctx)).toThrow(BackendError);
+    expect(() => boughtIt(record(), { grade: 'NM', pricePaid: null }, ctx)).toThrow(
+      'Bought it is only for records on the want list or marked for an upgrade.',
+    );
+  });
+
+  it('refuses buying the same want twice', async () => {
+    const r = want();
+    const first = boughtIt(r, { grade: 'VG+', pricePaid: 15 }, ctx);
+    const bought = { ...r, ...(first.postcards[0].fields as Partial<ShelfRecord>) };
+    expect(() => boughtIt(bought, { grade: 'VG+', pricePaid: 15 }, ctx)).toThrow(BackendError);
+    const upgraded = { ...upgrade(), ...boughtIt(upgrade(), { grade: 'NM', pricePaid: 20 }, ctx).postcards[0].fields } as ShelfRecord;
+    expect(() => boughtIt(upgraded, { grade: 'NM', pricePaid: 20 }, ctx)).toThrow(BackendError);
+  });
+});
+
+describe('boughtNew', () => {
+  const input = { artist: '  Nina Simone ', title: ' Pastel Blues ', genre: 'jazz' as const, grade: 'VG+' as const, pricePaid: 12 };
+  const c = { ...ctx, shelfId: SHELF, newId: NEW_ID };
+
+  it('creates a new arrival and can soft-delete it', () => {
+    const { postcards, undo } = boughtNew(input, c);
+    expect(postcards).toHaveLength(1);
+    const p = postcards[0];
+    expect(p.kind).toBe('record.create');
+    expect(p.recordId).toBe(NEW_ID);
+    expect(p.shelfId).toBe(SHELF);
+    if (p.kind !== 'record.create') throw new Error('unreachable');
+    expect(p.fields).toMatchObject({
+      id: NEW_ID,
+      shelfId: SHELF,
+      status: 'new_arrival',
+      artist: 'Nina Simone',
+      title: 'Pastel Blues',
+      genre: 'jazz',
+      discGrade: 'VG+',
+      sleeveGrade: null,
+      pricePaid: 12,
+      boughtAt: NOW,
+      addedBy: ME,
+      wantsUpgrade: false,
+      createdAt: NOW,
+      updatedAt: NOW,
+      deletedAt: null,
+    });
+    expect(undo).toEqual([
+      { kind: 'record.patch', shelfId: SHELF, recordId: NEW_ID, userId: ME, createdAt: NOW, fields: { deletedAt: NOW } },
+    ]);
+  });
+
+  it('throws naming the field when it would break the record rules', () => {
+    expect(() => boughtNew({ ...input, title: '  ' }, c)).toThrow(/title/);
+    expect(() => boughtNew({ ...input, title: '  ' }, c)).toThrow(BackendError);
+    expect(() => boughtNew({ ...input, artist: '' }, c)).toThrow(/artist/);
+  });
+});
+
+describe('didntBuyIt', () => {
+  it('removes a new arrival with no undo', () => {
+    const r = record({ status: 'new_arrival' });
+    expect(didntBuyIt(r, ctx)).toEqual({
+      postcards: [{ kind: 'record.patch', shelfId: SHELF, recordId: A, userId: ME, createdAt: NOW, fields: { deletedAt: NOW } }],
+      undo: null,
+    });
+  });
+
+  it('refuses anything else', () => {
+    expect(() => didntBuyIt(record(), ctx)).toThrow('Only new arrivals can be removed this way.');
+  });
+});
+
+describe('rate', () => {
+  it('sets a rating with no undo', () => {
+    expect(rate(record({ status: 'new_arrival' }), 4, ctx)).toEqual({
+      postcards: [{ kind: 'rating.set', shelfId: SHELF, recordId: A, userId: ME, createdAt: NOW, fields: { value: 4 } }],
+      undo: null,
+    });
+    expect(rate(record(), 5, ctx).postcards).toHaveLength(1);
+  });
+
+  it('refuses a want and out-of-range values', () => {
+    expect(() => rate(record({ status: 'wanted' }), 4, ctx)).toThrow('You can rate records you’ve bought.');
+    for (const v of [0, 6, 2.5, NaN]) expect(() => rate(record(), v, ctx)).toThrow('A rating is 1 to 5.');
+  });
+});
+
+describe('undo after the purchase reached the server', () => {
+  let db: ShelfDB;
+  let fake: FakeBackend;
+
+  beforeEach(async () => {
+    db = new ShelfDB(`actions-${crypto.randomUUID()}`);
+    await writeSession(db, { userId: ME, email: 'me@example.com', shelfId: SHELF });
+    fake = new FakeBackend({ records: [recordToRow(want())], ratings: [], members: [] });
+    await pullShelf(db, fake, SHELF);
+  });
+  afterEach(async () => {
+    await db.delete();
+  });
+
+  it('reverses a new purchase there', async () => {
+    const { postcards, undo } = boughtNew(
+      { artist: 'Nina Simone', title: 'Pastel Blues', genre: 'jazz', grade: 'VG+', pricePaid: 12 },
+      { ...ctx, shelfId: SHELF, newId: NEW_ID },
+    );
+    await perform(db, postcards);
+    await pushOutbox(db, fake);
+    expect(fake.recordRow(NEW_ID)?.deleted_at).toBeNull();
+    await perform(db, undo!);
+    await pushOutbox(db, fake);
+    expect(fake.recordRow(NEW_ID)?.deleted_at).toBeTruthy();
+  });
+
+  it('reverses Bought it on a want there', async () => {
+    const r = (await db.records.get(A))!;
+    const { postcards, undo } = boughtIt(r, { grade: 'VG+', pricePaid: 15 }, ctx);
+    await perform(db, postcards);
+    await pushOutbox(db, fake);
+    expect(fake.recordRow(A)?.status).toBe('new_arrival');
+    await perform(db, undo!);
+    await pushOutbox(db, fake);
+    expect(fake.recordRow(A)?.status).toBe('wanted');
+    expect((await db.records.get(A))?.status).toBe('wanted');
+  });
+
+  it('runs after() once the postcards are saved', async () => {
+    let seen = -1;
+    await perform(db, boughtIt((await db.records.get(A))!, { grade: 'NM', pricePaid: null }, ctx).postcards, () => {
+      void db.outbox.count().then((n) => (seen = n));
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(seen).toBe(1);
+  });
+});

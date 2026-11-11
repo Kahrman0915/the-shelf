@@ -2,15 +2,21 @@ import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { db } from '@/data/db';
+import { ArrivalsScreen } from '@/screens/ArrivalsScreen';
 import { NameScreen } from '@/screens/NameScreen';
 import { PriceCheckScreen } from '@/screens/PriceCheckScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { ShelfScreen } from '@/screens/ShelfScreen';
 import { ShowScreen } from '@/screens/ShowScreen';
 import { SignInScreen } from '@/screens/SignInScreen';
+import { ConfirmDialog } from '@/ui/ConfirmDialog';
+import { RecordScreen } from '@/screens/RecordScreen';
 import { useBackend } from './BackendContext';
 import { CurrentShelfProvider } from './CurrentShelf';
+import { SignOutButton } from './SignOutButton';
+import { isShowPath } from './routes';
 import { SyncProvider } from './SyncContext';
+import { UndoBar, UndoProvider } from './UndoContext';
 import { useSession } from './useSession';
 
 const MODE_KEY = 'shelf:mode';
@@ -26,7 +32,7 @@ function readMode(): string | null {
 /** Home is midnight; show mode (search and price check) is paper. The last mode is remembered on this phone. */
 function useModeTheme() {
   const { pathname } = useLocation();
-  const show = pathname !== '/';
+  const show = pathname === '/settings' || isShowPath(pathname);
   useEffect(() => {
     if (show) delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = 'midnight';
@@ -38,6 +44,11 @@ function useModeTheme() {
   }, [show]);
 }
 
+const previousPersonMessage = (n: number) =>
+  n === 1
+    ? '1 change from the previous person on this phone hasn’t been sent. Continuing deletes it.'
+    : `${n} changes from the previous person on this phone haven’t been sent. Continuing deletes them.`;
+
 /** Sends the app to show mode once at startup, so tapping Home later isn't bounced back. */
 function RedirectOnce({ to, onDone }: { to: string; onDone: () => void }) {
   useEffect(() => {
@@ -48,7 +59,7 @@ function RedirectOnce({ to, onDone }: { to: string; onDone: () => void }) {
 
 export default function App() {
   const backend = useBackend();
-  const { session, verified, chooseName, retry, signOut } = useSession(backend, db);
+  const { session, verified, chooseName, retry, signOut, signOutAndDelete, continueAndDelete, goBack } = useSession(backend, db);
   const { pathname } = useLocation();
   // Read once, before useModeTheme overwrites the stored mode.
   const [startInShow, setStartInShow] = useState(() => readMode() === 'show' && pathname === '/');
@@ -56,6 +67,23 @@ export default function App() {
 
   if (session.state === 'loading') return null;
   if (session.state === 'signed-out') return <SignInScreen backend={backend} onVerified={verified} />;
+  if (session.state === 'previous-unsent') {
+    return (
+      <>
+        {/* Not the sign-in screen: Go back mounts a fresh one, rather than one stuck on its code step. */}
+        <main className="min-h-dvh" />
+        <ConfirmDialog
+          open
+          message={previousPersonMessage(session.count)}
+          confirmLabel="Continue and delete"
+          cancelLabel="Go back"
+          danger="confirm"
+          onConfirm={() => void continueAndDelete()}
+          onCancel={() => void goBack()}
+        />
+      </>
+    );
+  }
   if (session.state === 'needs-name') return <NameScreen onSubmit={chooseName} />;
   if (session.state === 'error') {
     return (
@@ -65,26 +93,29 @@ export default function App() {
         <Button className="h-12 rounded-lg font-display text-[22px] tracking-[0.04em]" onClick={retry}>
           Try again
         </Button>
-        <Button variant="ghost" className="h-12" onClick={() => void signOut()}>
-          Sign out
-        </Button>
+        <SignOutButton signOut={signOut} signOutAndDelete={signOutAndDelete} variant="ghost" className="h-12" />
       </main>
     );
   }
 
   return (
-    <CurrentShelfProvider value={{ shelfId: session.shelfId, userId: session.user.userId, email: session.user.email, signOut }}>
-      <SyncProvider source={backend} shelfId={session.shelfId}>
-        <Routes>
-          <Route
-            path="/"
-            element={startInShow ? <RedirectOnce to="/show" onDone={() => setStartInShow(false)} /> : <ShelfScreen />}
-          />
-          <Route path="/show" element={<ShowScreen />} />
-          <Route path="/price/:id" element={<PriceCheckScreen />} />
-          <Route path="/settings" element={<SettingsScreen />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+    <CurrentShelfProvider value={{ shelfId: session.shelfId, userId: session.user.userId, email: session.user.email, signOut, signOutAndDelete }}>
+      <SyncProvider backend={backend} shelfId={session.shelfId}>
+        <UndoProvider>
+          <Routes>
+            <Route
+              path="/"
+              element={startInShow ? <RedirectOnce to="/show" onDone={() => setStartInShow(false)} /> : <ShelfScreen />}
+            />
+            <Route path="/show" element={<ShowScreen />} />
+            <Route path="/arrivals" element={<ArrivalsScreen />} />
+            <Route path="/record/:id" element={<RecordScreen />} />
+            <Route path="/price/:id" element={<PriceCheckScreen />} />
+            <Route path="/settings" element={<SettingsScreen />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+          <UndoBar />
+        </UndoProvider>
       </SyncProvider>
     </CurrentShelfProvider>
   );

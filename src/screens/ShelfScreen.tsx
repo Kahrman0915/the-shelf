@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { Search, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,17 +7,20 @@ import { useCurrentShelf } from '@/app/CurrentShelf';
 import { SyncNotice, useSyncStatus } from '@/app/SyncContext';
 import { useShelfItems } from '@/data/hooks';
 import { spineColor, type GenreFilter } from '@/domain/labels';
-import { shelfRows, shelfTag } from '@/domain/shelf';
+import { newArrivals, shelfRows, shelfTag } from '@/domain/shelf';
 import { GenreSelect } from '@/ui/GenreSelect';
+import { PileRow } from '@/ui/PileRow';
 import { SpineRow } from '@/ui/SpineRow';
 
 export function ShelfScreen() {
   const { shelfId, userId } = useCurrentShelf();
+  const navigate = useNavigate();
   const items = useShelfItems(shelfId, userId);
   const { lastSyncedAt } = useSyncStatus();
   const [genre, setGenre] = useState<GenreFilter>('all');
   const [query, setQuery] = useState('');
   const rows = items ? shelfRows(items, { genre, query }) : [];
+  const pile = items ? newArrivals(items).map((i) => i.record) : [];
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-2xl flex-col pb-[calc(3rem+env(safe-area-inset-bottom))]">
@@ -49,6 +52,7 @@ export function ShelfScreen() {
           />
         </label>
       </div>
+      <PileRow records={pile} onOpen={() => navigate('/arrivals')} />
       {items === undefined ? null : items.filter((i) => i.record.status === 'owned').length === 0 ? (
         <p className="px-4 py-8 text-ink-muted">{lastSyncedAt ? 'Nothing on the shelf yet.' : 'Filling the shelf…'}</p>
       ) : rows.length === 0 ? (
@@ -56,7 +60,7 @@ export function ShelfScreen() {
       ) : (
         <div className="border-t border-line">
           {rows.map((item) => (
-            <SpineRow key={item.record.id} record={item.record} rating={item.myRating} color={spineColor(item.record, genre)} tag={shelfTag(item)} />
+            <SpineRow key={item.record.id} record={item.record} rating={item.myRating} color={spineColor(item.record, genre)} tag={shelfTag(item)} onOpen={() => navigate(`/record/${item.record.id}`)} />
           ))}
         </div>
       )}

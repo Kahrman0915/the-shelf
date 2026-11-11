@@ -1,15 +1,38 @@
 import { isAuthRetryableFetchError, type SupabaseClient } from '@supabase/supabase-js';
-import { BackendError, NO_SIGNAL, type Backend, type Invite, type Member, type SignedIn } from './backend';
+import { BackendError, NO_SIGNAL, REJECTED, type Backend, type Invite, type Member, type SignedIn } from './backend';
 import { AUTH_STORAGE_KEY, supabase } from './supabase';
 
 const PAGE = 1000;
 
-function offlineLooking(error: { message: string }): boolean {
-  return (typeof navigator !== 'undefined' && navigator.onLine === false) || isAuthRetryableFetchError(error) || /fetch|network/i.test(error.message);
+/** A request that timed out (see fetchWithTimeout() in supabase.ts) or was cut off. postgrest-js
+ *  reports one as a message starting with the error's name; anything else carries the name itself. */
+const abortedLooking = (error: { message: string; name?: string }) =>
+  error.name === 'TimeoutError' || error.name === 'AbortError' || /^(TimeoutError|AbortError)\b/.test(error.message);
+
+export function offlineLooking(error: { message: string; name?: string }): boolean {
+  return (
+    (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+    isAuthRetryableFetchError(error) ||
+    abortedLooking(error) ||
+    /fetch|network/i.test(error.message)
+  );
 }
 
 function fail(action: string, error: { message: string; code?: string } | null): never {
   throw new BackendError(offlineLooking({ message: error?.message ?? '' }) ? NO_SIGNAL : `${action}: ${error?.message ?? 'unknown error'}`);
+}
+
+/** Plain words for why the shelf turned a write down. */
+export function rejectionReason(e: { code?: string; message: string }): string {
+  if (e.code === '42501' || /row-level security|permission denied/i.test(e.message)) return REJECTED.permission;
+  if (e.code === '23514') return REJECTED.range;
+  if (e.code === '22P02') return REJECTED.unknownValue;
+  if (e.code === '23503') return REJECTED.missing;
+  return REJECTED.other(e.code ?? 'unknown');
+}
+
+function writeFailure(error: { code?: string; message: string }): never {
+  throw new BackendError(offlineLooking(error) ? NO_SIGNAL : rejectionReason(error));
 }
 
 export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
@@ -106,8 +129,37 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
       if (error) fail('Couldn’t send the invite', error);
     },
 
+    async insertRecord(row) {
+      const { error } = await client.from('records').insert(row);
+      if (error?.code === '23505') return 'already-there';
+      if (error) writeFailure(error);
+      return 'inserted';
+    },
+
+    async patchRecord(id, fields) {
+      const { data, error } = await client.from('records').update(fields).eq('id', id).select('id');
+      if (error) writeFailure(error);
+      return data.length > 0 ? 'patched' : 'missing';
+    },
+
+    async setRating(recordId, userId, value) {
+      // Never upsert: the column-level UPDATE grant on ratings makes ON CONFLICT DO UPDATE fail.
+      // Update first; insert if there was nothing to update; if that loses a race, update again.
+      const update = async () => {
+        const { data, error } = await client.from('ratings').update({ value }).eq('record_id', recordId).eq('user_id', userId).select('record_id');
+        if (error) writeFailure(error);
+        return data.length > 0;
+      };
+      if (await update()) return;
+      const { error } = await client.from('ratings').insert({ record_id: recordId, user_id: userId, value });
+      if (!error) return;
+      if (error.code !== '23505') writeFailure(error);
+      if (!(await update())) throw new BackendError(REJECTED.missing);
+    },
+
     async signOut() {
-      const { error } = await client.auth.signOut();
+      // This phone only: the default ('global') would sign the person out on every device.
+      const { error } = await client.auth.signOut({ scope: 'local' });
       if (error) {
         // auth-js's own signOut() gives up on a session error (an expired token offline, say)
         // before it removes the stored session, so the next online open would silently sign the

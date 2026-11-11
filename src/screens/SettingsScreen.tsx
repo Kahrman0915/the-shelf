@@ -3,17 +3,19 @@ import { Link } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { useBackend } from '@/app/BackendContext';
 import { useCurrentShelf } from '@/app/CurrentShelf';
+import { SignOutButton } from '@/app/SignOutButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { Invite } from '@/data/backend';
-import { useMembers } from '@/data/hooks';
+import { useMembers, useStorageKept } from '@/data/hooks';
 
 const SECTION = 'font-display text-[28px] leading-7 tracking-[0.02em]';
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function SettingsScreen() {
   const backend = useBackend();
-  const { shelfId, userId, signOut } = useCurrentShelf();
+  const { shelfId, userId, signOut, signOutAndDelete } = useCurrentShelf();
+  const storageKept = useStorageKept();
   const members = useMembers(shelfId);
   const isOwner = members?.some((m) => m.userId === userId && m.role === 'owner') ?? false;
   const [invites, setInvites] = useState<Invite[] | null>(null);
@@ -114,10 +116,16 @@ export function SettingsScreen() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <Button variant="outline" className="h-12 rounded-lg border-[1.5px] border-line-strong bg-transparent text-[15px] font-semibold" onClick={() => void signOut()}>
-          Sign out
-        </Button>
+        <SignOutButton
+          signOut={signOut}
+          signOutAndDelete={signOutAndDelete}
+          variant="outline"
+          className="h-12 rounded-lg border-[1.5px] border-line-strong bg-transparent text-[15px] font-semibold"
+        />
         <p className="text-[15px] leading-[22px] text-ink-muted">Signing out clears the shelf from this phone. It stays safe in your account.</p>
+        {storageKept === false && (
+          <p className="text-[15px] leading-[22px] text-ink-muted">This phone may clear unsent changes if it runs low on space.</p>
+        )}
       </section>
     </main>
   );

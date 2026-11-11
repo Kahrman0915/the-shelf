@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectionTag, shelfRows, shelfTag, showResults, type ShelfLike } from './shelf';
+import { collectionTag, newArrivals, shelfRows, shelfTag, showResults, type ShelfLike } from './shelf';
 
 function rec(p: Partial<ShelfLike> & { artist: string }): ShelfLike {
   return { title: 'T', label: null, catalog: null, genre: 'jazz', status: 'owned', wantsUpgrade: false, ...p };
@@ -42,5 +42,13 @@ describe('showResults', () => {
     expect(showResults(items, '')).toEqual([]);
     expect(showResults(items, 'burrell').map((i) => i.record.artist)).toEqual(['Kenny Burrell']);
     expect(showResults(items, 'art').map((i) => i.record.artist)).toEqual(['Art Blakey']);
+  });
+});
+
+describe('newArrivals', () => {
+  const a = (artist: string, boughtAt: string | null, status: ShelfLike['status'] = 'new_arrival') => ({ record: { ...rec({ artist, status }), boughtAt } });
+  it('keeps only new arrivals, newest first, with no date last', () => {
+    const list = [a('Old', '2026-01-01T00:00:00.000Z'), a('Undated', null), a('Owned', '2026-05-01T00:00:00.000Z', 'owned'), a('New', '2026-03-01T00:00:00.000Z')];
+    expect(newArrivals(list).map((i) => i.record.artist)).toEqual(['New', 'Old', 'Undated']);
   });
 });

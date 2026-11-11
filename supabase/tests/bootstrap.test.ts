@@ -106,6 +106,51 @@ describe('bootstrap', () => {
     expect(membership.rows).toHaveLength(0);
   });
 
+  it('keeps the invitee’s own shelf when someone else is on it', async () => {
+    const own = await bootstrap(megan, 'Megan');
+    const shelf = await bootstrap(kahrman, 'Kahrman');
+    await db.query(`insert into public.shelf_members (shelf_id, user_id, role) values ($1, $2, 'member')`, [own, kahrman.id]);
+    await asUser(db, kahrman, () =>
+      db.query(`insert into public.shelf_invites (shelf_id, email, invited_by) values ($1, 'megan@example.com', $2)`, [shelf, kahrman.id]),
+    );
+    await bootstrap(megan);
+    expect((await db.query('select 1 from public.shelves where id = $1', [own])).rows).toHaveLength(1);
+  });
+
+  it('leaves another person’s empty shelf alone', async () => {
+    const stranger = await addUser(db, 'stranger@example.com');
+    const theirs = await bootstrap(stranger, 'Stranger');
+    const shelf = await bootstrap(kahrman, 'Kahrman');
+    await asUser(db, kahrman, () =>
+      db.query(`insert into public.shelf_invites (shelf_id, email, invited_by) values ($1, 'megan@example.com', $2)`, [shelf, kahrman.id]),
+    );
+    await bootstrap(megan, 'Megan');
+    expect((await db.query('select 1 from public.shelves where id = $1', [theirs])).rows).toHaveLength(1);
+  });
+
+  it('refuses a sign-in whose JWT has no email', async () => {
+    await db.query(`select set_config('request.jwt.claims', $1, false)`, [JSON.stringify({ sub: megan.id, role: 'authenticated' })]);
+    await db.exec('set role authenticated');
+    try {
+      await expect(db.query('select public.bootstrap(null)')).rejects.toThrow(/no email/);
+    } finally {
+      await db.exec('reset role');
+      await db.query(`select set_config('request.jwt.claims', '', false)`);
+    }
+    expect((await db.query('select 1 from public.shelf_members where user_id = $1', [megan.id])).rows).toHaveLength(0);
+  });
+
+  it('does not process an accepted invite again', async () => {
+    const shelf = await bootstrap(kahrman, 'Kahrman');
+    await asUser(db, kahrman, () =>
+      db.query(`insert into public.shelf_invites (shelf_id, email, invited_by) values ($1, 'megan@example.com', $2)`, [shelf, kahrman.id]),
+    );
+    await bootstrap(megan, 'Megan');
+    await asUser(db, kahrman, () => db.query('delete from public.shelf_members where shelf_id = $1 and user_id = $2', [shelf, megan.id]));
+    await bootstrap(megan);
+    expect((await db.query('select 1 from public.shelf_members where shelf_id = $1 and user_id = $2', [shelf, megan.id])).rows).toHaveLength(0);
+  });
+
   it('refuses a display name over 60 characters', async () => {
     await expect(bootstrap(kahrman, 'x'.repeat(61))).rejects.toThrow(/Name is too long/);
   });
