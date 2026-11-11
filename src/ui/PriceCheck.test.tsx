@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ShelfRecord } from '@/data/schema';
 import { PriceCheck } from './PriceCheck';
 
@@ -47,5 +47,35 @@ describe('PriceCheck', () => {
     render(<PriceCheck record={record({ nmEstimateLow: null, nmEstimateHigh: null })} />);
     expect(screen.getByText('No price yet: add a Near Mint estimate')).toBeInTheDocument();
     expect(screen.queryByText(/\$0/)).toBeNull();
+  });
+
+  it('has no Bought it when the record cannot be bought', () => {
+    render(<PriceCheck record={record()} buyable={false} />);
+    expect(screen.queryByRole('button', { name: 'Bought it' })).toBeNull();
+  });
+
+  it('shows the asking box without an estimate when buyable, but no verdict', async () => {
+    render(<PriceCheck record={record({ nmEstimateLow: null, nmEstimateHigh: null })} buyable onBought={async () => {}} />);
+    const asking = screen.getByRole('textbox', { name: "They're asking" });
+    await userEvent.type(asking, '12');
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Bought it' })).toBeInTheDocument();
+  });
+
+  it('says what Bought it will log, and logs it', async () => {
+    const onBought = vi.fn(async () => {});
+    render(<PriceCheck record={record()} buyable onBought={onBought} />);
+    expect(screen.getByText('Logs NM')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('radio', { name: 'VG+' }));
+    await userEvent.type(screen.getByRole('textbox', { name: "They're asking" }), '15');
+    expect(screen.getByText('Logs VG+ · $15 paid')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Bought it' }));
+    expect(onBought).toHaveBeenCalledWith({ grade: 'VG+', pricePaid: 15 });
+  });
+
+  it('reads a comma as cents', async () => {
+    render(<PriceCheck record={record()} buyable onBought={async () => {}} />);
+    await userEvent.type(screen.getByRole('textbox', { name: "They're asking" }), '15,50');
+    expect(screen.getByText('Logs NM · $15.50 paid')).toBeInTheDocument();
   });
 });

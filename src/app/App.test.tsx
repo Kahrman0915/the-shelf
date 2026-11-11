@@ -389,3 +389,63 @@ describe('the pile', () => {
     expect(screen.queryByRole('button', { name: /^New arrivals, / })).not.toBeInTheDocument();
   });
 });
+
+describe('Bought it on the price check', () => {
+  const WANTED: ShelfRecord = {
+    id: '00000000-0000-4000-8000-0000000000bb', shelfId: SHELF, status: 'wanted', wantsUpgrade: false, upgradeNote: null,
+    artist: 'Art Blakey', title: 'Moanin’', label: null, catalog: null, year: null, format: null, genre: 'jazz', discGrade: null, sleeveGrade: null,
+    pricePaid: null, nmEstimateLow: 40, nmEstimateHigh: 60, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null,
+    boughtAt: null, addedBy: K.userId, createdAt: '2026-06-01T00:00:00.000Z', updatedAt: '2026-06-01T00:00:00.000Z', deletedAt: null, importKey: null,
+  };
+
+  /** Open the shelf once so the phone has a copy, then put a wanted record straight into the notebook. */
+  async function openPriceCheck(record: ShelfRecord) {
+    const backend = returning();
+    const first = renderApp(backend);
+    await screen.findByText('Ahmad Jamal Trio');
+    first.unmount();
+    await db.records.put(record);
+    renderApp(backend, `/price/${record.id}`);
+    await screen.findByText('Art Blakey');
+    return backend;
+  }
+
+  async function logIt() {
+    await userEvent.click(await screen.findByRole('radio', { name: 'VG+' }));
+    await userEvent.type(screen.getByRole('textbox', { name: "They're asking" }), '15');
+    await userEvent.click(screen.getByRole('button', { name: 'Bought it' }));
+  }
+
+  it('Bought it logs the grade and price and offers Undo', async () => {
+    await openPriceCheck(WANTED);
+    await logIt();
+    expect(await screen.findByText('In New arrivals')).toBeInTheDocument();
+    const stored = await db.records.get(WANTED.id);
+    expect(stored).toMatchObject({ status: 'new_arrival', discGrade: 'VG+', pricePaid: 15 });
+  });
+
+  it('Undo puts it back on the want list', async () => {
+    await openPriceCheck(WANTED);
+    await logIt();
+    await userEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+    await waitFor(async () => expect(await db.records.get(WANTED.id)).toMatchObject({ status: 'wanted', discGrade: null, pricePaid: null }));
+    expect(screen.queryByText('In New arrivals')).toBeNull();
+  });
+
+  it('a double tap logs one purchase', async () => {
+    const backend = await openPriceCheck(WANTED);
+    const patch = vi.spyOn(backend, 'patchRecord');
+    await userEvent.click(await screen.findByRole('radio', { name: 'VG+' }));
+    await userEvent.type(screen.getByRole('textbox', { name: "They're asking" }), '15');
+    await userEvent.dblClick(screen.getByRole('button', { name: 'Bought it' }));
+    await screen.findByText('In New arrivals');
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(patch).toHaveBeenCalledTimes(1);
+  });
+
+  it('an owned record without an upgrade has no Bought it', async () => {
+    await openPriceCheck({ ...WANTED, status: 'owned' });
+    expect(screen.queryByRole('button', { name: 'Bought it' })).toBeNull();
+  });
+});

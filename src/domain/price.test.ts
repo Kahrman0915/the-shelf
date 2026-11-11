@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estimateRange, formatMoney, nmRangeOf, verdictFor } from './price';
+import { estimateRange, formatMoney, nmRangeOf, parsePrice, sanitizeAsking, verdictFor } from './price';
 
 const nm = { low: 40, high: 60 };
 
@@ -49,5 +49,31 @@ describe('formatMoney', () => {
   it('drops the cents on whole dollars', () => {
     expect(formatMoney(15)).toBe('$15');
     expect(formatMoney(15.5)).toBe('$15.50');
+  });
+});
+
+describe('parsePrice', () => {
+  it('reads plain, dollar-signed and decimal prices', () => {
+    expect(parsePrice('')).toBeNull();
+    expect(parsePrice('15')).toBe(15);
+    expect(parsePrice('$15')).toBe(15);
+    expect(parsePrice('15.5')).toBe(15.5);
+  });
+  it('reads a comma as a decimal point, or as a thousands separator before exactly three digits', () => {
+    expect(parsePrice('15,50')).toBe(15.5);
+    expect(parsePrice('1,200')).toBe(1200);
+  });
+  it('rounds to cents and refuses what is not a number', () => {
+    expect(parsePrice('15.555')).toBe(15.56);
+    expect(parsePrice('.')).toBeNull();
+    expect(parsePrice('abc')).toBeNull();
+  });
+});
+
+describe('sanitizeAsking', () => {
+  it('keeps digits and at most one dot or comma', () => {
+    expect(sanitizeAsking('15,5,0')).toBe('15,50');
+    expect(sanitizeAsking('$1.2.3')).toBe('1.23');
+    expect(sanitizeAsking('12')).toBe('12');
   });
 });

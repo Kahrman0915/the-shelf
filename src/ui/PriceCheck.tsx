@@ -1,17 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { ShelfRecord } from '@/data/schema';
 import type { Grade } from '@/domain/grades';
-import { estimateRange, nmRangeOf, verdictFor } from '@/domain/price';
+import { estimateRange, formatMoney, nmRangeOf, parsePrice, sanitizeAsking, verdictFor } from '@/domain/price';
 import { GradePicker } from './GradePicker';
-
-/** Digits and at most one dot, so "1.2.3" becomes "1.23" instead of a NaN that silently drops the verdict. */
-function sanitizeAsking(raw: string): string {
-  const cleaned = raw.replace(/[^0-9.]/g, '');
-  const dot = cleaned.indexOf('.');
-  if (dot === -1) return cleaned;
-  return cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1).replace(/\./g, '');
-}
 
 const TONE = {
   teal: { bar: 'bg-teal', word: 'text-teal-ink' },
@@ -19,12 +12,38 @@ const TONE = {
   brick: { bar: 'bg-brick', word: 'text-brick-ink' },
 } as const;
 
-export function PriceCheck({ record }: { record: ShelfRecord }) {
+export type BoughtInput = { grade: Grade; pricePaid: number | null };
+
+export function PriceCheck({
+  record,
+  buyable = false,
+  onBought,
+}: {
+  record: ShelfRecord;
+  buyable?: boolean;
+  onBought?: (input: BoughtInput) => Promise<void>;
+}) {
   const [grade, setGrade] = useState<Grade>('NM');
   const [asking, setAsking] = useState('');
   const nm = nmRangeOf(record);
   const range = nm ? estimateRange(nm, grade) : null;
-  const verdict = range && asking !== '' ? verdictFor(Number(asking), range) : null;
+  const price = parsePrice(asking);
+  const verdict = range ? verdictFor(price, range) : null;
+  // A ref, not just state: two taps before React re-renders must still log one purchase.
+  const running = useRef(false);
+  const [busy, setBusy] = useState(false);
+
+  async function bought() {
+    if (!onBought || running.current) return;
+    running.current = true;
+    setBusy(true);
+    try {
+      await onBought({ grade, pricePaid: price });
+    } finally {
+      running.current = false;
+      setBusy(false);
+    }
+  }
 
   return (
     <section className="flex flex-col gap-6 rounded-xl bg-surface-raised p-4">
@@ -40,7 +59,7 @@ export function PriceCheck({ record }: { record: ShelfRecord }) {
         <p className="text-base text-ink-muted">No price yet: add a Near Mint estimate</p>
       )}
 
-      {range && (
+      {(range || buyable) && (
         <label className="flex flex-col gap-2">
           <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted">They're asking</span>
           <span className="relative block">
@@ -64,6 +83,17 @@ export function PriceCheck({ record }: { record: ShelfRecord }) {
             <div className={cn('pt-0.5 font-display text-[28px] leading-7 tracking-[0.02em]', TONE[verdict.tone].word)}>{verdict.word}</div>
             <div className="text-[15px] leading-[22px] text-ink-muted">{verdict.line}</div>
           </div>
+        </div>
+      )}
+
+      {buyable && (
+        <div className="flex flex-col gap-2">
+          <Button className="h-14 rounded-lg font-display text-[22px] tracking-[0.04em]" disabled={busy} onClick={() => void bought()}>
+            Bought it
+          </Button>
+          <p className="text-[15px] leading-[22px] text-ink-muted">
+            {price !== null ? `Logs ${grade} · ${formatMoney(price)} paid` : `Logs ${grade}`}
+          </p>
         </div>
       )}
 

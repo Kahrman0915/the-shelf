@@ -16,6 +16,7 @@ import { CurrentShelfProvider } from './CurrentShelf';
 import { SignOutButton } from './SignOutButton';
 import { isShowPath } from './routes';
 import { SyncProvider } from './SyncContext';
+import { UndoBar, UndoProvider } from './UndoContext';
 import { useSession } from './useSession';
 
 const MODE_KEY = 'shelf:mode';
@@ -100,6 +101,7 @@ export default function App() {
   return (
     <CurrentShelfProvider value={{ shelfId: session.shelfId, userId: session.user.userId, email: session.user.email, signOut, signOutAndDelete }}>
       <SyncProvider backend={backend} shelfId={session.shelfId}>
+        <UndoProvider>
         <Routes>
           <Route
             path="/"
@@ -112,6 +114,8 @@ export default function App() {
           <Route path="/settings" element={<SettingsScreen />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        <UndoBar />
+        </UndoProvider>
       </SyncProvider>
     </CurrentShelfProvider>
   );
