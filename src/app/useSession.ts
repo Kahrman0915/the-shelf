@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BackendError, NO_SIGNAL, type Backend, type SignedIn } from '@/data/backend';
 import { pushOutbox } from '@/data/courier';
-import { clearPhone, readSession as remembered, writeSession, type RememberedSession, type ShelfDB } from '@/data/db';
+import {
+  PreviousPersonUnsent,
+  clearPhone,
+  clearPhoneIfNothingWaiting,
+  readSession as remembered,
+  rememberSession,
+  unsentFromPreviousPerson,
+  type ShelfDB,
+} from '@/data/db';
 
 export type Session =
   | { state: 'loading' }
@@ -12,13 +20,6 @@ export type Session =
   /** Someone else just signed in, and the previous person's changes haven't been sent. */
   | { state: 'previous-unsent'; user: SignedIn; count: number };
 
-/** Remember who this phone belongs to, so it can open offline. A different person means a clean notebook. */
-async function remember(db: ShelfDB, r: RememberedSession): Promise<void> {
-  const previous = await remembered(db);
-  if (previous && previous.userId !== r.userId) await clearPhone(db);
-  await writeSession(db, r);
-}
-
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function useSession(backend: Backend, db: ShelfDB) {
@@ -27,22 +28,24 @@ export function useSession(backend: Backend, db: ShelfDB) {
   const settle = useCallback(
     async (user: SignedIn) => {
       try {
-        const previous = await remembered(db);
-        if (previous && previous.userId !== user.userId) {
-          const count = await db.outbox.count();
-          if (count > 0) {
-            setSession({ state: 'previous-unsent', user, count });
-            return;
-          }
+        // Ask before the name screen too. rememberSession() checks again as it writes.
+        const count = await unsentFromPreviousPerson(db, user.userId);
+        if (count > 0) {
+          setSession({ state: 'previous-unsent', user, count });
+          return;
         }
         if (!(await backend.hasProfile(user.userId))) {
           setSession({ state: 'needs-name', user });
           return;
         }
         const shelfId = await backend.bootstrap(null);
-        await remember(db, { userId: user.userId, email: user.email, shelfId });
+        await rememberSession(db, { userId: user.userId, email: user.email, shelfId });
         setSession({ state: 'ready', user, shelfId });
       } catch (e) {
+        if (e instanceof PreviousPersonUnsent) {
+          setSession({ state: 'previous-unsent', user, count: e.count });
+          return;
+        }
         // No signal: open from the phone's copy if it belongs to this person. Any other failure is shown.
         const offline = e instanceof BackendError && e.message === NO_SIGNAL;
         const cached = offline ? await remembered(db) : null;
@@ -64,7 +67,7 @@ export function useSession(backend: Backend, db: ShelfDB) {
           await settle(user);
         } else {
           // Signed out or expired elsewhere. Unsent changes stay until whoever signs in next decides.
-          if ((await db.outbox.count()) === 0) await clearPhone(db);
+          await clearPhoneIfNothingWaiting(db);
           if (isLive()) setSession({ state: 'signed-out' });
         }
       } catch (e) {
@@ -90,9 +93,16 @@ export function useSession(backend: Backend, db: ShelfDB) {
 
   const chooseName = async (name: string) => {
     if (session.state !== 'needs-name') return;
+    const { user } = session;
     const shelfId = await backend.bootstrap(name); // errors go back to the name screen
-    await remember(db, { userId: session.user.userId, email: session.user.email, shelfId });
-    setSession({ state: 'ready', user: session.user, shelfId });
+    try {
+      await rememberSession(db, { userId: user.userId, email: user.email, shelfId });
+    } catch (e) {
+      if (!(e instanceof PreviousPersonUnsent)) throw e;
+      setSession({ state: 'previous-unsent', user, count: e.count });
+      return;
+    }
+    setSession({ state: 'ready', user, shelfId });
   };
 
   const retry = () => {
@@ -119,12 +129,14 @@ export function useSession(backend: Backend, db: ShelfDB) {
     setSession({ state: 'signed-out' });
   };
 
-  /** Sends waiting changes first. If any are left, says how many and stays signed in. */
+  /** Sends waiting changes first. If any are left, says how many and stays signed in. The phone is
+   *  cleared (only if nothing is waiting, checked in the same transaction) before the network sign-out,
+   *  so a change saved meanwhile survives. */
   const signOut = async (): Promise<{ unsent: number } | null> => {
     await pushOutbox(db, backend);
-    const unsent = await db.outbox.count();
-    if (unsent > 0) return { unsent };
-    await signOutAndDelete();
+    if (!(await clearPhoneIfNothingWaiting(db))) return { unsent: await db.outbox.count() };
+    await forgetLogin();
+    setSession({ state: 'signed-out' });
     return null;
   };
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeBackend } from '@/test/fakeBackend';
-import { REJECTED } from './backend';
+import { REJECTED, type ShelfWriter } from './backend';
 import { discardPostcard, pushOutbox, retryPostcard, syncOnce } from './courier';
 import { ShelfDB, writeSession } from './db';
 import { savePostcards, type NewPostcard } from './outbox';
@@ -70,6 +70,41 @@ const serverRows = async (id: string) => (await backend.recordsSince(SHELF, null
 const outbox = () => db.outbox.orderBy('seq').toArray();
 
 describe('pushOutbox', () => {
+  it('runs one at a time per phone, so an overlapping run can’t resend an older change last', async () => {
+    await savePostcards(db, [patch(B, { notes: 'X' }), patch(B, { notes: 'Y' })]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let calls = 0;
+    const held: ShelfWriter = {
+      insertRecord: (row) => backend.insertRecord(row),
+      setRating: (recordId, userId, value) => backend.setRating(recordId, userId, value),
+      patchRecord: async (id, fields) => {
+        calls++;
+        if (calls === 1) await gate;
+        return backend.patchRecord(id, fields);
+      },
+    };
+
+    const first = pushOutbox(db, held);
+    const second = pushOutbox(db, held);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(calls).toBe(1); // the second run waits for the first to finish
+    release();
+    expect(await first).toEqual({ sent: 2, rejected: 0, noSignal: false });
+    expect(await second).toEqual({ sent: 0, rejected: 0, noSignal: false });
+    expect(backend.recordRow(B)?.notes).toBe('Y');
+  });
+
+  it('a failed run doesn’t stop the next one', async () => {
+    await savePostcards(db, [patch(B, { notes: 'X' })]);
+    const broken = vi.spyOn(db.outbox, 'where').mockImplementationOnce(() => {
+      throw new Error('Disk is full');
+    });
+    await expect(pushOutbox(db, backend)).rejects.toThrow('Disk is full');
+    broken.mockRestore();
+    expect(await pushOutbox(db, backend)).toEqual({ sent: 1, rejected: 0, noSignal: false });
+  });
+
   it('sends postcards in order', async () => {
     await savePostcards(db, [create(A)]);
     await savePostcards(db, [patch(A, { discGrade: 'VG+' })]);

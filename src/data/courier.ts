@@ -20,12 +20,24 @@ async function send(writer: ShelfWriter, p: Postcard): Promise<'sent' | 'missing
   }
 }
 
+/** The last push run started on each phone's notebook. */
+const runs = new WeakMap<ShelfDB, Promise<unknown>>();
+
 /**
  * The courier's drop-off run: send waiting postcards oldest first, one at a time.
  * A record with a rejected postcard is held: its later postcards may depend on the rejected one.
  * No signal stops the run and keeps everything for next time.
+ * Runs on one notebook never overlap (sync, sign-out, anyone): an overlapping run could resend an
+ * older change after a newer one had landed. A run waits for the one before it, failed or not.
  */
-export async function pushOutbox(db: ShelfDB, writer: ShelfWriter): Promise<PushResult> {
+export function pushOutbox(db: ShelfDB, writer: ShelfWriter): Promise<PushResult> {
+  const go = () => pushRun(db, writer);
+  const run = (runs.get(db) ?? Promise.resolve()).then(go, go);
+  runs.set(db, run);
+  return run;
+}
+
+async function pushRun(db: ShelfDB, writer: ShelfWriter): Promise<PushResult> {
   const result: PushResult = { sent: 0, rejected: 0, noSignal: false };
   const held = new Set((await db.outbox.where('state').equals('rejected').toArray()).map((p) => p.recordId));
   let after = 0;

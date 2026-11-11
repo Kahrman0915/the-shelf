@@ -37,15 +37,17 @@ function renderApp(backend: FakeBackend, path = '/') {
   );
 }
 
-/** Open the shelf once so the phone has a copy, then leave a change on a record waiting to send. Returns that record's id. */
-async function leaveAChangeWaiting(backend: FakeBackend): Promise<string> {
+/** Open the shelf once so the phone has a copy, then leave changes on a record waiting to send. Returns that record's id. */
+async function leaveAChangeWaiting(backend: FakeBackend, changes = 1): Promise<string> {
   const first = renderApp(backend);
   await screen.findByText('Ahmad Jamal Trio');
   first.unmount();
   const record = (await db.records.toArray())[0];
-  await savePostcards(db, [
-    { kind: 'record.patch', shelfId: SHELF, recordId: record.id, userId: K.userId, createdAt: new Date().toISOString(), fields: { notes: 'Play side B first' } },
-  ]);
+  const notes = ['Ask Megan', 'Play side B first'].slice(-changes);
+  await savePostcards(
+    db,
+    notes.map((n) => ({ kind: 'record.patch' as const, shelfId: SHELF, recordId: record.id, userId: K.userId, createdAt: new Date().toISOString(), fields: { notes: n } })),
+  );
   return record.id;
 }
 
@@ -217,6 +219,36 @@ describe('signing out', () => {
     expect(await db.outbox.count()).toBe(1);
   });
 
+  it('counts several waiting changes in the sign-out question', async () => {
+    const backend = returning();
+    await leaveAChangeWaiting(backend, 2);
+    backend.online = false;
+    renderApp(backend, '/settings');
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('2 changes haven’t reached the shelf yet. Signing out deletes them.');
+  });
+
+  it('a change saved while the sign-out reaches the server is not wiped', async () => {
+    const backend = returning();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let signingOut = false;
+    const signOut = backend.signOut.bind(backend);
+    backend.signOut = async () => {
+      signingOut = true;
+      await gate;
+      return signOut();
+    };
+    renderApp(backend, '/settings');
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+    await waitFor(() => expect(signingOut).toBe(true));
+    const id = crypto.randomUUID();
+    await savePostcards(db, [{ kind: 'record.patch', shelfId: SHELF, recordId: id, userId: K.userId, createdAt: new Date().toISOString(), fields: { notes: 'Late' } }]);
+    release();
+    expect(await screen.findByLabelText('Your email')).toBeInTheDocument();
+    expect(await db.outbox.count()).toBe(1);
+  });
+
   it('Sign out and delete clears the phone', async () => {
     const backend = returning();
     await leaveAChangeWaiting(backend);
@@ -266,6 +298,17 @@ describe('when the sign-in has expired', () => {
     expect(await screen.findByLabelText('What should we call you?')).toBeInTheDocument();
     expect(await db.outbox.count()).toBe(0);
     expect(await db.records.count()).toBe(0);
+  });
+
+  it('counts several of the previous person’s changes', async () => {
+    const backend = kahrmansShelf({ users: { [K.email]: K.userId, [MEG.email]: MEG.userId }, profiles: { [K.userId]: 'Kahrman' }, signedIn: K });
+    await leaveAChangeWaiting(backend, 2);
+    backend.signedIn = null;
+    renderApp(backend);
+    await signInAs(MEG.email);
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+      '2 changes from the previous person on this phone haven’t been sent. Continuing deletes them.',
+    );
   });
 
   it('a server failure while opening shows the error, not the phone’s copy', async () => {
