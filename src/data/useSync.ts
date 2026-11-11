@@ -40,13 +40,15 @@ export function useSync(
     let tail: Promise<unknown> = Promise.resolve();
     let syncQueued = false;
 
-    /** Runs the task after everything queued before it. Never rejects: a failure becomes the problem. */
-    function exclusive(task: () => Promise<void>): Promise<void> {
+    /** Runs the task after everything queued before it. Never rejects: a failure becomes the problem (and resolves false). */
+    function exclusive(task: () => Promise<void>): Promise<boolean> {
       const next = tail.then(async () => {
         try {
           await task();
+          return true;
         } catch (e) {
           if (live) setStatus((s) => ({ ...s, problem: describeSyncError(e) }));
+          return false;
         }
       });
       tail = next;
@@ -54,8 +56,8 @@ export function useSync(
     }
 
     /** One run is queued at a time while waiting; one asked for mid-run runs once more afterwards. */
-    function sync(): Promise<void> {
-      if (syncQueued) return tail as Promise<void>;
+    function sync(): Promise<boolean> {
+      if (syncQueued) return tail as Promise<boolean>;
       syncQueued = true;
       return exclusive(async () => {
         syncQueued = false;
@@ -69,14 +71,14 @@ export function useSync(
     api.current = {
       runNow: () => void sync(),
       retry: async (seq) => {
-        await retryPostcard(database, seq);
-        await sync();
+        if (await exclusive(() => retryPostcard(database, seq))) await sync();
       },
-      discard: (seq) =>
-        exclusive(async () => {
+      discard: async (seq) => {
+        await exclusive(async () => {
           await discardPostcard(database, backend, shelfId, seq);
           if (live) setStatus({ lastSyncedAt: new Date().toISOString(), problem: null });
-        }),
+        });
+      },
     };
 
     const whenVisible = () => {

@@ -106,4 +106,30 @@ describe('useSync', () => {
     expect(log).toEqual(['start 1', 'end 1', 'start 2', 'end 2']);
     expect(await db.outbox.count()).toBe(0);
   });
+
+  it('retry sends a rejected postcard again', async () => {
+    const { result } = renderHook(() => useSync(backend, SHELF, db));
+    await waitFor(() => expect(result.current.lastSyncedAt).not.toBeNull());
+    await savePostcards(db, [{ kind: 'record.create', shelfId: SHELF, recordId: A, userId: ME, createdAt: WHEN, fields: record(A) }]);
+    backend.rejectNext = 'The shelf refused this change. (x)';
+    act(() => result.current.runNow());
+    await waitFor(async () => expect((await db.outbox.toArray())[0]?.state).toBe('rejected'));
+    const seq = (await db.outbox.toArray())[0].seq;
+
+    await act(async () => {
+      await result.current.retry(seq);
+    });
+    expect(await db.outbox.count()).toBe(0);
+    expect(backend.recordRow(A)).toBeDefined();
+  });
+
+  it('turns a retry failure into the problem, not an unhandled rejection', async () => {
+    const { result } = renderHook(() => useSync(backend, SHELF, db));
+    await waitFor(() => expect(result.current.lastSyncedAt).not.toBeNull());
+    vi.spyOn(db.outbox, 'update').mockRejectedValueOnce(new Error('Disk is full'));
+    await act(async () => {
+      await result.current.retry(1);
+    });
+    expect(result.current.problem).toEqual({ kind: 'failed', message: 'Disk is full' });
+  });
 });
