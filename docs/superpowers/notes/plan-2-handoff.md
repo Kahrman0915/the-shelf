@@ -35,3 +35,26 @@ From Plan 2's final review (2026-09-19). Plan 3 adds the outbox and the first wr
 - `settle()` falls back to the phone's copy on any server error, not only no-signal.
 - Missing tests: `bootstrap()` shared-shelf-not-deleted, others' empty shelf untouched, JWT without email, accepted invite not re-processed; a `useSync` unit test.
 - Tidy: `shelves.created_by`/`records.added_by` FK delete behaviour; members leaving a shelf; `(select auth.uid())` in policies.
+
+# Plan 3 → Plan 4 handoff
+
+From Plan 3's final whole-branch review (2026-11-11). Plan 3 shipped the outbox, the courier, Bought it (price check and sheet), Undo, Didn't buy it, rating on the Record screen, New arrivals and the poster.
+
+## Must know in Plan 4
+- **Every write goes through `perform` → `savePostcards`.** New write features (add/edit, delete, want list, cover photos) add postcard kinds to `src/data/outbox.ts` and handle them in `applyPostcard` and `src/data/courier.ts`. Nothing else may write the notebook from a postcard.
+- **Push runs are serialized per notebook** (`courier.ts`), and every pull checks the remembered session inside its own transaction. Keep both properties.
+- **The courier can't tell "not signed in" from "refused".** A dead login is now caught at startup, but a login that dies mid-session still shows waiting changes as rejected. Consider checking the session before pushing.
+- **Sign-out is local-only** (`scope: 'local'`): signing out on one device no longer signs out the others.
+- **Hung reads:** supabase-js retries a timed-out GET three times, so a hung read takes about 67 s before it counts as no signal (unless the go-live fix below landed).
+- Open questions carried from the spec (§12): buying a second copy of something you own; whether a rating can be cleared; "Back to the want list" as a second choice in Didn't buy it.
+
+## Carry-overs
+- GradePicker roving tabindex (two pickers arrive with the edit sheet); RatingRecords has no arrow-key radiogroup behaviour either.
+- Native search clear (×) is browser blue; the main bundle is still large.
+- Live regions: the Record screen's rating confirmation and the Undo bar mount with their text, so some screen readers may not announce them.
+- Test gaps the task reviews listed: the Record screen alert path, the sheet's save-failure path, the pile's 3-bar cap, midnight theme on `/arrivals`.
+- Record screen design notes from Kahrman's first look: the artist shows twice (poster band and heading); the poster runs edge to edge with square corners.
+
+## Go-live notes
+- `npx supabase db push` applies **two** migrations: `20261111120000_shelve_on_first_rating.sql` and `20261111120100_bootstrap_requires_email.sql`. Run `npx supabase migration list --linked` first to confirm production lists both Plan 2 migrations.
+- The migrations go live **before** the app: without the trigger, a rating sent from the new app would leave the record in New arrivals on the server.
