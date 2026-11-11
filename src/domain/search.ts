@@ -2,10 +2,11 @@ export type SearchableRecord = { artist: string; title: string; label: string | 
 
 export function normalise(s: string): string {
   return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/æ/g, 'ae')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 }
 

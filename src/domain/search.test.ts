@@ -7,6 +7,12 @@ describe('search', () => {
   it('ignores case, accents and punctuation', () => {
     expect(normalise('Café  Déjà-Vu!')).toBe('cafe deja vu');
   });
+  it('keeps letters from any alphabet', () => {
+    expect(normalise('Mötley Crüe')).toBe('motley crue');
+    expect(normalise('Røyksopp')).toBe('røyksopp');
+    expect(normalise('Sigur Rós – Ágætis byrjun')).toBe('sigur ros agaetis byrjun');
+    expect(normalise('Straße')).toBe('straße');
+  });
   it('matches every word anywhere in artist, title, label or catalog', () => {
     expect(matchesQuery(pershing, 'jamal pershing')).toBe(true);
     expect(matchesQuery(pershing, 'lp-628')).toBe(true);

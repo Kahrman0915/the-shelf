@@ -37,6 +37,7 @@
   --label-bluenote: #1f5ca6;
   --label-argo: #6a4c93;
   --label-other: var(--genre-misc);
+  --poster-sky: var(--ink);
 
   /* shadcn's names, pointed at ours */
   --background: var(--surface);
@@ -90,6 +91,7 @@
   --label-impulse: #f0944f;
   --label-bluenote: #6e9fe0;
   --label-argo: #a98bd3;
+  --poster-sky: var(--surface-sunk);
 
   --ring: var(--bourbon);
 }
