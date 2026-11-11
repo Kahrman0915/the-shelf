@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FakeBackend, collectionRows } from '@/test/fakeBackend';
-import { ShelfDB } from './db';
+import type { ShelfSource } from './backend';
+import { ShelfDB, clearPhone, writeSession } from './db';
 import { savePostcards } from './outbox';
 import { RowError, type RecordRow } from './rowMapping';
 import { forgetLastPull, pullShelf } from './sync';
@@ -12,8 +13,9 @@ let db: ShelfDB;
 let backend: FakeBackend;
 let rows: { records: RecordRow[]; ratings: ReturnType<typeof collectionRows>['ratings'] };
 
-beforeEach(() => {
+beforeEach(async () => {
   db = new ShelfDB(`sync-${crypto.randomUUID()}`);
+  await writeSession(db, { userId: K, email: 'kahrman@example.com', shelfId: SHELF });
   rows = collectionRows(SHELF, K);
   backend = new FakeBackend({
     records: rows.records,
@@ -108,6 +110,45 @@ describe('pullShelf', () => {
     expect((await db.records.get(first.id))?.notes).toBe('From the other phone');
     expect((await db.records.get(first.id))?.artist).toBe(first.artist);
     expect((await db.records.get(second.id))?.notes).toBe('Mine');
+  });
+
+  /** The backend, with the records fetch held until `release()`. */
+  function heldSource(): { source: ShelfSource; release: () => void } {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const source: ShelfSource = {
+      recordsSince: async (shelfId, since) => {
+        await gate;
+        return backend.recordsSince(shelfId, since);
+      },
+      ratings: (shelfId) => backend.ratings(shelfId),
+      members: (shelfId) => backend.members(shelfId),
+    };
+    return { source, release };
+  }
+
+  it('a pull that lands after the phone was cleared writes nothing', async () => {
+    const { source, release } = heldSource();
+    const pulling = pullShelf(db, source, SHELF);
+    await clearPhone(db);
+    release();
+    await pulling;
+    expect(await db.records.count()).toBe(0);
+    expect(await db.ratings.count()).toBe(0);
+    expect(await db.members.count()).toBe(0);
+    expect(await db.meta.count()).toBe(0);
+  });
+
+  it('a pull that lands after someone else’s shelf was opened writes nothing', async () => {
+    const { source, release } = heldSource();
+    const pulling = pullShelf(db, source, SHELF);
+    const OTHER_SHELF = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    await clearPhone(db);
+    await writeSession(db, { userId: '22222222-2222-4222-8222-222222222222', email: 'meg@example.com', shelfId: OTHER_SHELF });
+    release();
+    await pulling;
+    expect(await db.records.count()).toBe(0);
+    expect(await db.members.count()).toBe(0);
   });
 });
 

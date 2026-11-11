@@ -83,4 +83,10 @@ describe('Shelf settings', () => {
     expect(await screen.findByLabelText('Your email')).toBeInTheDocument();
     expect(await db.members.count()).toBe(0);
   });
+
+  it('shows the storage warning when the phone may clear changes', async () => {
+    await db.meta.put({ key: 'storagePersisted', value: 'false' });
+    renderSettings(backendFor(K));
+    expect(await screen.findByText('This phone may clear unsent changes if it runs low on space.')).toBeInTheDocument();
+  });
 });

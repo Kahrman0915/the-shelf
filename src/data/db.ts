@@ -43,6 +43,24 @@ export class ShelfDB extends Dexie {
 
 export const db = new ShelfDB();
 
+/** Who this phone's notebook belongs to, so it can open offline. */
+export type RememberedSession = { userId: string; email: string; shelfId: string };
+const SESSION_KEY = 'session';
+
+export async function readSession(database: ShelfDB): Promise<RememberedSession | null> {
+  const row = await database.meta.get(SESSION_KEY);
+  if (!row) return null;
+  try {
+    return JSON.parse(row.value) as RememberedSession;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeSession(database: ShelfDB, session: RememberedSession): Promise<void> {
+  await database.meta.put({ key: SESSION_KEY, value: JSON.stringify(session) });
+}
+
 /** Empty the notebook: used on sign-out and when a different person signs in. */
 export async function clearPhone(database: ShelfDB): Promise<void> {
   await database.transaction('rw', [database.records, database.ratings, database.members, database.meta, database.outbox], async () => {

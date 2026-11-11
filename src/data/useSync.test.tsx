@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeBackend } from '@/test/fakeBackend';
-import { ShelfDB } from './db';
+import { ShelfDB, writeSession } from './db';
 import { savePostcards } from './outbox';
 import type { ShelfRecord } from './schema';
 import { useSync } from './useSync';
@@ -23,8 +23,9 @@ function record(id: string): ShelfRecord {
 let db: ShelfDB;
 let backend: FakeBackend;
 
-beforeEach(() => {
+beforeEach(async () => {
   db = new ShelfDB(`usesync-${crypto.randomUUID()}`);
+  await writeSession(db, { userId: ME, email: 'me@example.com', shelfId: SHELF });
   backend = new FakeBackend({});
 });
 afterEach(async () => {

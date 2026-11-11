@@ -3,7 +3,7 @@ import { FakeBackend } from '@/test/fakeBackend';
 import { boughtIt, boughtNew, buyKind, didntBuyIt, perform, rate, type Ctx } from './actions';
 import { BackendError } from './backend';
 import { pushOutbox } from './courier';
-import { ShelfDB } from './db';
+import { ShelfDB, writeSession } from './db';
 import { recordToRow } from './rowMapping';
 import type { ShelfRecord } from './schema';
 import { pullShelf } from './sync';
@@ -185,6 +185,7 @@ describe('undo after the purchase reached the server', () => {
 
   beforeEach(async () => {
     db = new ShelfDB(`actions-${crypto.randomUUID()}`);
+    await writeSession(db, { userId: ME, email: 'me@example.com', shelfId: SHELF });
     fake = new FakeBackend({ records: [recordToRow(want())], ratings: [], members: [] });
     await pullShelf(db, fake, SHELF);
   });

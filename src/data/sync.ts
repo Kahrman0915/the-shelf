@@ -1,5 +1,5 @@
 import { BackendError, type ShelfSource } from './backend';
-import type { ShelfDB } from './db';
+import { readSession, type ShelfDB } from './db';
 import { applyPostcard } from './outbox';
 import { ratingFromRow, recordFromRow } from './rowMapping';
 
@@ -11,6 +11,7 @@ const lastPulledKey = (shelfId: string) => `lastPulledAt:${shelfId}`;
 /**
  * The courier's pickup run: fetch what changed on the shelf since last time, plus every rating and member,
  * check it all, then write it in one go. If anything fails, the phone keeps what it had.
+ * Writes nothing unless the phone still holds this shelf (its remembered session).
  */
 export async function pullShelf(db: ShelfDB, source: ShelfSource, shelfId: string): Promise<void> {
   const last = (await db.meta.get(lastPulledKey(shelfId)))?.value ?? null;
@@ -22,6 +23,8 @@ export async function pullShelf(db: ShelfDB, source: ShelfSource, shelfId: strin
   const newest = records.reduce<string | null>((max, r) => (max === null || Date.parse(r.updatedAt) > Date.parse(max) ? r.updatedAt : max), last);
 
   await db.transaction('rw', [db.records, db.ratings, db.members, db.meta, db.outbox], async () => {
+    // The phone was cleared, or opened someone else's shelf, while this pull was on its way: drop it.
+    if ((await readSession(db))?.shelfId !== shelfId) return;
     await db.records.bulkPut(records);
     const onShelf = await db.records.where('shelfId').equals(shelfId).primaryKeys();
     await db.ratings.where('recordId').anyOf(onShelf).delete();

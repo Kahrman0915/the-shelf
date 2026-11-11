@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { Member } from './backend';
 import { db } from './db';
-import type { Postcard } from './outbox';
+import { storageKept, type Postcard } from './outbox';
 import type { ShelfRecord } from './schema';
 
 export type ShelfItem = { record: ShelfRecord; myRating: number | undefined };
@@ -23,6 +23,11 @@ export function useRecord(id: string | undefined): ShelfRecord | null | undefine
 
 export function useMembers(shelfId: string): Member[] | undefined {
   return useLiveQuery(() => db.members.where('shelfId').equals(shelfId).toArray(), [shelfId]);
+}
+
+/** Whether the browser agreed to keep this phone's data; null until it has been asked. */
+export function useStorageKept(): boolean | null | undefined {
+  return useLiveQuery(() => storageKept(db), []);
 }
 
 /** Every postcard still waiting or rejected, oldest first. */

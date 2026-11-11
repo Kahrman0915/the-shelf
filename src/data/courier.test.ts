@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeBackend } from '@/test/fakeBackend';
 import { REJECTED } from './backend';
 import { discardPostcard, pushOutbox, retryPostcard, syncOnce } from './courier';
-import { ShelfDB } from './db';
+import { ShelfDB, writeSession } from './db';
 import { savePostcards, type NewPostcard } from './outbox';
 import { recordToRow } from './rowMapping';
 import type { ShelfRecord } from './schema';
@@ -57,6 +57,7 @@ let backend: FakeBackend;
 
 beforeEach(async () => {
   db = new ShelfDB(`courier-${crypto.randomUUID()}`);
+  await writeSession(db, { userId: ME, email: 'me@example.com', shelfId: SHELF });
   backend = new FakeBackend({ records: [recordToRow(record(B, { discGrade: 'NM', notes: 'Server notes' }))], ratings: [], members: [] });
   await pullShelf(db, backend, SHELF);
 });
