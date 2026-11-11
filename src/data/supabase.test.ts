@@ -22,8 +22,43 @@ describe('fetchWithTimeout', () => {
       new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))),
   );
 
-  it('gives up on a request that takes too long, with a TimeoutError', async () => {
-    await expect(fetchWithTimeout(20, hanging)('https://x.supabase.co/rest/v1/records')).rejects.toMatchObject({ name: 'TimeoutError' });
+  it('gives up on a request that takes too long, as an AbortError so postgrest-js does not retry it', async () => {
+    await expect(fetchWithTimeout(20, hanging)('https://x.supabase.co/rest/v1/records')).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('hands a normal response back unchanged', async () => {
+    const response = new Response('[]');
+    await expect(fetchWithTimeout(60_000, async () => response)('https://x.supabase.co/rest/v1/records')).resolves.toBe(response);
+  });
+
+  describe('without AbortSignal.timeout (Safari before 16)', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
+    it('still aborts after the timeout, as an AbortError', async () => {
+      vi.useFakeTimers();
+      const original = AbortSignal.timeout;
+      vi.stubGlobal('AbortSignal', Object.assign(function () {}, { any: AbortSignal.any, abort: AbortSignal.abort }));
+      expect((AbortSignal as unknown as { timeout?: unknown }).timeout).toBeUndefined();
+      expect(original).toBeTypeOf('function');
+      const request = fetchWithTimeout(FETCH_TIMEOUT_MS, hanging)('https://x.supabase.co/rest/v1/records');
+      const outcome = expect(request).rejects.toMatchObject({ name: 'AbortError' });
+      await vi.advanceTimersByTimeAsync(FETCH_TIMEOUT_MS - 1);
+      let settled = false;
+      request.catch(() => {}).finally(() => (settled = true));
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await outcome;
+    });
+
+    it('lets a normal response through', async () => {
+      vi.stubGlobal('AbortSignal', Object.assign(function () {}, { any: AbortSignal.any }));
+      const response = new Response('[]');
+      await expect(fetchWithTimeout(FETCH_TIMEOUT_MS, async () => response)('https://x.supabase.co/rest/v1/records')).resolves.toBe(response);
+    });
   });
 
   it('still lets the caller cancel it', async () => {

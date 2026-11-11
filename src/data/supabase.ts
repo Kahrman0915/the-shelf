@@ -25,14 +25,29 @@ export const AUTH_STORAGE_KEY = 'the-shelf-auth';
  *  for minutes; past this it counts as no signal (see offlineLooking() in supabaseBackend.ts). */
 export const FETCH_TIMEOUT_MS = 15_000;
 
-/** `fetch`, but giving up with a TimeoutError after `ms`. A caller's own signal still cancels it. */
+/** A signal that aborts after `ms`. AbortSignal.timeout needs Safari 16; older ones get a timer. */
+function timeoutSignal(ms: number): AbortSignal {
+  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms);
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(new DOMException('The request timed out.', 'TimeoutError')), ms);
+  return controller.signal;
+}
+
+/** `fetch`, but giving up after `ms`. Our own timeout rejects as an AbortError, not a TimeoutError:
+ *  postgrest-js retries a rejected read 3 times (1/2/4 s apart), but never an AbortError, and a
+ *  hung read must not take over a minute to report no signal. A caller's own signal still cancels it. */
 export function fetchWithTimeout(ms = FETCH_TIMEOUT_MS, base: typeof fetch = (input, init) => fetch(input, init)): typeof fetch {
-  return (input, init) => {
-    const timeout = AbortSignal.timeout(ms);
+  return async (input, init) => {
+    const timeout = timeoutSignal(ms);
     const own = init?.signal;
     // AbortSignal.any is newer than AbortSignal.timeout; without it, the caller's signal wins.
     const signal = own ? (typeof AbortSignal.any === 'function' ? AbortSignal.any([own, timeout]) : own) : timeout;
-    return base(input, { ...init, signal });
+    try {
+      return await base(input, { ...init, signal });
+    } catch (error) {
+      if (timeout.aborted && !own?.aborted) throw new DOMException('The request timed out.', 'AbortError');
+      throw error;
+    }
   };
 }
 
