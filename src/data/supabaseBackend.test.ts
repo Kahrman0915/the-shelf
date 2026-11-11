@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BackendError } from './backend';
+import { BackendError, NO_SIGNAL, REJECTED } from './backend';
 import { AUTH_STORAGE_KEY } from './supabase';
-import { supabaseBackend } from './supabaseBackend';
+import { rejectionReason, supabaseBackend } from './supabaseBackend';
 
 /** A chainable stand-in for a Supabase PostgrestFilterBuilder: every filter/order method returns
  *  the same object, and it resolves (like the real one does when awaited) when range() is called,
@@ -105,5 +105,129 @@ describe('supabaseBackend().signOut', () => {
     } finally {
       Storage.prototype.removeItem = original;
     }
+  });
+});
+
+type Result = { data?: unknown; error?: { code?: string; message: string } | null };
+
+/** A client whose records/ratings tables record each call and answer from a queue per operation. */
+function writeClient(answers: { insert?: Result[]; update?: Result[] }) {
+  const calls: { op: string; args: unknown[] }[] = [];
+  const queue = { insert: [...(answers.insert ?? [])], update: [...(answers.update ?? [])] };
+  const next = (op: 'insert' | 'update'): Result => queue[op].shift() ?? { data: [], error: null };
+  const client = {
+    from: (table: string) => ({
+      insert: (...args: unknown[]) => {
+        calls.push({ op: `${table}.insert`, args });
+        return Promise.resolve(next('insert'));
+      },
+      update: (...args: unknown[]) => {
+        calls.push({ op: `${table}.update`, args });
+        const chain = {
+          eq(...a: unknown[]) {
+            calls.push({ op: `${table}.eq`, args: a });
+            return chain;
+          },
+          select(...a: unknown[]) {
+            calls.push({ op: `${table}.select`, args: a });
+            return Promise.resolve(next('update'));
+          },
+        };
+        return chain;
+      },
+    }),
+  } as never;
+  return { client, calls };
+}
+
+const NEW_ROW = { id: 'rec-1' } as never;
+
+describe('supabaseBackend().insertRecord', () => {
+  it('resolves inserted', async () => {
+    const { client, calls } = writeClient({ insert: [{ error: null }] });
+    await expect(supabaseBackend(client).insertRecord(NEW_ROW)).resolves.toBe('inserted');
+    expect(calls[0]).toEqual({ op: 'records.insert', args: [NEW_ROW] });
+  });
+
+  it('resolves already-there on a duplicate key', async () => {
+    const { client } = writeClient({ insert: [{ error: { code: '23505', message: 'duplicate key' } }] });
+    await expect(supabaseBackend(client).insertRecord(NEW_ROW)).resolves.toBe('already-there');
+  });
+
+  it('throws NO_SIGNAL when the request cannot reach the server', async () => {
+    const { client } = writeClient({ insert: [{ error: { message: 'Failed to fetch' } }] });
+    await expect(supabaseBackend(client).insertRecord(NEW_ROW)).rejects.toThrow(new BackendError(NO_SIGNAL));
+  });
+
+  it('throws the plain-words permission reason when the shelf says no', async () => {
+    const { client } = writeClient({ insert: [{ error: { code: '42501', message: 'permission denied for table records' } }] });
+    await expect(supabaseBackend(client).insertRecord(NEW_ROW)).rejects.toThrow(new BackendError(REJECTED.permission));
+  });
+});
+
+describe('supabaseBackend().patchRecord', () => {
+  it('updates by id and asks for the id back, so a missing row is noticed', async () => {
+    const { client, calls } = writeClient({ update: [{ data: [{ id: 'rec-1' }], error: null }] });
+    await expect(supabaseBackend(client).patchRecord('rec-1', { status: 'owned' })).resolves.toBe('patched');
+    expect(calls).toEqual([
+      { op: 'records.update', args: [{ status: 'owned' }] },
+      { op: 'records.eq', args: ['id', 'rec-1'] },
+      { op: 'records.select', args: ['id'] },
+    ]);
+  });
+
+  it('resolves missing when no row matched', async () => {
+    const { client } = writeClient({ update: [{ data: [], error: null }] });
+    await expect(supabaseBackend(client).patchRecord('rec-1', { status: 'owned' })).resolves.toBe('missing');
+  });
+
+  it('throws NO_SIGNAL offline', async () => {
+    const { client } = writeClient({ update: [{ error: { message: 'NetworkError' } }] });
+    await expect(supabaseBackend(client).patchRecord('rec-1', {})).rejects.toThrow(new BackendError(NO_SIGNAL));
+  });
+});
+
+describe('supabaseBackend().setRating', () => {
+  it('updates first, and inserts when there was no rating to update', async () => {
+    const { client, calls } = writeClient({ update: [{ data: [], error: null }], insert: [{ error: null }] });
+    await supabaseBackend(client).setRating('rec-1', 'user-1', 4);
+    expect(calls.map((c) => c.op)).toEqual(['ratings.update', 'ratings.eq', 'ratings.eq', 'ratings.select', 'ratings.insert']);
+    expect(calls[0].args).toEqual([{ value: 4 }]);
+    expect(calls[4].args).toEqual([{ record_id: 'rec-1', user_id: 'user-1', value: 4 }]);
+  });
+
+  it('does not insert when the update found the rating', async () => {
+    const { client, calls } = writeClient({ update: [{ data: [{ record_id: 'rec-1' }], error: null }] });
+    await supabaseBackend(client).setRating('rec-1', 'user-1', 4);
+    expect(calls.some((c) => c.op === 'ratings.insert')).toBe(false);
+  });
+
+  it('updates again when the insert loses a race to the same person on another phone', async () => {
+    const { client, calls } = writeClient({
+      update: [{ data: [], error: null }, { data: [{ record_id: 'rec-1' }], error: null }],
+      insert: [{ error: { code: '23505', message: 'duplicate key' } }],
+    });
+    await supabaseBackend(client).setRating('rec-1', 'user-1', 5);
+    expect(calls.filter((c) => c.op === 'ratings.update')).toHaveLength(2);
+  });
+
+  it('throws a plain reason when the shelf refuses the value', async () => {
+    const { client } = writeClient({ update: [{ error: { code: '23514', message: 'check violation' } }] });
+    await expect(supabaseBackend(client).setRating('rec-1', 'user-1', 9)).rejects.toThrow(new BackendError(REJECTED.range));
+  });
+});
+
+describe('rejectionReason', () => {
+  it('maps known codes to plain words', () => {
+    expect(rejectionReason({ code: '42501', message: 'x' })).toBe(REJECTED.permission);
+    expect(rejectionReason({ message: 'new row violates row-level security policy' })).toBe(REJECTED.permission);
+    expect(rejectionReason({ code: '23514', message: 'x' })).toBe(REJECTED.range);
+    expect(rejectionReason({ code: '22P02', message: 'x' })).toBe(REJECTED.unknownValue);
+    expect(rejectionReason({ code: '23503', message: 'x' })).toBe(REJECTED.missing);
+  });
+
+  it('falls back to the code', () => {
+    expect(rejectionReason({ code: 'XX000', message: 'boom' })).toBe('The shelf refused this change. (XX000)');
+    expect(rejectionReason({ message: 'boom' })).toBe('The shelf refused this change. (unknown)');
   });
 });

@@ -1,3 +1,5 @@
+import type { NewRecordRow, RecordPatchRow } from './rowMapping';
+
 /** Everything the app needs from the server. Screens use this, never Supabase directly. */
 export type SignedIn = { userId: string; email: string };
 export type Member = { shelfId: string; userId: string; role: 'owner' | 'member'; displayName: string };
@@ -11,7 +13,14 @@ export interface ShelfSource {
   members(shelfId: string): Promise<Member[]>;
 }
 
-export interface Backend extends ShelfSource {
+/** Writes. A BackendError whose message is NO_SIGNAL means "try later"; any other BackendError message is a plain-words rejection reason. */
+export interface ShelfWriter {
+  insertRecord(row: NewRecordRow): Promise<'inserted' | 'already-there'>;
+  patchRecord(id: string, fields: RecordPatchRow): Promise<'patched' | 'missing'>;
+  setRating(recordId: string, userId: string, value: number): Promise<void>;
+}
+
+export interface Backend extends ShelfSource, ShelfWriter {
   currentUser(): Promise<SignedIn | null>;
   sendCode(email: string): Promise<void>;
   verifyCode(email: string, code: string): Promise<SignedIn>;
@@ -32,3 +41,11 @@ export class BackendError extends Error {
 }
 
 export const NO_SIGNAL = 'No signal. Try again when you’re back online.';
+
+export const REJECTED = {
+  missing: 'That record is no longer on your shelf.',
+  permission: 'You don’t have permission to change this record.',
+  range: 'The shelf refused a value that’s out of range.',
+  unknownValue: 'The shelf refused a value it doesn’t recognise.',
+  other: (code: string) => `The shelf refused this change. (${code})`,
+};

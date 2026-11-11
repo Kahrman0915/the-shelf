@@ -30,6 +30,9 @@ export type RecordRow = {
   import_key: string | null;
 };
 
+export type NewRecordRow = Omit<RecordRow, 'created_at' | 'updated_at'>;
+export type RecordPatchRow = Partial<RecordRow>;
+
 export type RatingRow = { record_id: string; user_id: string; value: number; updated_at: string };
 
 export class RowError extends Error {
@@ -74,6 +77,29 @@ export function recordToRow(r: ShelfRecord): RecordRow {
     deleted_at: r.deletedAt,
     import_key: r.importKey,
   };
+}
+
+/** The fields the shelf lets a member change: the `grant update (...)` columns on public.records, minus updated_at (server-stamped). */
+export const EDITABLE_FIELDS = [
+  'status', 'wantsUpgrade', 'upgradeNote', 'artist', 'title', 'label', 'catalog', 'year', 'format', 'genre',
+  'discGrade', 'sleeveGrade', 'pricePaid', 'nmEstimateLow', 'nmEstimateHigh', 'valueNote', 'notes',
+  'discogsReleaseId', 'coverPath', 'boughtAt', 'deletedAt',
+] as const satisfies readonly (keyof ShelfRecord)[];
+
+/** A record as the server should receive it on insert: created_at and updated_at are the server's to stamp. */
+export function newRecordToRow(r: ShelfRecord): NewRecordRow {
+  const { created_at: _created, updated_at: _updated, ...row } = recordToRow(r);
+  return row;
+}
+
+/** Only editable fields may go into an update; anything else would be refused by the server, so fail here. */
+export function patchToRow(fields: Partial<ShelfRecord>): RecordPatchRow {
+  const out: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(fields)) {
+    if (!(EDITABLE_FIELDS as readonly string[]).includes(name)) throw new Error(`Not an editable field: ${name}`);
+    out[name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)] = value;
+  }
+  return out as RecordPatchRow;
 }
 
 export function recordFromRow(row: Record<string, unknown>): ShelfRecord {

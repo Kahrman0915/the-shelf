@@ -1,7 +1,7 @@
 import collection from '../../collection.json';
 import { BackendError, NO_SIGNAL, type Backend, type Invite, type Member, type SignedIn } from '@/data/backend';
 import { importCollection } from '@/data/importCollection';
-import { ratingToRow, recordToRow, type RatingRow, type RecordRow } from '@/data/rowMapping';
+import { ratingToRow, recordToRow, type NewRecordRow, type RatingRow, type RecordPatchRow, type RecordRow } from '@/data/rowMapping';
 
 type Options = {
   users?: Record<string, string>;
@@ -20,6 +20,11 @@ export class FakeBackend implements Backend {
   sessionNeedsRefresh = false;
   signedIn: SignedIn | null;
   sentCodesTo: string[] = [];
+  /** The next write is applied on the "server", but the reply never arrives: it throws NO_SIGNAL. */
+  loseNextReply = false;
+  /** The next write is refused with this reason and stores nothing. */
+  rejectNext: string | null = null;
+  private lastStamp = 0;
   private users: Record<string, string>;
   private profiles: Record<string, string>;
   private shelfFor: Record<string, string>;
@@ -118,6 +123,74 @@ export class FakeBackend implements Backend {
     // server heard about it.
     this.signedIn = null;
     this.guard();
+  }
+
+  private stamp(): string {
+    this.lastStamp = Math.max(Date.now(), this.lastStamp + 1);
+    return new Date(this.lastStamp).toISOString();
+  }
+
+  /** Common start of every write: offline fails, a queued rejection fails once. */
+  private beginWrite() {
+    this.guard();
+    if (this.rejectNext !== null) {
+      const reason = this.rejectNext;
+      this.rejectNext = null;
+      throw new BackendError(reason);
+    }
+  }
+
+  /** Common end of every write: a lost reply throws after the write has been kept. */
+  private endWrite() {
+    if (this.loseNextReply) {
+      this.loseNextReply = false;
+      throw new BackendError(NO_SIGNAL);
+    }
+  }
+
+  async insertRecord(row: NewRecordRow) {
+    this.beginWrite();
+    let result: 'inserted' | 'already-there' = 'already-there';
+    if (!this.recordRows.some((r) => r.id === row.id)) {
+      const now = this.stamp();
+      this.recordRows.push({ ...row, created_at: now, updated_at: now });
+      result = 'inserted';
+    }
+    this.endWrite();
+    return result;
+  }
+
+  async patchRecord(id: string, fields: RecordPatchRow) {
+    this.beginWrite();
+    const row = this.recordRows.find((r) => r.id === id);
+    if (row) Object.assign(row, fields, { updated_at: this.stamp() });
+    this.endWrite();
+    return row ? ('patched' as const) : ('missing' as const);
+  }
+
+  async setRating(recordId: string, userId: string, value: number) {
+    this.beginWrite();
+    const existing = this.ratingRows.find((r) => r.record_id === recordId && r.user_id === userId);
+    if (existing) {
+      existing.value = value;
+      existing.updated_at = this.stamp();
+    } else {
+      this.ratingRows.push({ record_id: recordId, user_id: userId, value, updated_at: this.stamp() });
+      // Mirrors the database trigger: a first rating moves a new arrival onto the shelf.
+      const row = this.recordRows.find((r) => r.id === recordId);
+      if (row?.status === 'new_arrival') Object.assign(row, { status: 'owned', updated_at: this.stamp() });
+    }
+    this.endWrite();
+  }
+
+  /** Test helper: a record as the "server" holds it. */
+  recordRow(id: string): RecordRow | undefined {
+    return this.recordRows.find((r) => r.id === id);
+  }
+
+  /** Test helper: a rating as the "server" holds it. */
+  ratingRow(recordId: string, userId: string): RatingRow | undefined {
+    return this.ratingRows.find((r) => r.record_id === recordId && r.user_id === userId);
   }
 
   /** Test helper: change a record on the "server" as if another phone had. */
