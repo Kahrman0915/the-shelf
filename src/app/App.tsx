@@ -74,7 +74,7 @@ export default function App() {
 
   return (
     <CurrentShelfProvider value={{ shelfId: session.shelfId, userId: session.user.userId, email: session.user.email, signOut }}>
-      <SyncProvider source={backend} shelfId={session.shelfId}>
+      <SyncProvider backend={backend} shelfId={session.shelfId}>
         <Routes>
           <Route
             path="/"

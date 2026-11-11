@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { Member } from './backend';
 import { db } from './db';
+import type { Postcard } from './outbox';
 import type { ShelfRecord } from './schema';
 
 export type ShelfItem = { record: ShelfRecord; myRating: number | undefined };
@@ -22,4 +23,9 @@ export function useRecord(id: string | undefined): ShelfRecord | null | undefine
 
 export function useMembers(shelfId: string): Member[] | undefined {
   return useLiveQuery(() => db.members.where('shelfId').equals(shelfId).toArray(), [shelfId]);
+}
+
+/** Every postcard still waiting or rejected, oldest first. */
+export function useOutbox(): Postcard[] | undefined {
+  return useLiveQuery(() => db.outbox.orderBy('seq').toArray(), []);
 }
