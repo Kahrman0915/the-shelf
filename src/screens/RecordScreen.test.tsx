@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
@@ -28,6 +29,7 @@ function renderRecord(id = ID) {
       <MemoryRouter initialEntries={[`/record/${id}`]}>
         <Routes>
           <Route path="/record/:id" element={<RecordScreen />} />
+          <Route path="/arrivals" element={<p>Arrivals page</p>} />
         </Routes>
       </MemoryRouter>
     </CurrentShelfProvider>,
@@ -68,7 +70,7 @@ describe('RecordScreen', () => {
     renderRecord();
     expect(await screen.findByText('Megan · Unplayed')).toBeInTheDocument();
     expect(screen.getByText('Your rating')).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: '4 of 5, Love it' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: '4 of 5, Love it' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.queryByText('Kahrman · Unplayed')).not.toBeInTheDocument();
   });
 
@@ -91,5 +93,55 @@ describe('RecordScreen', () => {
     await db.records.put(record({ deletedAt: '2026-02-01T00:00:00.000Z' }));
     renderRecord();
     expect(await screen.findByText('That record isn’t on this phone.')).toBeInTheDocument();
+  });
+
+  it('rating a new arrival puts it on the shelf', async () => {
+    await db.records.put(record({ status: 'new_arrival', genre: 'jazz' }));
+    renderRecord();
+    await userEvent.click(await screen.findByRole('radio', { name: '4 of 5, Love it' }));
+    expect(await screen.findByText('Love it · On the shelf · Jazz / big band')).toBeInTheDocument();
+    expect((await db.records.get(ID))?.status).toBe('owned');
+    const sent = await db.outbox.toArray();
+    expect(sent.filter((p) => p.kind === 'rating.set')).toHaveLength(1);
+    expect(sent).toHaveLength(1);
+  });
+
+  it('changing a rating on a shelved record just confirms the word', async () => {
+    await db.records.put(record({ status: 'owned' }));
+    renderRecord();
+    await userEvent.click(await screen.findByRole('radio', { name: '3 of 5, Good' }));
+    expect(await screen.findByText('Good')).toBeInTheDocument();
+    expect(screen.queryByText(/On the shelf/)).not.toBeInTheDocument();
+  });
+
+  it('a want has no rating control', async () => {
+    await db.records.put(record({ status: 'wanted' }));
+    renderRecord();
+    await screen.findByRole('heading', { name: 'John Coltrane' });
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+    expect(screen.queryByText('Your rating')).not.toBeInTheDocument();
+  });
+
+  it('Didn’t buy it asks first', async () => {
+    await db.records.put(record({ status: 'new_arrival', title: 'Moanin’' }));
+    renderRecord();
+    await userEvent.click(await screen.findByRole('button', { name: 'Didn’t buy it' }));
+    expect(await screen.findByText('Remove Moanin’ from New arrivals?')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Keep it' }));
+    expect((await db.records.get(ID))?.deletedAt).toBeNull();
+    expect(await db.outbox.count()).toBe(0);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Didn’t buy it' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Remove it' }));
+    expect(await screen.findByText('Arrivals page')).toBeInTheDocument();
+    expect((await db.records.get(ID))?.deletedAt).not.toBeNull();
+  });
+
+  it('Didn’t buy it is not offered on shelved records', async () => {
+    await db.records.put(record({ status: 'owned' }));
+    renderRecord();
+    await screen.findByRole('heading', { name: 'John Coltrane' });
+    expect(screen.queryByRole('button', { name: 'Didn’t buy it' })).not.toBeInTheDocument();
   });
 });

@@ -1,14 +1,19 @@
+import { useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCurrentShelf } from '@/app/CurrentShelf';
-import { SyncNotice } from '@/app/SyncContext';
+import { SyncNotice, useSyncStatus } from '@/app/SyncContext';
+import { didntBuyIt, perform, rate } from '@/data/actions';
+import { db } from '@/data/db';
 import { useMembers, useRatings, useRecord } from '@/data/hooks';
 import { formatMoney } from '@/domain/price';
+import { GENRE_LABELS } from '@/domain/genres';
 import { RATING_WORDS } from '@/domain/rating';
 import { collectionTag } from '@/domain/shelf';
 import { Poster } from '@/ui/Poster';
-import { RatingDots } from '@/ui/RatingDots';
+import { ConfirmDialog } from '@/ui/ConfirmDialog';
+import { RatingRecords } from '@/ui/RatingRecords';
 import { StatusTag } from '@/ui/StatusTag';
 
 function Grade({ part, grade }: { part: string; grade: string | null }) {
@@ -29,6 +34,43 @@ export function RecordScreen() {
   const navigate = useNavigate();
   const location = useLocation();
   const back = () => (location.key !== 'default' ? navigate(-1) : navigate('/'));
+
+  const { runNow } = useSyncStatus();
+  const [saving, setSaving] = useState(false);
+  const [confirmation, setConfirmation] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+
+  const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
+
+  async function onRate(value: number) {
+    if (!record || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const wasArrival = record.status === 'new_arrival';
+      const ctx = { me: userId, now: new Date().toISOString() };
+      await perform(db, rate(record, value, ctx).postcards, runNow);
+      setConfirmation(wasArrival ? `${RATING_WORDS[value]} · On the shelf · ${GENRE_LABELS[record.genre]}` : RATING_WORDS[value]);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function onRemove() {
+    if (!record) return;
+    setAsking(false);
+    setError(null);
+    try {
+      const ctx = { me: userId, now: new Date().toISOString() };
+      await perform(db, didntBuyIt(record, ctx).postcards, runNow);
+      navigate('/arrivals');
+    } catch (e) {
+      fail(e);
+    }
+  }
 
   const others = (members ?? []).filter((m) => m.userId !== userId);
   const mine = ratings?.find((r) => r.userId === userId)?.value;
@@ -62,10 +104,30 @@ export function RecordScreen() {
               <Grade part="Disc" grade={record.discGrade} />
               <Grade part="Sleeve" grade={record.sleeveGrade} />
             </dl>
-            <section className="flex flex-col gap-2">
-              <h2 className="text-[13px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Your rating</h2>
-              <RatingDots value={mine} />
-            </section>
+            {(record.status === 'new_arrival' || record.status === 'owned') && (
+              <section className="flex flex-col gap-2">
+                <h2 className="text-[13px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Your rating</h2>
+                <RatingRecords value={mine} onRate={onRate} disabled={saving} />
+                {confirmation && <p role="status" className="text-[15px] font-semibold">{confirmation}</p>}
+              </section>
+            )}
+            {error && <p role="alert" className="text-[15px] text-brick-ink">{error}</p>}
+            {record.status === 'new_arrival' && (
+              <>
+                <Button variant="ghost" className="h-12 w-fit rounded-lg px-3 text-[15px] font-semibold text-brick-ink" onClick={() => setAsking(true)}>
+                  Didn’t buy it
+                </Button>
+                <ConfirmDialog
+                  open={asking}
+                  message={`Remove ${record.title} from New arrivals?`}
+                  confirmLabel="Remove it"
+                  cancelLabel="Keep it"
+                  danger="confirm"
+                  onConfirm={onRemove}
+                  onCancel={() => setAsking(false)}
+                />
+              </>
+            )}
             {others.length > 0 && (
               <ul className="flex flex-col gap-1 text-[15px]">
                 {others.map((m) => {
