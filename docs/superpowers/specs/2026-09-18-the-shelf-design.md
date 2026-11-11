@@ -2,6 +2,7 @@
 
 Date: 2026-09-18
 Status: approved in conversation, awaiting written review
+Updated by: `2026-11-11-plan-3-bought-and-played-design.md` §11 (Supabase Pro, Gmail SMTP, Plan 3/4 split, Playwright dropped)
 Scope of this spec: **Project 1, the shelf.** Projects 2–4 are recorded at the end so this one leaves room for them.
 
 Design system (tokens, components, shadcn mapping): https://claude.ai/artifact/MeqZFkmspRtmaUUaP2e7pK
