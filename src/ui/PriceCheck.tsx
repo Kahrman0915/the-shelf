@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { ShelfRecord } from '@/data/schema';
@@ -33,13 +33,21 @@ export function PriceCheck({
   const running = useRef(false);
   const [busy, setBusy] = useState(false);
 
+  // Held after a successful purchase until the record (or whether it is buyable) changes, so a tap on a
+  // stale record can't post a second purchase. Released at once on failure so it can be tried again.
+  useEffect(() => {
+    running.current = false;
+    setBusy(false);
+  }, [record, buyable]);
+
   async function bought() {
     if (!onBought || running.current) return;
     running.current = true;
     setBusy(true);
     try {
       await onBought({ grade, pricePaid: price });
-    } finally {
+    } catch {
+      // The screen shows the error; just let the button be pressed again.
       running.current = false;
       setBusy(false);
     }

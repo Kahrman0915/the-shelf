@@ -47,4 +47,36 @@ describe('the Undo bar', () => {
     expect(screen.queryByText('In New arrivals')).toBeNull();
     expect(undo).not.toHaveBeenCalled();
   });
+
+  it('a failed undo shows its error', async () => {
+    setup(async () => {
+      throw new Error('Could not undo');
+    });
+    fireEvent.click(screen.getByText('offer'));
+    await act(async () => void fireEvent.click(screen.getByRole('button', { name: 'Undo' })));
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not undo');
+  });
+
+  it('a new offer replaces an old error', async () => {
+    setup(async () => {
+      throw new Error('Could not undo');
+    });
+    fireEvent.click(screen.getByText('offer'));
+    await act(async () => void fireEvent.click(screen.getByRole('button', { name: 'Undo' })));
+    fireEvent.click(screen.getByText('offer'));
+    expect(screen.getByText('In New arrivals')).toBeInTheDocument();
+    expect(screen.queryByText('Could not undo')).toBeNull();
+  });
+
+  it('Undo runs once on a double click', async () => {
+    let release = () => {};
+    const undo = vi.fn(() => new Promise<void>((r) => (release = r)));
+    setup(undo);
+    fireEvent.click(screen.getByText('offer'));
+    const button = screen.getByRole('button', { name: 'Undo' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await act(async () => release());
+    expect(undo).toHaveBeenCalledTimes(1);
+  });
 });

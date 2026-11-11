@@ -429,15 +429,16 @@ describe('Bought it on the price check', () => {
     await logIt();
     await userEvent.click(await screen.findByRole('button', { name: 'Undo' }));
     await waitFor(async () => expect(await db.records.get(WANTED.id)).toMatchObject({ status: 'wanted', discGrade: null, pricePaid: null }));
-    expect(screen.queryByText('In New arrivals')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('In New arrivals')).toBeNull());
   });
 
-  it('a double tap logs one purchase', async () => {
+  it('a double or triple tap logs one purchase', async () => {
     const backend = await openPriceCheck(WANTED);
     const patch = vi.spyOn(backend, 'patchRecord');
     await userEvent.click(await screen.findByRole('radio', { name: 'VG+' }));
     await userEvent.type(screen.getByRole('textbox', { name: "They're asking" }), '15');
-    await userEvent.dblClick(screen.getByRole('button', { name: 'Bought it' }));
+    const bought = screen.getByRole('button', { name: 'Bought it' });
+    await userEvent.tripleClick(bought);
     await screen.findByText('In New arrivals');
     await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
     await new Promise((r) => setTimeout(r, 50));

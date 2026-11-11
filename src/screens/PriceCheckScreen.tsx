@@ -32,6 +32,7 @@ export function PriceCheckScreen() {
       if (undo) offer(kind === 'want' ? 'In New arrivals' : 'Upgrade logged', () => perform(db, undo, runNow));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      throw e;
     }
   }
 

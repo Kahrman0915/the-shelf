@@ -102,19 +102,19 @@ export default function App() {
     <CurrentShelfProvider value={{ shelfId: session.shelfId, userId: session.user.userId, email: session.user.email, signOut, signOutAndDelete }}>
       <SyncProvider backend={backend} shelfId={session.shelfId}>
         <UndoProvider>
-        <Routes>
-          <Route
-            path="/"
-            element={startInShow ? <RedirectOnce to="/show" onDone={() => setStartInShow(false)} /> : <ShelfScreen />}
-          />
-          <Route path="/show" element={<ShowScreen />} />
-          <Route path="/arrivals" element={<ArrivalsScreen />} />
-          <Route path="/record/:id" element={<RecordScreen />} />
-          <Route path="/price/:id" element={<PriceCheckScreen />} />
-          <Route path="/settings" element={<SettingsScreen />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-        <UndoBar />
+          <Routes>
+            <Route
+              path="/"
+              element={startInShow ? <RedirectOnce to="/show" onDone={() => setStartInShow(false)} /> : <ShelfScreen />}
+            />
+            <Route path="/show" element={<ShowScreen />} />
+            <Route path="/arrivals" element={<ArrivalsScreen />} />
+            <Route path="/record/:id" element={<RecordScreen />} />
+            <Route path="/price/:id" element={<PriceCheckScreen />} />
+            <Route path="/settings" element={<SettingsScreen />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+          <UndoBar />
         </UndoProvider>
       </SyncProvider>
     </CurrentShelfProvider>
