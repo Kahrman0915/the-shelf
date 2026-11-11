@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendError } from '@/data/backend';
 import { db } from '@/data/db';
 import { savePostcards } from '@/data/outbox';
+import { recordToRow } from '@/data/rowMapping';
+import type { ShelfRecord } from '@/data/schema';
 import { FakeBackend, collectionRows } from '@/test/fakeBackend';
 import App from './App';
 import { BackendProvider } from './BackendContext';
@@ -13,7 +15,7 @@ const K = { userId: '11111111-1111-4111-8111-111111111111', email: 'kahrman@exam
 const MEG = { userId: '22222222-2222-4222-8222-222222222222', email: 'meg@example.com' };
 const SHELF = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
-function kahrmansShelf(extra: { users?: Record<string, string>; profiles?: Record<string, string>; signedIn?: typeof K | null } = {}) {
+function kahrmansShelf(extra: { records?: ReturnType<typeof collectionRows>['records']; users?: Record<string, string>; profiles?: Record<string, string>; signedIn?: typeof K | null } = {}) {
   const rows = collectionRows(SHELF, K.userId);
   return new FakeBackend({
     users: { [K.email]: K.userId },
@@ -362,5 +364,28 @@ describe('the Record screen', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^Ahmad Jamal Trio, / }));
     expect(await screen.findByRole('img', { name: /^Poster for Ahmad Jamal Trio, / })).toBeInTheDocument();
     expect(document.documentElement.dataset.theme).toBe('midnight');
+  });
+});
+
+describe('the pile', () => {
+  it('the pile appears with a new arrival and goes once it is rated', async () => {
+    const arrival: ShelfRecord = {
+      id: '00000000-0000-4000-8000-0000000000aa', shelfId: SHELF, status: 'new_arrival', wantsUpgrade: false, upgradeNote: null,
+      artist: 'Art Blakey', title: 'Moanin’', label: null, catalog: null, year: null, format: null, genre: 'jazz', discGrade: null, sleeveGrade: null,
+      pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null,
+      boughtAt: '2026-06-01T00:00:00.000Z', addedBy: K.userId, createdAt: '2026-06-01T00:00:00.000Z', updatedAt: '2026-06-01T00:00:00.000Z', deletedAt: null, importKey: null,
+    };
+    const rows = collectionRows(SHELF, K.userId);
+    const backend = kahrmansShelf({ profiles: { [K.userId]: 'Kahrman' }, signedIn: K, records: [...rows.records, recordToRow(arrival)] });
+    renderApp(backend);
+    await screen.findByText('Ahmad Jamal Trio');
+    await userEvent.click(await screen.findByRole('button', { name: 'New arrivals, 1 waiting' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Art Blakey, Moanin’' }));
+    await userEvent.click(await screen.findByRole('radio', { name: '4 of 5, Love it' }));
+    await screen.findByText(/On the shelf/);
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await userEvent.click(await screen.findByRole('link', { name: 'Back' }));
+    await screen.findByRole('heading', { name: 'The Shelf' });
+    expect(screen.queryByRole('button', { name: /^New arrivals, / })).not.toBeInTheDocument();
   });
 });

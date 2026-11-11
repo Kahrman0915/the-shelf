@@ -41,3 +41,17 @@ export function showResults<T extends { record: ShelfLike }>(items: T[], query: 
   if (normalise(query) === '') return [];
   return items.filter((i) => matchesQuery(i.record, query)).sort(byArtistThenTitle);
 }
+
+/** The pile: records bought but not yet rated, newest purchase first; ones with no purchase time last. */
+export function newArrivals<T extends { record: ShelfLike & { boughtAt: string | null } }>(items: T[]): T[] {
+  return items
+    .filter((i) => i.record.status === 'new_arrival')
+    .sort((a, b) => {
+      const x = a.record.boughtAt;
+      const y = b.record.boughtAt;
+      if (x === y) return byArtistThenTitle(a, b);
+      if (x === null) return 1;
+      if (y === null) return -1;
+      return y.localeCompare(x);
+    });
+}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { db } from '@/data/db';
+import { ArrivalsScreen } from '@/screens/ArrivalsScreen';
 import { NameScreen } from '@/screens/NameScreen';
 import { PriceCheckScreen } from '@/screens/PriceCheckScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
@@ -105,6 +106,7 @@ export default function App() {
             element={startInShow ? <RedirectOnce to="/show" onDone={() => setStartInShow(false)} /> : <ShelfScreen />}
           />
           <Route path="/show" element={<ShowScreen />} />
+          <Route path="/arrivals" element={<ArrivalsScreen />} />
           <Route path="/record/:id" element={<RecordScreen />} />
           <Route path="/price/:id" element={<PriceCheckScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
