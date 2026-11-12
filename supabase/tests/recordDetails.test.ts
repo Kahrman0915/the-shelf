@@ -62,6 +62,14 @@ describe('fun fact, its source and a cover link', () => {
     expect(ok.rows).toHaveLength(1);
   });
 
+  it('a fun fact can’t be empty or blank; null is how a record has none', async () => {
+    const id = await record();
+    await expect(asMegan(`update public.records set fun_fact = '' where id = $1`, [id])).rejects.toThrow(/violates check constraint/);
+    await expect(asMegan(`update public.records set fun_fact = '  ' where id = $1`, [id])).rejects.toThrow(/violates check constraint/);
+    const ok = await asMegan(`update public.records set fun_fact = null where id = $1 returning id`, [id]);
+    expect(ok.rows).toHaveLength(1);
+  });
+
   it('a stranger can’t set them', async () => {
     const id = await record();
     const r = await asUser(db, stranger, () =>

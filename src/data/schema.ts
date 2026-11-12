@@ -5,7 +5,9 @@ import { GRADE_KEYS } from '@/domain/grades';
 const text = z.string().trim().min(1);
 const optionalText = text.nullable();
 const httpsLink = z.string().startsWith('https://').nullable();
-const money = z.number().nonnegative().nullable();
+/** numeric(8,2) on the server: under a million. */
+export const MONEY_MAX = 999999.99;
+const money = z.number().nonnegative().max(MONEY_MAX).nullable();
 
 export const RecordSchema = z
   .object({
@@ -30,7 +32,7 @@ export const RecordSchema = z
     notes: optionalText,
     discogsReleaseId: z.number().int().positive().nullable(),
     coverPath: optionalText,
-    funFact: z.string().trim().max(500).nullable(),
+    funFact: z.string().trim().min(1).max(500).nullable(),
     funFactSource: httpsLink,
     coverImageUrl: httpsLink,
     boughtAt: z.string().nullable(),

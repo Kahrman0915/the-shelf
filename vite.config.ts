@@ -34,5 +34,6 @@ export default defineConfig({
     }),
   ],
   resolve: { alias: { '@': path.resolve(import.meta.dirname, './src') } },
-  test: { environment: 'jsdom', setupFiles: ['./src/test/setup.ts'] },
+  // PGlite boots a whole Postgres per test file; under a full parallel run the defaults (5s/10s) can time out.
+  test: { environment: 'jsdom', setupFiles: ['./src/test/setup.ts'], testTimeout: 15_000, hookTimeout: 30_000 },
 });

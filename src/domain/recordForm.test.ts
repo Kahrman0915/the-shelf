@@ -102,6 +102,14 @@ describe('parseRecordForm', () => {
     expect(parseRecordForm(valid({ funFact: 'x', funFactSource: 'https://example.com' }))).toMatchObject({ ok: true });
   });
 
+  it('keeps prices under a million', () => {
+    const msg = 'Keep it under $1,000,000';
+    expect(errorsOf({ pricePaid: '1000000' })).toEqual({ pricePaid: msg });
+    expect(errorsOf({ nmLow: '10', nmHigh: '1,000,000' })).toEqual({ nmHigh: msg });
+    expect(errorsOf({ nmLow: '1000000', nmHigh: '2000000' })).toEqual({ nmLow: msg, nmHigh: msg });
+    expect(parseRecordForm(valid({ pricePaid: '999999.99' }))).toMatchObject({ ok: true, fields: { pricePaid: 999999.99 } });
+  });
+
   it('rejects a fun fact over 500 characters', () => {
     expect(errorsOf({ funFact: 'x'.repeat(501) }).funFact).toBeDefined();
   });

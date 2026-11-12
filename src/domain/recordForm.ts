@@ -1,5 +1,5 @@
 import { changedFields, type RecordFields } from '@/data/actions';
-import type { ShelfRecord } from '@/data/schema';
+import { MONEY_MAX, type ShelfRecord } from '@/data/schema';
 import { GENRE_KEYS, type GenreKey } from './genres';
 import type { Grade } from './grades';
 import { parsePrice } from './price';
@@ -76,13 +76,13 @@ function textOrNull(s: string): string | null {
   return t === '' ? null : t;
 }
 
-const MONEY_MESSAGE = 'Use a number, like 15.50';
-
-/** A money field: blank is null, a number is itself, anything else is an error. */
-function money(raw: string): { value: number | null; bad: boolean } {
-  if (raw.trim() === '') return { value: null, bad: false };
+/** A money field: blank is null, a number under a million is itself, anything else is an error. */
+function money(raw: string): { value: number | null; bad: string | null } {
+  if (raw.trim() === '') return { value: null, bad: null };
   const value = parsePrice(raw);
-  return { value, bad: value === null };
+  if (value === null) return { value, bad: 'Use a number, like 15.50' };
+  if (value > MONEY_MAX) return { value, bad: 'Keep it under $1,000,000' };
+  return { value, bad: null };
 }
 
 export function parseRecordForm(v: RecordFormValues): { ok: true; fields: RecordFields } | { ok: false; errors: FormErrors } {
@@ -107,9 +107,9 @@ export function parseRecordForm(v: RecordFormValues): { ok: true; fields: Record
   const low = money(v.nmLow);
   const high = money(v.nmHigh);
   const paid = money(v.pricePaid);
-  if (low.bad) errors.nmLow = MONEY_MESSAGE;
-  if (high.bad) errors.nmHigh = MONEY_MESSAGE;
-  if (paid.bad) errors.pricePaid = MONEY_MESSAGE;
+  if (low.bad) errors.nmLow = low.bad;
+  if (high.bad) errors.nmHigh = high.bad;
+  if (paid.bad) errors.pricePaid = paid.bad;
   if (!low.bad && !high.bad) {
     if (low.value === null && high.value !== null) errors.nmLow = 'Fill both, or neither';
     else if (low.value !== null && high.value === null) errors.nmHigh = 'Fill both, or neither';
