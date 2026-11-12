@@ -8,6 +8,7 @@ function setVisibility(state: DocumentVisibilityState) {
 
 afterEach(() => {
   document.body.innerHTML = '';
+  delete document.body.dataset.unsaved;
   setVisibility('visible');
 });
 
@@ -35,5 +36,14 @@ describe('reloadWhenSafe', () => {
     const reload = vi.fn();
     reloadWhenSafe(reload);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('waits while a form has unsaved changes', () => {
+    document.body.dataset.unsaved = 'true';
+    const reload = vi.fn();
+    reloadWhenSafe(reload);
+    expect(reload).not.toHaveBeenCalled();
+    setVisibility('hidden');
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 });
