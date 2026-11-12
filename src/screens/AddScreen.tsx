@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { useCurrentShelf } from '@/app/CurrentShelf';
 import { SyncNotice, useSyncStatus } from '@/app/SyncContext';
+import { useLeaveGuard } from '@/app/useLeaveGuard';
 import { addRecord, perform, type RecordFields } from '@/data/actions';
 import { db } from '@/data/db';
 import { useShelfItems } from '@/data/hooks';
 import { emptyForm } from '@/domain/recordForm';
-import { ConfirmDialog } from '@/ui/ConfirmDialog';
 import { RecordForm } from '@/ui/RecordForm';
 
 export function AddScreen() {
@@ -19,20 +19,7 @@ export function AddScreen() {
   const location = useLocation();
   const initial = useMemo(() => emptyForm(), []);
   const [dirty, setDirty] = useState(false);
-  // Where to go once the person agrees to discard: null means no question is open.
-  const [leaving, setLeaving] = useState<(() => void) | null>(null);
-
-  // Reloading or closing the tab. (The system back gesture isn't guarded; see the plan's ruling.)
-  useEffect(() => {
-    if (!dirty) return;
-    const stop = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener('beforeunload', stop);
-    return () => window.removeEventListener('beforeunload', stop);
-  }, [dirty]);
-
-  const onDirtyChange = useCallback((d: boolean) => setDirty(d), []);
-
-  const leave = (go: () => void) => (dirty ? setLeaving(() => go) : go());
+  const { leave, dialog } = useLeaveGuard(dirty);
   const back = () => leave(() => (location.key !== 'default' ? navigate(-1) : navigate('/')));
 
   async function onSave(fields: RecordFields, { rating, another }: { rating: number | null; another: boolean }) {
@@ -56,21 +43,9 @@ export function AddScreen() {
         records={records}
         onSave={onSave}
         onOpenDuplicate={(id) => leave(() => navigate(`/record/${id}`))}
-        onDirtyChange={onDirtyChange}
+        onDirtyChange={setDirty}
       />
-      <ConfirmDialog
-        open={leaving !== null}
-        message="Discard your changes?"
-        confirmLabel="Discard"
-        cancelLabel="Keep editing"
-        danger="confirm"
-        onConfirm={() => {
-          const go = leaving;
-          setLeaving(null);
-          go?.();
-        }}
-        onCancel={() => setLeaving(null)}
-      />
+      {dialog}
     </main>
   );
 }

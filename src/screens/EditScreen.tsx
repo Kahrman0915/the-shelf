@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { useCurrentShelf } from '@/app/CurrentShelf';
 import { SyncNotice, useSyncStatus } from '@/app/SyncContext';
 import { useUndo } from '@/app/UndoContext';
+import { useLeaveGuard } from '@/app/useLeaveGuard';
 import { deleteRecord, editRecord, FORM_FIELDS, perform, restoreWithEdits, type RecordFields } from '@/data/actions';
 import { db } from '@/data/db';
 import { useRecordAnyState, useShelfItems } from '@/data/hooks';
@@ -43,24 +44,14 @@ export function EditScreen() {
   if (opened === null && record && record.deletedAt === null) setOpened(openedFrom(record));
 
   const [dirty, setDirty] = useState(false);
-  // Where to go once the person agrees to discard: null means no question is open.
-  const [leaving, setLeaving] = useState<(() => void) | null>(null);
+  const { leave, dialog } = useLeaveGuard(dirty);
   const [asking, setAsking] = useState(false);
   // Set before this screen deletes, so its own delete isn't taken for one from another phone.
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reloading or closing the tab. (The system back gesture isn't guarded; see the plan's ruling.)
-  useEffect(() => {
-    if (!dirty) return;
-    const stop = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener('beforeunload', stop);
-    return () => window.removeEventListener('beforeunload', stop);
-  }, [dirty]);
-
   // Edit is opened from the record, so going back returns to it; opened directly, it replaces itself with the record.
   const toRecord = () => (location.key !== 'default' ? navigate(-1) : navigate(`/record/${id}`, { replace: true }));
-  const leave = (go: () => void) => (dirty ? setLeaving(() => go) : go());
 
   const deletedElsewhere = !!record && record.deletedAt !== null && !deleting;
 
@@ -148,19 +139,7 @@ export function EditScreen() {
           />
         </>
       )}
-      <ConfirmDialog
-        open={leaving !== null}
-        message="Discard your changes?"
-        confirmLabel="Discard"
-        cancelLabel="Keep editing"
-        danger="confirm"
-        onConfirm={() => {
-          const go = leaving;
-          setLeaving(null);
-          go?.();
-        }}
-        onCancel={() => setLeaving(null)}
-      />
+      {dialog}
     </main>
   );
 }
