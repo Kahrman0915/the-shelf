@@ -1,7 +1,9 @@
 import { StrictMode, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
+import { registerSW } from 'virtual:pwa-register';
 import App from '@/app/App';
+import { reloadWhenSafe } from '@/app/updates';
 import { BackendProvider } from '@/app/BackendContext';
 import { supabaseBackend } from '@/data/supabaseBackend';
 import { BootError } from '@/screens/BootError';
@@ -28,3 +30,6 @@ try {
 }
 
 createRoot(document.getElementById('root')!).render(<StrictMode>{app}</StrictMode>);
+
+// When a new version finishes installing, show it now instead of on the next launch.
+registerSW({ immediate: true, onNeedReload: () => reloadWhenSafe() });
