@@ -107,6 +107,7 @@ New columns on `public.records`:
 
 ### 4.3 Concurrency
 - **Edits are worked out against the values the form opened with.** A field you didn't touch is never sent, so another person's change to it survives.
+- **Amended in build 1:** the price estimate (low and high) and the fun fact with its source each travel as a pair. If you change either half, both are sent, so two edits can never combine into a record the database refuses.
 - **If two people change the same field,** the last one to reach the server wins. This is unchanged from the original spec.
 - **If the record is deleted elsewhere while Edit is open,** Edit shows "That record was deleted on another phone." with **Restore with your changes** (`restoreWithEdits`) and **Leave it deleted**. That needs a hook that can read a deleted record by id. The existing `useRecord` hides deleted records on purpose.
 

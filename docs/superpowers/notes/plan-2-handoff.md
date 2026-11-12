@@ -58,3 +58,21 @@ From Plan 3's final whole-branch review (2026-11-11). Plan 3 shipped the outbox,
 ## Go-live notes
 - `npx supabase db push` applies **two** migrations: `20261111120000_shelve_on_first_rating.sql` and `20261111120100_bootstrap_requires_email.sql`. Run `npx supabase migration list --linked` first to confirm production lists both Plan 2 migrations.
 - The migrations go live **before** the app: without the trigger, a rating sent from the new app would leave the record in New arrivals on the server.
+
+# Plan 4a build 1 → build 2 handoff
+
+From build 1's final review (2026-11-12). Build 1 shipped add, edit and delete by hand, the fun fact, and the shared form.
+
+## Must know for build 2 (Claude + Discogs)
+- **Dexie is at version 4.** Any new record field needs a version bump with an upgrade that fills it on existing rows *and* on queued `record.create` postcards (see `db.ts` v4). Records already on phones never get re-pulled for a column change.
+- **Paired fields travel together** in `changedFields`: `[nmEstimateLow, nmEstimateHigh]` and `[funFact, funFactSource]`. The spec's "an untouched field is never sent" now reads "an untouched pair is never sent".
+- **`cover_image_url` exists but nothing writes or shows it yet.** Build 2 adds both.
+- **`reloadWhenSafe` waits on `[data-unsaved]`.** Any new form should use `useUnsavedMark` and `useLeaveGuard`.
+- **Migrations must go live before the app.** `recordFromRow` fails loudly if a column is missing.
+
+## Carry-overs
+- A flaky test: `SettingsScreen.test.tsx` "lists who is on the shelf" failed once under full-suite load. Look into it properly.
+- The Android back gesture isn't guarded (plan ruling).
+- A grade can't be cleared back to "none" once set.
+- `1,200,000` typed into a price is read as 1.2 (Plan 3's price helpers).
+- The Record screen design notes still stand: the artist appears twice, and the poster runs edge to edge.
