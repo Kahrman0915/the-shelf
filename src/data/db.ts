@@ -38,7 +38,32 @@ export class ShelfDB extends Dexie {
       meta: 'key',
       outbox: '++seq, recordId, state',
     });
+    this.version(4)
+      .stores({
+        records: 'id, shelfId, status, genre, importKey',
+        ratings: '[recordId+userId], recordId, userId',
+        members: '[shelfId+userId], shelfId',
+        meta: 'key',
+        outbox: '++seq, recordId, state',
+      })
+      .upgrade(async (tx) => {
+        // Records saved before the fun fact and cover link existed lack those keys, and the record rules need them
+        // (null when empty). The incremental pull won't fetch unchanged rows again, so fill them in here.
+        await tx.table('records').toCollection().modify(fillDetails);
+        await tx
+          .table('outbox')
+          .toCollection()
+          .modify((p: { kind: string; fields: Record<string, unknown> }) => {
+            if (p.kind === 'record.create') fillDetails(p.fields);
+          });
+      });
   }
+}
+
+const DETAIL_KEYS = ['funFact', 'funFactSource', 'coverImageUrl'] as const;
+
+function fillDetails(r: Record<string, unknown>): void {
+  for (const key of DETAIL_KEYS) if (r[key] === undefined) r[key] = null;
 }
 
 export const db = new ShelfDB();

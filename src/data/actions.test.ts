@@ -296,6 +296,17 @@ describe('changedFields', () => {
     expect(changedFields(opened, { ...opened })).toEqual({});
     expect(changedFields(opened, { ...opened, year: null, pricePaid: null, notes: 'warm' })).toEqual({ year: null, pricePaid: null, notes: 'warm' });
   });
+
+  it('sends the estimate pair and the fun fact pair whole when either half changed', () => {
+    const opened = formOf(record({ nmEstimateLow: 10, nmEstimateHigh: 20, funFact: 'Cut in two days.', funFactSource: 'https://example.com/a' }));
+    expect(changedFields(opened, { ...opened, nmEstimateLow: 12 })).toEqual({ nmEstimateLow: 12, nmEstimateHigh: 20 });
+    expect(changedFields(opened, { ...opened, nmEstimateHigh: 30 })).toEqual({ nmEstimateLow: 10, nmEstimateHigh: 30 });
+    expect(changedFields(opened, { ...opened, funFactSource: 'https://example.com/b' })).toEqual({
+      funFact: 'Cut in two days.',
+      funFactSource: 'https://example.com/b',
+    });
+    expect(changedFields(opened, { ...opened, funFact: 'Cut in one day.' })).toEqual({ funFact: 'Cut in one day.', funFactSource: 'https://example.com/a' });
+  });
 });
 
 describe('editRecord', () => {
@@ -352,7 +363,7 @@ describe('edits and deletes against the server', () => {
   beforeEach(async () => {
     db = new ShelfDB(`actions-edit-${crypto.randomUUID()}`);
     await writeSession(db, { userId: ME, email: 'me@example.com', shelfId: SHELF });
-    fake = new FakeBackend({ records: [recordToRow(record({ year: 1966 }))], ratings: [], members: [] });
+    fake = new FakeBackend({ records: [recordToRow(record({ year: 1966, nmEstimateLow: 10, nmEstimateHigh: 20 }))], ratings: [], members: [] });
     await pullShelf(db, fake, SHELF);
   });
   afterEach(async () => {
@@ -371,6 +382,23 @@ describe('edits and deletes against the server', () => {
 
     expect(fake.recordRow(A)).toMatchObject({ notes: 'Megan: plays clean', year: 1967 });
     expect(await db.records.get(A)).toMatchObject({ notes: 'Megan: plays clean', year: 1967 });
+  });
+
+  it('an estimate edited against a stale form keeps low and high together on both phones', async () => {
+    // The record is 10/20. Megan lowers high to 15; Kahrman's form still shows 10/20 and he raises low to 18.
+    // Sending low alone would leave the server at 18/15, which breaks the record rules.
+    const mine = (await db.records.get(A))!;
+    const opened = formOf(mine);
+    fake.touchRecord(A, { nm_estimate_high: 15 });
+
+    const { postcards } = editRecord(mine, opened, { ...opened, nmEstimateLow: 18 }, ctx);
+    expect(postcards[0].fields).toEqual({ nmEstimateLow: 18, nmEstimateHigh: 20 });
+    await perform(db, postcards);
+    expect(await syncOnce(db, fake, SHELF)).toMatchObject({ rejected: 0 });
+
+    expect(fake.recordRow(A)).toMatchObject({ nm_estimate_low: 18, nm_estimate_high: 20 });
+    expect(await db.records.get(A)).toMatchObject({ nmEstimateLow: 18, nmEstimateHigh: 20 });
+    expect(await db.outbox.count()).toBe(0);
   });
 
   it('deleteRecord marks it deleted; Undo after it reached the server brings it back', async () => {

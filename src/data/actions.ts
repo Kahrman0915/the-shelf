@@ -151,10 +151,23 @@ export function addRecord(fields: RecordFields, rating: number | null, ctx: Ctx 
   return { postcards, undo: null };
 }
 
-/** The form fields whose value in `edited` differs (by ===) from the value the form opened with. */
+/** Fields the record rules check together: if either half changed, both are sent, so a change from another phone
+ *  to the other half can't leave the record broken (low above high, or a source with no fun fact). */
+const PAIRS = [
+  ['nmEstimateLow', 'nmEstimateHigh'],
+  ['funFact', 'funFactSource'],
+] as const satisfies readonly (readonly [keyof RecordFields, keyof RecordFields])[];
+
+/** The form fields whose value in `edited` differs (by ===) from the value the form opened with, pairs whole. */
 export function changedFields(opened: RecordFields, edited: RecordFields): Partial<RecordFields> {
   const changed: Partial<Record<keyof RecordFields, unknown>> = {};
   for (const key of FORM_FIELDS) if (edited[key] !== opened[key]) changed[key] = edited[key];
+  for (const [a, b] of PAIRS) {
+    if (a in changed || b in changed) {
+      changed[a] = edited[a];
+      changed[b] = edited[b];
+    }
+  }
   return changed as Partial<RecordFields>;
 }
 
