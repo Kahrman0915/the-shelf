@@ -9,7 +9,7 @@ function record(p: Partial<ShelfRecord> = {}): ShelfRecord {
     id: '00000000-0000-4000-8000-000000000002', shelfId: 's', status: 'wanted', wantsUpgrade: false, upgradeNote: null,
     artist: 'Ahmad Jamal Trio', title: 'At the Pershing', label: 'Argo', catalog: 'LP-628', year: null, format: null,
     genre: 'jazz', discGrade: null, sleeveGrade: null, pricePaid: null, nmEstimateLow: 40, nmEstimateHigh: 60,
-    valueNote: 'Check the label colour.', notes: null, discogsReleaseId: null, coverPath: null, boughtAt: null,
+    valueNote: 'Check the label colour.', notes: null, discogsReleaseId: null, coverPath: null, funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null,
     addedBy: 'u', createdAt: 'x', updatedAt: 'x', deletedAt: null, importKey: null, ...p,
   };
 }

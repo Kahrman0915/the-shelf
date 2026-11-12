@@ -8,7 +8,7 @@ const pershing: ShelfRecord = {
   id: '00000000-0000-4000-8000-000000000001', shelfId: 's', status: 'owned', wantsUpgrade: false, upgradeNote: null,
   artist: 'Ahmad Jamal Trio', title: 'At the Pershing: But Not for Me', label: 'Argo', catalog: 'LP-628', year: 1958,
   format: 'Mono', genre: 'jazz', discGrade: 'G', sleeveGrade: 'G', pricePaid: 15, nmEstimateLow: 12, nmEstimateHigh: 32,
-  valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, boughtAt: null, addedBy: 'u',
+  valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null, addedBy: 'u',
   createdAt: '2025-09-17T00:00:00.000Z', updatedAt: '2025-09-17T00:00:00.000Z', deletedAt: null, importKey: 'x',
 };
 

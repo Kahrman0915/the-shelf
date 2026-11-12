@@ -17,7 +17,7 @@ function record(p: Partial<ShelfRecord> = {}): ShelfRecord {
     id: ID, shelfId: SHELF, status: 'owned', wantsUpgrade: false, upgradeNote: null,
     artist: 'John Coltrane', title: 'Ascension', label: 'Impulse!', catalog: null, year: 1966, format: null,
     genre: 'jazz', discGrade: 'Sealed', sleeveGrade: null, pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null,
-    valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, boughtAt: null, addedBy: ME,
+    valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null, addedBy: ME,
     createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: null, importKey: null, ...p,
   };
 }

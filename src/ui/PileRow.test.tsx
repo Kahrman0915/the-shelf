@@ -8,7 +8,7 @@ function rec(artist: string, genre: ShelfRecord['genre'] = 'jazz'): ShelfRecord 
   return {
     id: crypto.randomUUID(), shelfId: 's', status: 'new_arrival', wantsUpgrade: false, upgradeNote: null, artist, title: 'T', label: null, catalog: null,
     year: null, format: null, genre, discGrade: null, sleeveGrade: null, pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null, valueNote: null,
-    notes: null, discogsReleaseId: null, coverPath: null, boughtAt: null, addedBy: 'u', createdAt: 'x', updatedAt: 'x', deletedAt: null, importKey: null,
+    notes: null, discogsReleaseId: null, coverPath: null, funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null, addedBy: 'u', createdAt: 'x', updatedAt: 'x', deletedAt: null, importKey: null,
   };
 }
 
