@@ -1,8 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FakeBackend } from '@/test/fakeBackend';
-import { boughtIt, boughtNew, buyKind, didntBuyIt, perform, rate, type Ctx } from './actions';
+import {
+  addRecord,
+  boughtIt,
+  boughtNew,
+  buyKind,
+  changedFields,
+  deleteRecord,
+  didntBuyIt,
+  editRecord,
+  FORM_FIELDS,
+  perform,
+  rate,
+  restoreWithEdits,
+  type Ctx,
+  type RecordFields,
+} from './actions';
 import { BackendError } from './backend';
-import { pushOutbox } from './courier';
+import { pushOutbox, syncOnce } from './courier';
 import { ShelfDB, writeSession } from './db';
 import { recordToRow } from './rowMapping';
 import type { ShelfRecord } from './schema';
@@ -228,5 +243,144 @@ describe('undo after the purchase reached the server', () => {
     });
     await new Promise((r) => setTimeout(r, 20));
     expect(seen).toBe(1);
+  });
+});
+
+/** The form's view of a record: just the fields Add and Edit show. */
+function formOf(r: ShelfRecord): RecordFields {
+  return Object.fromEntries(FORM_FIELDS.map((k) => [k, r[k]])) as RecordFields;
+}
+
+describe('addRecord', () => {
+  const c = { ...ctx, shelfId: SHELF, newId: NEW_ID };
+  const fields: RecordFields = { ...formOf(record()), artist: 'Nina Simone', title: 'Pastel Blues', year: 1965, discGrade: 'VG+' };
+
+  it('makes an owned record and, with a rating, a rating postcard', () => {
+    const { postcards, undo } = addRecord(fields, 4, c);
+    expect(postcards).toHaveLength(2);
+    const [create, rating] = postcards;
+    if (create.kind !== 'record.create') throw new Error('expected record.create first');
+    expect(create).toMatchObject({ shelfId: SHELF, recordId: NEW_ID, userId: ME, createdAt: NOW });
+    expect(create.fields).toEqual({
+      ...fields,
+      id: NEW_ID,
+      shelfId: SHELF,
+      status: 'owned',
+      wantsUpgrade: false,
+      upgradeNote: null,
+      discogsReleaseId: null,
+      coverPath: null,
+      coverImageUrl: null,
+      boughtAt: null,
+      addedBy: ME,
+      createdAt: NOW,
+      updatedAt: NOW,
+      deletedAt: null,
+      importKey: null,
+    });
+    expect(rating).toEqual({ kind: 'rating.set', shelfId: SHELF, recordId: NEW_ID, userId: ME, createdAt: NOW, fields: { value: 4 } });
+    expect(undo).toBeNull();
+
+    expect(addRecord(fields, null, c).postcards).toHaveLength(1);
+  });
+
+  it('refuses an empty title', () => {
+    expect(() => addRecord({ ...fields, title: '' }, null, c)).toThrow(/title/);
+    expect(() => addRecord({ ...fields, title: '' }, null, c)).toThrow(BackendError);
+  });
+});
+
+describe('changedFields', () => {
+  it('keeps only the fields that differ, comparing numbers and nulls exactly', () => {
+    const opened = formOf(record({ year: 1966, pricePaid: 0 }));
+    expect(changedFields(opened, { ...opened })).toEqual({});
+    expect(changedFields(opened, { ...opened, year: null, pricePaid: null, notes: 'warm' })).toEqual({ year: null, pricePaid: null, notes: 'warm' });
+  });
+});
+
+describe('editRecord', () => {
+  it('sends only what changed', () => {
+    const r = record({ year: 1966 });
+    const opened = formOf(r);
+    const { postcards, undo } = editRecord(r, opened, { ...opened, year: 1967 }, ctx);
+    expect(postcards).toEqual([{ kind: 'record.patch', shelfId: SHELF, recordId: A, userId: ME, createdAt: NOW, fields: { year: 1967 } }]);
+    expect(undo).toBeNull();
+  });
+
+  it('sends nothing when nothing changed', () => {
+    const r = record({ year: 1966 });
+    expect(editRecord(r, formOf(r), formOf(r), ctx)).toEqual({ postcards: [], undo: null });
+  });
+
+  it('refuses an edit that breaks the record rules', () => {
+    const r = record();
+    expect(() => editRecord(r, formOf(r), { ...formOf(r), nmEstimateLow: 30, nmEstimateHigh: 10 }, ctx)).toThrow(/nmEstimateLow/);
+    expect(() => editRecord(r, formOf(r), { ...formOf(r), year: 1800 }, ctx)).toThrow(BackendError);
+  });
+});
+
+describe('deleteRecord', () => {
+  it('marks it deleted, with an undo that clears the mark', () => {
+    expect(deleteRecord(record({ status: 'wanted' }), ctx)).toEqual({
+      postcards: [{ kind: 'record.patch', shelfId: SHELF, recordId: A, userId: ME, createdAt: NOW, fields: { deletedAt: NOW } }],
+      undo: [{ kind: 'record.patch', shelfId: SHELF, recordId: A, userId: ME, createdAt: NOW, fields: { deletedAt: null } }],
+    });
+  });
+});
+
+describe('restoreWithEdits', () => {
+  it('clears deletedAt and applies the edits in one patch', () => {
+    const r = record({ deletedAt: OLD, year: 1966 });
+    const opened = formOf(r);
+    const { postcards, undo } = restoreWithEdits(r, opened, { ...opened, year: 1967, notes: 'first press' }, ctx);
+    expect(postcards).toEqual([
+      { kind: 'record.patch', shelfId: SHELF, recordId: A, userId: ME, createdAt: NOW, fields: { deletedAt: null, year: 1967, notes: 'first press' } },
+    ]);
+    expect(undo).toBeNull();
+  });
+
+  it('refuses edits that break the record rules', () => {
+    const r = record({ deletedAt: OLD });
+    expect(() => restoreWithEdits(r, formOf(r), { ...formOf(r), artist: '' }, ctx)).toThrow(/artist/);
+  });
+});
+
+describe('edits and deletes against the server', () => {
+  let db: ShelfDB;
+  let fake: FakeBackend;
+
+  beforeEach(async () => {
+    db = new ShelfDB(`actions-edit-${crypto.randomUUID()}`);
+    await writeSession(db, { userId: ME, email: 'me@example.com', shelfId: SHELF });
+    fake = new FakeBackend({ records: [recordToRow(record({ year: 1966 }))], ratings: [], members: [] });
+    await pullShelf(db, fake, SHELF);
+  });
+  afterEach(async () => {
+    await db.delete();
+  });
+
+  it('two people editing different fields both keep their change', async () => {
+    const mine = (await db.records.get(A))!;
+    const opened = formOf(mine);
+    fake.touchRecord(A, { notes: 'Megan: plays clean' });
+
+    const { postcards } = editRecord(mine, opened, { ...opened, year: 1967 }, ctx);
+    await perform(db, postcards);
+    await pushOutbox(db, fake);
+    await syncOnce(db, fake, SHELF);
+
+    expect(fake.recordRow(A)).toMatchObject({ notes: 'Megan: plays clean', year: 1967 });
+    expect(await db.records.get(A)).toMatchObject({ notes: 'Megan: plays clean', year: 1967 });
+  });
+
+  it('deleteRecord marks it deleted; Undo after it reached the server brings it back', async () => {
+    const { postcards, undo } = deleteRecord((await db.records.get(A))!, ctx);
+    await perform(db, postcards);
+    await pushOutbox(db, fake);
+    expect(fake.recordRow(A)?.deleted_at).toBeTruthy();
+    await perform(db, undo!);
+    await pushOutbox(db, fake);
+    expect(fake.recordRow(A)?.deleted_at).toBeNull();
+    expect((await db.records.get(A))?.deletedAt).toBeNull();
   });
 });
