@@ -25,6 +25,14 @@ export function useRecord(shelfId: string, id: string | undefined): ShelfRecord 
   }, [shelfId, id]);
 }
 
+/** Like useRecord, but a deleted record is still returned (Edit must notice a delete from another phone). */
+export function useRecordAnyState(shelfId: string, id: string | undefined): ShelfRecord | null | undefined {
+  return useLiveQuery(async () => {
+    const record = id ? await db.records.get(id) : undefined;
+    return record && record.shelfId === shelfId ? record : null;
+  }, [shelfId, id]);
+}
+
 export function useRatings(recordId: string): Rating[] | undefined {
   return useLiveQuery(() => db.ratings.where('recordId').equals(recordId).toArray(), [recordId]);
 }

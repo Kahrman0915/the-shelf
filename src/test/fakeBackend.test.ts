@@ -49,7 +49,7 @@ describe('FakeBackend', () => {
       newRecordToRow({
         id: REC, shelfId: SHELF, status, wantsUpgrade: false, upgradeNote: null, artist: 'Sade', title: 'Diamond Life', label: null,
         catalog: null, year: null, format: null, genre: 'popsoul', discGrade: null, sleeveGrade: null, pricePaid: 15, nmEstimateLow: null,
-        nmEstimateHigh: null, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, boughtAt: null, addedBy: K,
+        nmEstimateHigh: null, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null, addedBy: K,
         createdAt: '2025-01-01T00:00:00.000Z', updatedAt: '2025-01-01T00:00:00.000Z', deletedAt: null, importKey: null,
       });
 

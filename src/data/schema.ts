@@ -4,7 +4,10 @@ import { GRADE_KEYS } from '@/domain/grades';
 
 const text = z.string().trim().min(1);
 const optionalText = text.nullable();
-const money = z.number().nonnegative().nullable();
+const httpsLink = z.string().startsWith('https://').nullable();
+/** numeric(8,2) on the server: under a million. */
+export const MONEY_MAX = 999999.99;
+const money = z.number().nonnegative().max(MONEY_MAX).nullable();
 
 export const RecordSchema = z
   .object({
@@ -29,6 +32,9 @@ export const RecordSchema = z
     notes: optionalText,
     discogsReleaseId: z.number().int().positive().nullable(),
     coverPath: optionalText,
+    funFact: z.string().trim().min(1).max(500).nullable(),
+    funFactSource: httpsLink,
+    coverImageUrl: httpsLink,
     boughtAt: z.string().nullable(),
     addedBy: z.uuid(),
     createdAt: z.string(),
@@ -39,7 +45,8 @@ export const RecordSchema = z
   .refine(
     (r) => (r.nmEstimateLow === null) === (r.nmEstimateHigh === null) && (r.nmEstimateLow === null || r.nmEstimateLow <= (r.nmEstimateHigh ?? 0)),
     { message: 'needs both low and high, with low ≤ high', path: ['nmEstimateLow'] },
-  );
+  )
+  .refine((r) => r.funFactSource === null || r.funFact !== null, { message: 'needs a fun fact', path: ['funFactSource'] });
 
 export type ShelfRecord = z.infer<typeof RecordSchema>;
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ShelfRecord } from './schema';
+import { RecordSchema } from './schema';
 import { RowError, newRecordToRow, patchToRow, ratingFromRow, ratingToRow, recordFromRow, recordToRow } from './rowMapping';
 
 const record: ShelfRecord = {
@@ -7,7 +8,7 @@ const record: ShelfRecord = {
   wantsUpgrade: false, upgradeNote: null, artist: 'Ahmad Jamal Trio', title: 'At the Pershing', label: 'Argo',
   catalog: 'LP-628', year: 1958, format: 'Mono', genre: 'jazz', discGrade: 'G', sleeveGrade: null, pricePaid: null,
   nmEstimateLow: 12, nmEstimateHigh: 32, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null,
-  boughtAt: null, addedBy: '00000000-0000-4000-8000-0000000000bb', createdAt: '2025-09-17T00:00:00.000Z',
+  funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null, addedBy: '00000000-0000-4000-8000-0000000000bb', createdAt: '2025-09-17T00:00:00.000Z',
   updatedAt: '2025-09-17T00:00:00.000Z', deletedAt: null, importKey: 'ahmad-jamal-pershing',
 };
 
@@ -27,6 +28,27 @@ describe('record rows', () => {
     const row = { ...recordToRow(record), genre: 'polka' };
     expect(() => recordFromRow(row)).toThrow(RowError);
     expect(() => recordFromRow(row)).toThrow(/00000000-0000-4000-8000-000000000001: genre/);
+  });
+});
+
+describe('fun fact and cover link', () => {
+  it('maps the three columns', () => {
+    const row = { ...recordToRow(record), fun_fact: 'Recorded live', fun_fact_source: 'https://en.wikipedia.org/wiki/X', cover_image_url: 'https://i.discogs.com/a.jpg' };
+    expect(recordFromRow(row)).toMatchObject({ funFact: 'Recorded live', funFactSource: 'https://en.wikipedia.org/wiki/X', coverImageUrl: 'https://i.discogs.com/a.jpg' });
+  });
+
+  it('patches by column name', () => {
+    expect(patchToRow({ funFact: 'x' })).toEqual({ fun_fact: 'x' });
+  });
+
+  it('refuses a non-https source', () => {
+    expect(RecordSchema.safeParse({ ...record, funFact: 'x', funFactSource: 'http://x' }).success).toBe(false);
+  });
+
+  it('refuses a source without a fun fact', () => {
+    const r = RecordSchema.safeParse({ ...record, funFact: null, funFactSource: 'https://x.com' });
+    expect(r.success).toBe(false);
+    expect(!r.success && r.error.issues.some((i) => i.path.join('.') === 'funFactSource' && i.message === 'needs a fun fact')).toBe(true);
   });
 });
 

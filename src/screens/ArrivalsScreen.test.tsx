@@ -15,7 +15,7 @@ function record(n: number, p: Partial<ShelfRecord> = {}): ShelfRecord {
     id: `00000000-0000-4000-8000-00000000000${n}`, shelfId: SHELF, status: 'new_arrival', wantsUpgrade: false, upgradeNote: null,
     artist: `Artist ${n}`, title: `Title ${n}`, label: null, catalog: null, year: null, format: null,
     genre: 'jazz', discGrade: null, sleeveGrade: null, pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null,
-    valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, boughtAt: null, addedBy: ME,
+    valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null, addedBy: ME,
     createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: null, importKey: null, ...p,
   };
 }

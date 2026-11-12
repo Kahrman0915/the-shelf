@@ -15,7 +15,7 @@ function record(id: string): ShelfRecord {
   return {
     id, shelfId: SHELF, status: 'owned', wantsUpgrade: false, upgradeNote: null, artist: 'Miles Davis', title: 'Kind of Blue',
     label: null, catalog: null, year: null, format: null, genre: 'jazz', discGrade: null, sleeveGrade: null, pricePaid: null,
-    nmEstimateLow: null, nmEstimateHigh: null, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null,
+    nmEstimateLow: null, nmEstimateHigh: null, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, funFact: null, funFactSource: null, coverImageUrl: null,
     boughtAt: null, addedBy: ME, createdAt: WHEN, updatedAt: WHEN, deletedAt: null, importKey: null,
   };
 }

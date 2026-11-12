@@ -410,7 +410,7 @@ describe('the pile', () => {
     const arrival: ShelfRecord = {
       id: '00000000-0000-4000-8000-0000000000aa', shelfId: SHELF, status: 'new_arrival', wantsUpgrade: false, upgradeNote: null,
       artist: 'Art Blakey', title: 'Moanin’', label: null, catalog: null, year: null, format: null, genre: 'jazz', discGrade: null, sleeveGrade: null,
-      pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null,
+      pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, funFact: null, funFactSource: null, coverImageUrl: null,
       boughtAt: '2026-06-01T00:00:00.000Z', addedBy: K.userId, createdAt: '2026-06-01T00:00:00.000Z', updatedAt: '2026-06-01T00:00:00.000Z', deletedAt: null, importKey: null,
     };
     const rows = collectionRows(SHELF, K.userId);
@@ -432,7 +432,7 @@ describe('Bought it on the price check', () => {
   const WANTED: ShelfRecord = {
     id: '00000000-0000-4000-8000-0000000000bb', shelfId: SHELF, status: 'wanted', wantsUpgrade: false, upgradeNote: null,
     artist: 'Art Blakey', title: 'Moanin’', label: null, catalog: null, year: null, format: null, genre: 'jazz', discGrade: null, sleeveGrade: null,
-    pricePaid: null, nmEstimateLow: 40, nmEstimateHigh: 60, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null,
+    pricePaid: null, nmEstimateLow: 40, nmEstimateHigh: 60, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, funFact: null, funFactSource: null, coverImageUrl: null,
     boughtAt: null, addedBy: K.userId, createdAt: '2026-06-01T00:00:00.000Z', updatedAt: '2026-06-01T00:00:00.000Z', deletedAt: null, importKey: null,
   };
 
