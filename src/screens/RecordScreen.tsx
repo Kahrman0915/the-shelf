@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCurrentShelf } from '@/app/CurrentShelf';
@@ -15,6 +15,15 @@ import { Poster } from '@/ui/Poster';
 import { ConfirmDialog } from '@/ui/ConfirmDialog';
 import { RatingRecords } from '@/ui/RatingRecords';
 import { StatusTag } from '@/ui/StatusTag';
+
+/** The site a fun fact came from, or null when the stored link isn't a web address. */
+function sourceHost(source: string): string | null {
+  try {
+    return new URL(source).host || null;
+  } catch {
+    return null;
+  }
+}
 
 function Grade({ part, grade }: { part: string; grade: string | null }) {
   return (
@@ -77,11 +86,16 @@ export function RecordScreen() {
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-2xl flex-col gap-6 pb-[calc(3rem+env(safe-area-inset-bottom))]">
-      <div className="px-4 pt-[max(1.5rem,calc(env(safe-area-inset-top)+1rem))]">
+      <div className="flex items-center justify-between gap-4 px-4 pt-[max(1.5rem,calc(env(safe-area-inset-top)+1rem))]">
         <Button variant="ghost" className="h-12 w-fit rounded-lg px-3 text-[15px] font-semibold" onClick={back}>
           <ArrowLeft className="size-5" />
           Back
         </Button>
+        {record && (
+          <Button asChild variant="outline" className="h-12 rounded-lg border-[1.5px] border-line-strong bg-transparent px-5 text-[15px] font-semibold">
+            <Link to={`/record/${record.id}/edit`}>Edit</Link>
+          </Button>
+        )}
       </div>
       <SyncNotice />
       {record === undefined ? null : record === null ? (
@@ -141,6 +155,21 @@ export function RecordScreen() {
                 {record.notes && <p>{record.notes}</p>}
                 {record.upgradeNote && <p>{record.upgradeNote}</p>}
                 {record.valueNote && <p className="text-ink-muted">{record.valueNote}</p>}
+              </div>
+            )}
+            {record.funFact && (
+              <div className="flex flex-col gap-1 text-[15px] leading-5">
+                <p>{record.funFact}</p>
+                {record.funFactSource && sourceHost(record.funFactSource) && (
+                  <a
+                    href={record.funFactSource}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex min-h-12 w-fit items-center text-ink-muted underline underline-offset-2"
+                  >
+                    {`Source: ${sourceHost(record.funFactSource)}`}
+                  </a>
+                )}
               </div>
             )}
             {record.pricePaid !== null && <p className="text-[13px] text-ink-muted">{`Paid ${formatMoney(record.pricePaid)}`}</p>}

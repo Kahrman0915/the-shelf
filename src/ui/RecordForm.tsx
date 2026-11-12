@@ -25,6 +25,8 @@ type Props = {
   onDirtyChange?: (dirty: boolean) => void;
   /** Edit: the Delete record link. */
   footer?: ReactNode;
+  /** The form element's id, so a button elsewhere on the screen can submit it. */
+  formId?: string;
 };
 
 const LABEL = 'text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted';
@@ -38,7 +40,7 @@ const DETAIL_FIELDS: (keyof RecordFormValues)[] = ['year', 'funFact', 'funFactSo
 
 const fieldId = (name: keyof RecordFormValues) => `rf-${name}`;
 
-export function RecordForm({ mode, initial, records, excludeId, onSave, onOpenDuplicate, onDirtyChange, footer }: Props) {
+export function RecordForm({ mode, initial, records, excludeId, onSave, onOpenDuplicate, onDirtyChange, footer, formId }: Props) {
   const [opened, setOpened] = useState(initial);
   const [values, setValues] = useState(initial);
   const [rating, setRating] = useState<number | null>(null);
@@ -137,12 +139,13 @@ export function RecordForm({ mode, initial, records, excludeId, onSave, onOpenDu
 
   return (
     <form
+      id={formId}
       noValidate
       onSubmit={(e) => {
         e.preventDefault();
         void submit(false);
       }}
-      className="flex flex-col gap-5"
+      className="flex flex-col gap-5 px-4"
     >
       {text('artist', 'Artist')}
       <div className="flex flex-col gap-2">

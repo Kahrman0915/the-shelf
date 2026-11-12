@@ -29,6 +29,7 @@ function renderRecord(id = ID) {
       <MemoryRouter initialEntries={[`/record/${id}`]}>
         <Routes>
           <Route path="/record/:id" element={<RecordScreen />} />
+          <Route path="/record/:id/edit" element={<p>Edit page</p>} />
           <Route path="/arrivals" element={<p>Arrivals page</p>} />
         </Routes>
       </MemoryRouter>
@@ -136,6 +137,33 @@ describe('RecordScreen', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Remove it' }));
     expect(await screen.findByText('Arrivals page')).toBeInTheDocument();
     expect((await db.records.get(ID))?.deletedAt).not.toBeNull();
+  });
+
+  it('Edit opens the edit screen', async () => {
+    await db.records.put(record());
+    renderRecord();
+    await userEvent.click(await screen.findByRole('link', { name: 'Edit' }));
+    expect(await screen.findByText('Edit page')).toBeInTheDocument();
+  });
+
+  it('shows the fun fact and its source host', async () => {
+    const source = 'https://en.wikipedia.org/wiki/Ascension_(John_Coltrane_album)';
+    await db.records.put(record({ notes: 'Both takes.', funFact: 'Recorded in a single day in June 1965.', funFactSource: source }));
+    renderRecord();
+    expect(await screen.findByText('Recorded in a single day in June 1965.')).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: 'Source: en.wikipedia.org' });
+    expect(link).toHaveAttribute('href', source);
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    // After the notes.
+    expect(screen.getByText('Both takes.').compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('no Source line without a source', async () => {
+    await db.records.put(record({ funFact: 'Recorded in a single day in June 1965.' }));
+    renderRecord();
+    expect(await screen.findByText('Recorded in a single day in June 1965.')).toBeInTheDocument();
+    expect(screen.queryByText(/Source:/)).not.toBeInTheDocument();
   });
 
   it('Didn’t buy it is not offered on shelved records', async () => {

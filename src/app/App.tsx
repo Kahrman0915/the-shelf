@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { db } from '@/data/db';
 import { AddScreen } from '@/screens/AddScreen';
 import { ArrivalsScreen } from '@/screens/ArrivalsScreen';
+import { EditScreen } from '@/screens/EditScreen';
 import { NameScreen } from '@/screens/NameScreen';
 import { PriceCheckScreen } from '@/screens/PriceCheckScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
@@ -112,6 +113,7 @@ export default function App() {
             <Route path="/show" element={<ShowScreen />} />
             <Route path="/arrivals" element={<ArrivalsScreen />} />
             <Route path="/record/:id" element={<RecordScreen />} />
+            <Route path="/record/:id/edit" element={<EditScreen />} />
             <Route path="/price/:id" element={<PriceCheckScreen />} />
             <Route path="/settings" element={<SettingsScreen />} />
             <Route path="*" element={<Navigate to="/" replace />} />
