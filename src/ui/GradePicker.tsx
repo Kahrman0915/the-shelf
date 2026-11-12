@@ -10,6 +10,8 @@ export function GradePicker({ value, onChange, part }: { value: Grade | null; on
   const stop = Math.max(0, GRADES.findIndex((g) => g.key === value));
 
   const move = (e: KeyboardEvent<HTMLButtonElement>, from: number) => {
+    // Alt, Ctrl and Cmd with these keys are browser and system shortcuts (Alt+Left is Back): leave them be.
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
     const last = GRADES.length - 1;
     let to: number;
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') to = from === last ? 0 : from + 1;

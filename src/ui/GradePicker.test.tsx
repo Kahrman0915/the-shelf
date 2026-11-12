@@ -58,6 +58,22 @@ describe('GradePicker', () => {
     expect(onChange).toHaveBeenLastCalledWith('Sealed');
   });
 
+  it('leaves arrows, Home and End alone when Alt, Ctrl or Cmd is held, so browser and system shortcuts still work', () => {
+    const onChange = vi.fn();
+    render(<GradePicker value="NM" onChange={onChange} part="Disc" />);
+    const nm = screen.getByRole('radio', { name: 'NM' });
+    nm.focus();
+    for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']) {
+      for (const mod of [{ altKey: true }, { ctrlKey: true }, { metaKey: true }]) {
+        const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...mod });
+        nm.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+      }
+    }
+    expect(onChange).not.toHaveBeenCalled();
+    expect(nm).toHaveFocus();
+  });
+
   it('Tab leaves the picker after one stop', async () => {
     const user = userEvent.setup();
     render(

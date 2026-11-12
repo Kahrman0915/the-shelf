@@ -12,7 +12,11 @@ export function useLeaveGuard(dirty: boolean): { leave: (go: () => void) => void
 
   useEffect(() => {
     if (!dirty) return;
-    const stop = (e: BeforeUnloadEvent) => e.preventDefault();
+    const stop = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      // Older browsers ask only when returnValue is set.
+      e.returnValue = '';
+    };
     window.addEventListener('beforeunload', stop);
     return () => window.removeEventListener('beforeunload', stop);
   }, [dirty]);

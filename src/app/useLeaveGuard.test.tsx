@@ -44,6 +44,16 @@ describe('useLeaveGuard', () => {
     await waitFor(() => expect(screen.queryByText('Discard your changes?')).not.toBeInTheDocument());
   });
 
+  it('also sets returnValue, which older browsers need before they ask', () => {
+    render(<Guarded dirty go={() => {}} />);
+    const reload = new Event('beforeunload', { cancelable: true });
+    const set: unknown[] = [];
+    Object.defineProperty(reload, 'returnValue', { configurable: true, get: () => set.at(-1), set: (v: unknown) => set.push(v) });
+    window.dispatchEvent(reload);
+    expect(set).toEqual(['']);
+    expect(reload.defaultPrevented).toBe(true);
+  });
+
   it('holds a reload only while dirty', () => {
     const { rerender, unmount } = render(<Guarded dirty go={() => {}} />);
     expect(reloadPrevented()).toBe(true);
