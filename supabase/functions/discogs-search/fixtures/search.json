@@ -1,0 +1,158 @@
+{
+  "pagination": {
+    "page": 1,
+    "pages": 1,
+    "per_page": 6,
+    "items": 8,
+    "urls": {}
+  },
+  "results": [
+    {
+      "id": 1001,
+      "title": "McCoy Tyner - Forces Of Nature (Live At Slugs')",
+      "year": "1978",
+      "label": [
+        "Blue Note"
+      ],
+      "catno": "BN-LA459-H2",
+      "format": [
+        "Vinyl",
+        "LP",
+        "Album"
+      ],
+      "country": "US",
+      "genre": [
+        "Jazz"
+      ],
+      "style": [
+        "Post Bop"
+      ],
+      "thumb": "https://i.discogs.com/thumb-1001.jpg",
+      "cover_image": "https://i.discogs.com/cover-1001.jpg"
+    },
+    {
+      "id": 1002,
+      "title": "Sonny Rollins* - Way Out West",
+      "year": "1970",
+      "label": [
+        "Contemporary Records"
+      ],
+      "catno": "none",
+      "format": [
+        "Vinyl",
+        "LP",
+        "Album"
+      ],
+      "country": "US",
+      "genre": [
+        "Jazz"
+      ],
+      "style": [
+        "Hard Bop"
+      ],
+      "thumb": "https://i.discogs.com/thumb-1002.jpg",
+      "cover_image": "https://i.discogs.com/cover-1002.jpg"
+    },
+    {
+      "id": 1003,
+      "title": "Ahmad Jamal (2) - At The Pershing",
+      "year": "0",
+      "label": [
+        "Argo"
+      ],
+      "catno": "LP 628",
+      "format": [
+        "Vinyl",
+        "LP",
+        "Album"
+      ],
+      "country": "US",
+      "genre": [
+        "Jazz"
+      ],
+      "style": [
+        "Hard Bop"
+      ],
+      "thumb": "https://i.discogs.com/thumb-1003.jpg",
+      "cover_image": "https://i.discogs.com/cover-1003.jpg"
+    },
+    {
+      "id": 1004,
+      "title": "Miles Davis - Live - Evil",
+      "year": "1970",
+      "label": [
+        "Columbia"
+      ],
+      "catno": "G 30954",
+      "format": [
+        "Vinyl",
+        "LP",
+        "Album"
+      ],
+      "country": "US",
+      "genre": [
+        "Jazz"
+      ],
+      "style": [
+        "Hard Bop"
+      ],
+      "thumb": "http://i.discogs.com/thumb-1004.jpg",
+      "cover_image": "http://i.discogs.com/cover-1004.jpg"
+    },
+    {
+      "id": 1005,
+      "title": "Various - Trojan Records",
+      "year": "1970",
+      "label": [
+        "Trojan Records"
+      ],
+      "catno": "TRL 1",
+      "format": [
+        "Vinyl",
+        "LP",
+        "Album"
+      ],
+      "country": "US",
+      "genre": [
+        "Reggae"
+      ],
+      "style": [
+        "Roots Reggae"
+      ],
+      "thumb": "",
+      "cover_image": "https://i.discogs.com/cover-1005.jpg"
+    },
+    {
+      "id": 1006,
+      "title": "Bing Crosby - White Christmas",
+      "year": "1955",
+      "label": [
+        "Decca"
+      ],
+      "catno": "DL 8128",
+      "format": [
+        "Vinyl",
+        "LP",
+        "Album"
+      ],
+      "country": "US",
+      "genre": [
+        "Pop"
+      ],
+      "style": [
+        "Holiday"
+      ],
+      "thumb": "https://i.discogs.com/thumb-1006.jpg",
+      "cover_image": "https://i.discogs.com/cover-1006.jpg"
+    },
+    {
+      "title": "No Id - Some Album",
+      "year": "1970"
+    },
+    {
+      "id": 1008,
+      "title": "Untitled Without Separator",
+      "year": "1970"
+    }
+  ]
+}
