@@ -51,6 +51,15 @@ describe('Shelf settings', () => {
     expect(screen.getByText('Owner')).toBeInTheDocument();
   });
 
+  it('shows the Discogs notice', async () => {
+    renderSettings(backendFor(K));
+    expect(
+      await screen.findByText(
+        'This application uses Discogs’ API but is not affiliated with, sponsored or endorsed by Discogs. ‘Discogs’ is a trademark of Zink Media, LLC.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('lets the owner invite someone by email, and shows them as waiting', async () => {
     renderSettings(backendFor(K));
     await userEvent.type(await screen.findByLabelText('Their email'), 'Friend@Example.com');

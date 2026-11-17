@@ -166,6 +166,23 @@ describe('RecordScreen', () => {
     expect(screen.queryByText(/Source:/)).not.toBeInTheDocument();
   });
 
+  it('shows the Discogs credit for a Discogs record', async () => {
+    await db.records.put(record({ discogsReleaseId: 1234567 }));
+    renderRecord();
+    const link = await screen.findByRole('link', { name: 'Data provided by Discogs' });
+    expect(link).toHaveAttribute('href', 'https://www.discogs.com/release/1234567');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+    expect(link.getAttribute('rel')).not.toContain('nofollow');
+  });
+
+  it('no Discogs credit otherwise', async () => {
+    await db.records.put(record({ discogsReleaseId: null }));
+    renderRecord();
+    await screen.findByRole('heading', { name: 'John Coltrane' });
+    expect(screen.queryByText('Data provided by Discogs')).not.toBeInTheDocument();
+  });
+
   it('Didn’t buy it is not offered on shelved records', async () => {
     await db.records.put(record({ status: 'owned' }));
     renderRecord();
