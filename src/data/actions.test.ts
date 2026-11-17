@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FakeBackend } from '@/test/fakeBackend';
 import {
+  addFound,
   addRecord,
   boughtIt,
   boughtNew,
@@ -16,7 +17,7 @@ import {
   type Ctx,
   type RecordFields,
 } from './actions';
-import { BackendError } from './backend';
+import { BackendError, type FoundRecord } from './backend';
 import { pushOutbox, syncOnce } from './courier';
 import { ShelfDB, writeSession } from './db';
 import { recordToRow } from './rowMapping';
@@ -287,6 +288,61 @@ describe('addRecord', () => {
   it('refuses an empty title', () => {
     expect(() => addRecord({ ...fields, title: '' }, null, c)).toThrow(/title/);
     expect(() => addRecord({ ...fields, title: '' }, null, c)).toThrow(BackendError);
+  });
+});
+
+describe('addFound', () => {
+  const c = { ...ctx, shelfId: SHELF, newId: NEW_ID };
+  const found: FoundRecord = {
+    releaseId: 1234567,
+    artist: 'McCoy Tyner',
+    title: 'Forces Of Nature',
+    label: 'Blue Note',
+    catalog: 'BN-LA 1',
+    year: 1994,
+    format: 'Vinyl, LP',
+    country: 'US',
+    genres: ['Jazz'],
+    styles: ['Post Bop'],
+    thumb: 'https://i.discogs.com/thumb.jpg',
+  };
+
+  it('saves an owned record with the Discogs facts and the mapped section', () => {
+    const { postcards } = addFound(found, c);
+    expect(postcards).toHaveLength(1);
+    const [create] = postcards;
+    if (create.kind !== 'record.create') throw new Error('expected record.create');
+    expect(create.fields).toMatchObject({
+      id: NEW_ID,
+      shelfId: SHELF,
+      status: 'owned',
+      artist: 'McCoy Tyner',
+      title: 'Forces Of Nature',
+      label: 'Blue Note',
+      catalog: 'BN-LA 1',
+      year: 1994,
+      format: 'Vinyl, LP',
+      genre: 'jazz',
+      discogsReleaseId: 1234567,
+      discGrade: null,
+      sleeveGrade: null,
+      coverImageUrl: null,
+      addedBy: ME,
+    });
+    expect(postcards.some((p) => p.kind === 'rating.set')).toBe(false);
+  });
+
+  it('has an undo that soft-deletes it', () => {
+    const { undo } = addFound(found, c);
+    expect(undo).toEqual([{ kind: 'record.patch', shelfId: SHELF, recordId: NEW_ID, userId: ME, createdAt: NOW, fields: { deletedAt: NOW } }]);
+  });
+
+  it('keeps a 200-character title valid', () => {
+    const title = 'x'.repeat(200);
+    const { postcards } = addFound({ ...found, title }, c);
+    const [create] = postcards;
+    if (create.kind !== 'record.create') throw new Error('expected record.create');
+    expect(create.fields.title).toBe(title);
   });
 });
 
