@@ -79,4 +79,18 @@ describe('shapeResults', () => {
     expect(shapeResults({})).toEqual([]);
     expect(shapeResults({ results: 'x' })).toEqual([]);
   });
+
+  it('skips an entry whose artist or title is empty', () => {
+    const entry = (id: number, title: string) => ({ id, title });
+    const shaped = shapeResults({
+      results: [entry(1, 'Sade - '), entry(2, ' - Diamond Life'), entry(3, '* - Diamond Life'), entry(4, '   -   '), entry(5, 'Sade - Diamond Life')],
+    });
+    expect(shaped.map((r) => r.releaseId)).toEqual([5]);
+  });
+
+  it('nulls an empty or blank label, and trims one', () => {
+    const entry = (id: number, label: unknown) => ({ id, title: 'Sade - Diamond Life', label });
+    const shaped = shapeResults({ results: [entry(1, ['']), entry(2, ['   ']), entry(3, ['  Epic ']), entry(4, [42])] });
+    expect(shaped.map((r) => r.label)).toEqual([null, null, 'Epic', null]);
+  });
 });

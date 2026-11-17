@@ -42,6 +42,8 @@ function shapeOne(entry: unknown): FoundRecord | null {
   if (typeof releaseId !== 'number' || !Number.isInteger(releaseId)) return null;
   if (typeof entry.title !== 'string' || !entry.title.includes(' - ')) return null;
   const { artist, title } = splitTitle(entry.title);
+  // `Sade - `, ` - Diamond Life` or `* - Diamond Life` would save a record with no artist or title.
+  if (artist === '' || title === '') return null;
 
   const catno = text(entry.catno);
   const year = Number.parseInt(String(entry.year), 10);
@@ -50,7 +52,7 @@ function shapeOne(entry: unknown): FoundRecord | null {
     releaseId,
     artist,
     title,
-    label: strings(entry.label)[0] ?? null,
+    label: text(strings(entry.label)[0]),
     catalog: catno && catno.toLowerCase() !== 'none' ? catno : null,
     year: Number.isInteger(year) && year >= 1900 && year <= 2100 ? year : null,
     format: format === '' ? null : format,
