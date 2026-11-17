@@ -107,7 +107,7 @@ Checked in this order, and the first match wins:
 
 ## 7. Server: Edge Function `discogs-search`
 
-- **Location:** `supabase/functions/discogs-search/index.ts` (Deno). The result-shaping logic lives in `supabase/functions/discogs-search/shape.ts`, plain TypeScript with no Deno APIs, so Vitest can test it.
+- **Location:** `supabase/functions/discogs-search/index.ts` (Deno). The result-shaping logic lives in `supabase/functions/discogs-search/shape.ts`, and the Discogs request itself in `discogs.ts`. Both are plain TypeScript with no Deno APIs, so Vitest can test them. `index.ts` is a thin Deno wrapper around them.
 - **Requires a signed-in user** (JWT verification on), and returns 401 otherwise.
 - **Request:** `POST { query }`. The query is trimmed and must be 2–200 characters, else 400.
 - **Calls** `GET https://api.discogs.com/database/search?q={query}&type=release&format=Vinyl&per_page=6`.
