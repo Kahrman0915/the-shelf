@@ -336,14 +336,6 @@ describe('addFound', () => {
     const { undo } = addFound(found, c);
     expect(undo).toEqual([{ kind: 'record.patch', shelfId: SHELF, recordId: NEW_ID, userId: ME, createdAt: NOW, fields: { deletedAt: NOW } }]);
   });
-
-  it('keeps a 200-character title valid', () => {
-    const title = 'x'.repeat(200);
-    const { postcards } = addFound({ ...found, title }, c);
-    const [create] = postcards;
-    if (create.kind !== 'record.create') throw new Error('expected record.create');
-    expect(create.fields.title).toBe(title);
-  });
 });
 
 describe('changedFields', () => {

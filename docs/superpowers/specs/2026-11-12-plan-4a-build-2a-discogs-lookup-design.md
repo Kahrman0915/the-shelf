@@ -64,7 +64,7 @@ Kahrman tried adding *McCoy Tyner, Forces of Nature* by hand and stopped partway
 | Discogs rate limit | `Too many searches at once. Wait a minute and try again.` |
 | Discogs down, or over 20 s | `Discogs isn’t responding. Try again, or fill it in by hand.` |
 
-Search results live only in screen state. They're never written to the notebook or kept after you leave the screen.
+Search results live only in screen state. They're never written to the notebook or kept after you leave the screen. Results more than an hour old are cleared when the app comes back to the front, well inside Discogs' 6-hour freshness rule.
 
 ## 5. Genre mapping (a table in `src/domain/discogsGenre.ts`)
 
@@ -116,8 +116,10 @@ Checked in this order, and the first match wins:
 - **Response:** `{ results: FoundRecord[] }`, where a `FoundRecord` is `{ releaseId, artist, title, label, catalog, year, format, country, genres, styles, thumb }`. Genre mapping happens in the app (§5).
 - **Errors:** Discogs 429 → 429 `{ error: 'rate-limited' }`; any other failure → 502 `{ error: 'discogs-down' }`. It never returns partial or invented results.
 - **App side:**
-  - `Backend.searchDiscogs(query): Promise<FoundRecord[]>` uses `supabase.functions.invoke`, with its own **20 s** limit rather than the app-wide 15 s.
-  - It throws `BackendError` with the §4 messages, or `NO_SIGNAL`.
+  - `Backend.searchDiscogs(query): Promise<FoundRecord[]>` calls the function with plain `fetch` through `fetchWithTimeout(20_000)`, sending the signed-in user's access token and the publishable key. It doesn't use `supabase.functions.invoke`, because that would inherit the client's app-wide **15 s** limit; this call gets its own **20 s**.
+  - A query that's under 2 or over 200 characters after trimming returns `[]` without calling the function.
+  - It throws `BackendError` with the §4 messages, or `NO_SIGNAL`: a timeout past 20 s is `Discogs isn’t responding…` (§4), and only an offline phone or a failed connection is `NO_SIGNAL`. A 401 from the function is `Sign in again to search.`
+  - The function gives its own Discogs request **15 s**, so it answers 502 before the app gives up. Its logs name only the Discogs status or the error's name, never the URL, the headers or the token.
   - `FakeBackend` gets canned results and switches for rate-limited and down.
 
 ## 8. Credits
