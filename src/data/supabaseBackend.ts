@@ -5,7 +5,10 @@ import { AUTH_STORAGE_KEY, fetchWithTimeout, readConfig, supabase } from './supa
 const PAGE = 1000;
 
 /** The function's own limit: it waits on Discogs, so it gets longer than the shelf's 15 s. */
-const DISCOGS_TIMEOUT_MS = 20_000;
+export const DISCOGS_TIMEOUT_MS = 20_000;
+
+/** The longest query the function accepts (see cleanQuery() in the discogs-search function). */
+const MAX_QUERY = 200;
 
 /** A request that timed out (see fetchWithTimeout() in supabase.ts) or was cut off. postgrest-js
  *  reports one as a message starting with the error's name; anything else carries the name itself. */
@@ -162,7 +165,7 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
 
     async searchDiscogs(query): Promise<FoundRecord[]> {
       const q = query.trim();
-      if (q.length < 2) return [];
+      if (q.length < 2 || q.length > MAX_QUERY) return [];
       const { data, error } = await client.auth.getSession();
       if (error) throw new BackendError(offlineLooking(error) ? NO_SIGNAL : error.message);
       if (!data.session) throw new BackendError('Sign in again to search.');
@@ -175,8 +178,13 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
           body: JSON.stringify({ query: q }),
         });
       } catch (e) {
-        throw new BackendError(offlineLooking(e as Error) ? NO_SIGNAL : DISCOGS_MESSAGES.down);
+        // A timeout means Discogs (or the function) is slow, not that the phone lost signal:
+        // only an offline phone or a failed connection (fetch rejects with a TypeError) is no signal.
+        const err = e as Error;
+        const offline = (typeof navigator !== 'undefined' && navigator.onLine === false) || err instanceof TypeError || (!abortedLooking(err) && offlineLooking(err));
+        throw new BackendError(offline ? NO_SIGNAL : DISCOGS_MESSAGES.down);
       }
+      if (res.status === 401) throw new BackendError('Sign in again to search.');
       if (res.status === 429) throw new BackendError(DISCOGS_MESSAGES.rateLimited);
       if (!res.ok) throw new BackendError(DISCOGS_MESSAGES.down);
       try {
