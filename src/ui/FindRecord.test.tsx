@@ -101,6 +101,7 @@ describe('FindRecord', () => {
     expect(searchBox()).toHaveAttribute('enterkeyhint', 'search');
     expect(searchBox()).toHaveAttribute('placeholder', 'Artist and title, like mccoy tyner forces of nature');
     expect(searchBox().className).toContain('text-base');
+    expect(searchBox()).toHaveAttribute('maxlength', '200');
   });
 
   it('Search is disabled for one character', async () => {
@@ -195,6 +196,61 @@ describe('FindRecord', () => {
     expect(searchBox()).toHaveFocus();
     expect(screen.queryByRole('button', { name: /Forces Of Nature/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Data provided by Discogs' })).not.toBeInTheDocument();
+  });
+
+  /** Holds every notebook write until the returned function is called, so a save stays running. */
+  function slowSaves() {
+    let open: () => void = () => {};
+    const gate = new Promise<void>((r) => { open = r; });
+    const transaction = db.transaction.bind(db) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(db, 'transaction').mockImplementation(((...args: unknown[]) => gate.then(() => transaction(...args))) as never);
+    return () => act(async () => open());
+  }
+
+  it('focus moves to the box the moment a card is tapped, before the save finishes', async () => {
+    setup();
+    await search('mccoy tyner forces of nature');
+    const finishSave = slowSaves();
+    await userEvent.click(await card(/Forces Of Nature/));
+    expect(searchBox()).toHaveFocus();
+    expect(await db.records.count()).toBe(0);
+    await finishSave();
+    await waitFor(() => expect(searchBox()).toHaveValue(''));
+    expect(searchBox()).toHaveFocus();
+  });
+
+  it('a search started while a save runs keeps its words and results', async () => {
+    setup();
+    await search('mccoy tyner forces of nature');
+    const finishSave = slowSaves();
+    await userEvent.click(await card(/Forces Of Nature/));
+    await search('sahara');
+    expect(await card(/Sahara/)).toBeInTheDocument();
+    await finishSave();
+    await screen.findByText('On the shelf: Forces Of Nature (Live At Slugs’)');
+    expect(searchBox()).toHaveValue('sahara');
+    expect(screen.getByRole('button', { name: /Sahara/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Data provided by Discogs' })).toHaveAttribute(
+      'href',
+      'https://www.discogs.com/search/?q=sahara&type=release',
+    );
+  });
+
+  it('a search landing mid-save doesn’t let a second tap start another save', async () => {
+    setup();
+    await search('mccoy tyner forces of nature');
+    const finishSave = slowSaves();
+    await userEvent.click(await card(/Forces Of Nature/));
+    await search('sahara');
+    await userEvent.click(await card(/Sahara/));
+    await finishSave();
+    await screen.findByText('On the shelf: Forces Of Nature (Live At Slugs’)');
+    expect(await db.records.count()).toBe(1);
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    // Once the first save is done, the newer cards can be saved.
+    await userEvent.click(screen.getByRole('button', { name: /Sahara/ }));
+    await screen.findByText('On the shelf: Sahara');
+    expect(await db.records.count()).toBe(2);
   });
 
   it('a double tap saves one record', async () => {
@@ -312,6 +368,41 @@ describe('FindRecord', () => {
     act(() => setOnline(false));
     expect(searchBox()).toBeDisabled();
     expect(screen.getByText('Needs signal')).toBeInTheDocument();
+  });
+
+  describe('coming back to the app', () => {
+    const HOUR = 60 * 60 * 1000;
+    function comeBack() {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+    }
+    afterEach(() => {
+      delete (document as unknown as Record<string, unknown>).visibilityState;
+    });
+
+    it('clears results more than an hour old', async () => {
+      setup();
+      const searchedAt = Date.now();
+      await search('mccoy tyner');
+      await card(/Forces Of Nature/);
+      vi.spyOn(Date, 'now').mockReturnValue(searchedAt + HOUR + 60_000);
+      comeBack();
+      expect(screen.queryByRole('button', { name: /Forces Of Nature/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Data provided by Discogs' })).not.toBeInTheDocument();
+      expect(searchBox()).toHaveValue('mccoy tyner');
+    });
+
+    it('keeps results less than an hour old', async () => {
+      setup();
+      const searchedAt = Date.now();
+      await search('mccoy tyner');
+      await card(/Forces Of Nature/);
+      vi.spyOn(Date, 'now').mockReturnValue(searchedAt + HOUR - 60_000);
+      comeBack();
+      expect(screen.getByRole('button', { name: /Forces Of Nature/ })).toBeInTheDocument();
+    });
   });
 
   it('nothing from the search is written to localStorage', async () => {

@@ -13,6 +13,11 @@ import { findDuplicate } from '@/domain/recordForm';
 import { cn } from '@/lib/utils';
 
 const MAX_CARDS = 6;
+/** The longest query the discogs-search function accepts. */
+const MAX_QUERY = 200;
+/** Discogs asks that its data be no more than 6 hours old; results older than this are dropped
+ *  when the app comes back to the front. */
+const STALE_MS = 60 * 60 * 1000;
 const NEEDS_SIGNAL = 'Needs signal';
 const NO_RESULTS = 'Discogs didn’t find that. Try fewer words, or fill it in by hand.';
 const LABEL = 'text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted';
@@ -33,7 +38,7 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
   const { offer } = useUndo();
 
   const [query, setQuery] = useState('');
-  const [found, setFound] = useState<{ query: string; results: FoundRecord[] } | null>(null);
+  const [found, setFound] = useState<{ query: string; results: FoundRecord[]; at: number } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [online, setOnline] = useState(isOnline);
@@ -41,10 +46,11 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
   // Only the latest search may show its answer: an older one that returns late is ignored.
   const latest = useRef(0);
   // A ref, not just state: two taps before React re-renders must still save one record.
-  // Held after a save until the cards it came from have left the screen; released at once on failure.
-  const saving = useRef(false);
+  // 'running' while a save is under way, whatever else lands meanwhile. 'held' after a save until
+  // the cards it came from have left the screen. Back to 'idle' at once on failure.
+  const saving = useRef<'idle' | 'running' | 'held'>('idle');
   useEffect(() => {
-    saving.current = false;
+    if (saving.current === 'held') saving.current = 'idle';
   }, [found]);
 
   useEffect(() => {
@@ -56,6 +62,15 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
       window.removeEventListener('offline', update);
       latest.current++;
     };
+  }, []);
+
+  useEffect(() => {
+    const dropStale = () => {
+      if (document.visibilityState !== 'visible') return;
+      setFound((f) => (f && Date.now() - f.at > STALE_MS ? null : f));
+    };
+    document.addEventListener('visibilitychange', dropStale);
+    return () => document.removeEventListener('visibilitychange', dropStale);
   }, []);
 
   const q = query.trim();
@@ -77,7 +92,7 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
     try {
       const results = await backend.searchDiscogs(q);
       if (mine !== latest.current) return;
-      setFound({ query: q, results: results.slice(0, MAX_CARDS) });
+      setFound({ query: q, results: results.slice(0, MAX_CARDS), at: Date.now() });
       setMessage(results.length === 0 ? NO_RESULTS : null);
     } catch (err) {
       if (mine !== latest.current) return;
@@ -89,23 +104,31 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
   }
 
   async function pick(record: FoundRecord) {
-    if (saving.current) return;
-    saving.current = true;
+    // Inside the tap itself: iOS only opens the keyboard for a focus() made before any await.
+    box.current?.focus();
+    if (saving.current !== 'idle') return;
+    saving.current = 'running';
+    const searchBefore = latest.current;
     try {
       const ctx = { me: userId, now: new Date().toISOString(), shelfId, newId: crypto.randomUUID() };
       const { postcards, undo } = addFound(record, ctx);
       await perform(db, postcards, runNow);
       if (undo) offer(`On the shelf: ${record.title}`, () => perform(db, undo, runNow));
-      latest.current++;
-      setQuery('');
-      setFound(null);
-      setMessage(null);
-      setSearching(false);
-      box.current?.focus();
+      if (latest.current === searchBefore) {
+        saving.current = 'held';
+        latest.current++;
+        setQuery('');
+        setFound(null);
+        setMessage(null);
+        setSearching(false);
+      } else {
+        // New words or a new search arrived while saving: keep them, and their cards are fair game.
+        saving.current = 'idle';
+      }
       onAdded?.();
     } catch (err) {
       setMessage(messageFor(err));
-      saving.current = false;
+      saving.current = 'idle';
     }
   }
 
@@ -125,6 +148,7 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
             type="search"
             enterKeyHint="search"
             autoComplete="off"
+            maxLength={MAX_QUERY}
             placeholder="Artist and title, like mccoy tyner forces of nature"
             value={query}
             disabled={!online}
