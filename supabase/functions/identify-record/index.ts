@@ -8,11 +8,9 @@ import Anthropic from 'npm:@anthropic-ai/sdk@1.6.0';
 import { createClient } from 'npm:@supabase/supabase-js@2.116.0';
 import { signedInUser } from '../_shared/auth.ts';
 import { searchDiscogsWith } from '../_shared/discogs.ts';
+import { claudeTimeoutMs, startBudget } from './deadline.ts';
 import { findMatch } from './match.ts';
 import { isPhoto, readFromMessage, readRequest } from './read.ts';
-
-/** Short of the app's 30 s limit, leaving room for the Discogs searches. */
-const CLAUDE_TIMEOUT_MS = 20_000;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -54,6 +52,8 @@ const getUser = async (jwt: string) => {
 };
 
 Deno.serve(async (req) => {
+  // The app's 30 s also covers sending the photos: the whole answer has 26 s from here (deadline.ts).
+  const msLeft = startBudget();
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (req.method !== 'POST') return json(405, { error: 'method-not-allowed' });
 
@@ -79,12 +79,17 @@ Deno.serve(async (req) => {
   const back = body?.back ?? null;
   if (!isPhoto(front) || (back !== null && !isPhoto(back))) return json(400, { error: 'bad-photos' });
 
+  const claudeMs = claudeTimeoutMs(msLeft());
+  if (claudeMs <= 0) {
+    console.error('identify-record: out of time');
+    return json(502, { error: 'down' });
+  }
   let message;
   try {
     message = await client.messages.create(
       // read.ts stays free of SDK types (Vitest can't load the SDK), so the request is typed here.
       readRequest(front, back) as Anthropic.MessageCreateParamsNonStreaming,
-      { timeout: CLAUDE_TIMEOUT_MS, maxRetries: 0 },
+      { timeout: claudeMs, maxRetries: 0 },
     );
   } catch (e) {
     // The error's name and status only: never its message, which can echo the request.
@@ -93,7 +98,12 @@ Deno.serve(async (req) => {
     return json(502, { error: 'down' });
   }
 
+  // A cut-off answer (max_tokens, say) reads as nothing; the stop reason's name says why.
+  if (message.stop_reason !== 'end_turn' && message.stop_reason !== 'refusal') {
+    console.error(`identify-record: stop ${message.stop_reason}`);
+  }
   const read = readFromMessage(message);
-  const { status, body: answer } = await findMatch(read, (p) => searchDiscogsWith(p, Deno.env.get('DISCOGS_TOKEN')));
+  const token = Deno.env.get('DISCOGS_TOKEN');
+  const { status, body: answer } = await findMatch(read, (p, ms) => searchDiscogsWith(p, token, fetch, ms), msLeft);
   return json(status, answer);
 });

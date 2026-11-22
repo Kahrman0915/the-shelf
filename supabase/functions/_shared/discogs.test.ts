@@ -48,6 +48,26 @@ describe('askDiscogs', () => {
     expect(fetchMock.mock.calls[0][1].signal).toBe(timeout.mock.results[0].value);
   });
 
+  it('searchDiscogsWith takes a shorter timeout when it is given one', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ results: [] }), { status: 200 }));
+    await searchDiscogsWith({ barcode: '0123' }, TOKEN, fetchMock, 4_000);
+    expect(timeout).toHaveBeenCalledWith(4_000);
+    expect(fetchMock.mock.calls[0][1].signal).toBe(timeout.mock.results[0].value);
+  });
+
+  it('carries Discogs’ own count of releases as total, or null without one', async () => {
+    const counted = { pagination: { items: 2 }, results: [entry, { id: 6, title: 'no separator' }] };
+    const withCount = await searchDiscogsWith({ barcode: '0123' }, TOKEN, vi.fn().mockResolvedValue(new Response(JSON.stringify(counted), { status: 200 })));
+    expect(withCount.body).toMatchObject({ total: 2 });
+    expect((withCount.body as { results: unknown[] }).results).toHaveLength(1);
+    const without = await searchDiscogsWith({ barcode: '0123' }, TOKEN, vi.fn().mockResolvedValue(new Response(JSON.stringify({ results: [entry] }), { status: 200 })));
+    expect(without.body).toMatchObject({ total: null });
+    const odd = { pagination: { items: 'two' }, results: [entry] };
+    const oddCount = await searchDiscogsWith({ barcode: '0123' }, TOKEN, vi.fn().mockResolvedValue(new Response(JSON.stringify(odd), { status: 200 })));
+    expect(oddCount.body).toMatchObject({ total: null });
+  });
+
   it('passes a 429 on as rate-limited', async () => {
     const answer = await askDiscogs('sade', TOKEN, vi.fn().mockResolvedValue(new Response('', { status: 429 })));
     expect(answer).toEqual({ status: 429, body: { error: 'rate-limited' } });

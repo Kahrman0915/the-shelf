@@ -82,14 +82,22 @@ describe('readRequest', () => {
     const req = readRequest('F', null) as {
       model: string;
       max_tokens: number;
-      output_config: { format: { type: string; schema: { required: string[] } } };
+      output_config: { format: { type: string; schema: { required: string[]; properties: Record<string, unknown> } } };
     };
     expect(req.model).toBe('claude-haiku-5-5');
-    expect(req.max_tokens).toBe(1024);
     expect(req.output_config.format.type).toBe('json_schema');
     expect([...req.output_config.format.schema.required].sort()).toEqual(
       ['artist', 'barcode', 'catalog', 'label', 'title'],
     );
+    for (const field of Object.values(req.output_config.format.schema.properties)) {
+      expect(field).toEqual({ anyOf: [{ type: 'string' }, { type: 'null' }] });
+    }
+  });
+
+  it('turns thinking off, with room to spare for the answer', () => {
+    const req = readRequest('F', null) as { max_tokens: number; thinking?: unknown };
+    expect(req.thinking).toEqual({ type: 'disabled' });
+    expect(req.max_tokens).toBe(4096);
   });
 });
 

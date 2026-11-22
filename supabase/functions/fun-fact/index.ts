@@ -92,5 +92,9 @@ Deno.serve(async (req) => {
 
   // The search ran out of turns mid-way. Our call: no continuation loop for a one-line fact.
   if (message.stop_reason === 'pause_turn') return json(200, { fact: null });
+  // A cut-off answer (max_tokens, say) finds no fact; the stop reason's name says why.
+  if (message.stop_reason !== 'end_turn' && message.stop_reason !== 'refusal') {
+    console.error(`fun-fact: stop ${message.stop_reason}`);
+  }
   return json(200, factFromMessage(message) ?? { fact: null });
 });

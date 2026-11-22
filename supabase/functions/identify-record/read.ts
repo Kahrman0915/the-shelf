@@ -18,7 +18,8 @@ export function isPhoto(value: unknown): value is string {
   return (value.length / 4) * 3 - padding <= MAX_PHOTO_BYTES;
 }
 
-const nullableString = { type: ['string', 'null'] } as const;
+/** A string or null, in the anyOf form structured outputs accept most widely. */
+const nullableString = { anyOf: [{ type: 'string' }, { type: 'null' }] } as const;
 
 export const READ_SCHEMA = {
   type: 'json_schema',
@@ -52,7 +53,10 @@ export function readRequest(front: string, back: string | null): object {
   content.push({ type: 'text', text: INSTRUCTION });
   return {
     model: 'claude-haiku-5-5',
-    max_tokens: 1024,
+    // Copying print off a sleeve needs no thinking, and thinking would eat into max_tokens. Haiku 5.5
+    // allows it off at effort high or below; its default is medium.
+    thinking: { type: 'disabled' },
+    max_tokens: 4096,
     output_config: { format: READ_SCHEMA },
     messages: [{ role: 'user', content }],
   };

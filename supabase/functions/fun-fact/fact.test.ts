@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanFactInput, factFromMessage, factRequest, searchUrls } from './fact.ts';
+import { answerText, cleanFactInput, factFromMessage, factRequest, searchUrls } from './fact.ts';
 
 const GOOD = { artist: 'Vince Guaraldi Trio', title: 'A Charlie Brown Christmas', year: 1965, label: 'Fantasy' };
 
@@ -41,6 +41,26 @@ describe('factRequest', () => {
     expect(r.tools).toEqual([{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }]);
     expect(JSON.stringify(r)).toContain('A Charlie Brown Christmas');
   });
+
+  it('asks at low effort, with room for thinking and the search results', () => {
+    const r = factRequest(GOOD) as { max_tokens: number; output_config: { effort: string; format: { type: string } } };
+    expect(r.max_tokens).toBe(8192);
+    expect(r.output_config.effort).toBe('low');
+    expect(r.output_config.format.type).toBe('json_schema');
+  });
+
+  it('asks for under 250 characters, inside the 300 the check allows', () => {
+    const r = factRequest(GOOD) as { messages: { content: string }[] };
+    expect(r.messages[0].content).toContain('under 250 characters');
+  });
+
+  it('allows null for fact and sourceUrl as anyOf string or null', () => {
+    const r = factRequest(GOOD) as { output_config: { format: { schema: { properties: Record<string, unknown> } } } };
+    expect(r.output_config.format.schema.properties).toEqual({
+      fact: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      sourceUrl: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    });
+  });
 });
 
 describe('searchUrls', () => {
@@ -63,6 +83,40 @@ describe('factFromMessage', () => {
   it('reads the last text block', () => {
     const m = msg([results(SRC), { type: 'text', text: 'Searching...' }, answer({ fact: 'A fact.', sourceUrl: SRC })]);
     expect(factFromMessage(m)?.fact).toBe('A fact.');
+  });
+
+  it('joins the answer when citations split it across text blocks', () => {
+    const json = JSON.stringify({ fact: 'A fact.', sourceUrl: SRC });
+    const cut = json.indexOf('fact.') + 2;
+    const m = msg([
+      { type: 'text', text: 'Let me look.' },
+      results(SRC),
+      { type: 'text', text: json.slice(0, cut) },
+      { type: 'text', text: json.slice(cut) },
+    ]);
+    expect(factFromMessage(m)).toEqual({ fact: 'A fact.', sourceUrl: SRC });
+  });
+
+  it('reads only the text after the last search', () => {
+    const m = msg([
+      results('https://first.com/a'),
+      answer({ fact: 'Too early.', sourceUrl: 'https://first.com/a' }),
+      results(SRC),
+      answer({ fact: 'A fact.', sourceUrl: SRC }),
+    ]);
+    expect(factFromMessage(m)).toEqual({ fact: 'A fact.', sourceUrl: SRC });
+  });
+
+  it('finds the JSON inside prose around it', () => {
+    const json = JSON.stringify({ fact: 'A fact with {braces} and a "quote".', sourceUrl: SRC });
+    const m = msg([results(SRC), { type: 'text', text: `Here is what I found: ${json} Hope that helps!` }]);
+    expect(factFromMessage(m)).toEqual({ fact: 'A fact with {braces} and a "quote".', sourceUrl: SRC });
+  });
+
+  it('reads every text block when there was no search, and still refuses its source', () => {
+    const content = [{ type: 'text', text: '{"fact": "A fact.", ' }, { type: 'text', text: `"sourceUrl": "${SRC}"}` }];
+    expect(answerText(content)).toBe(`{"fact": "A fact.", "sourceUrl": "${SRC}"}`);
+    expect(factFromMessage(msg(content))).toBeNull();
   });
 
   it('refuses a source the search did not return', () => {
