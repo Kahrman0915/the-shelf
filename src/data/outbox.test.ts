@@ -3,6 +3,7 @@ import { BackendError } from './backend';
 import { ShelfDB } from './db';
 import { applyPostcard, ensureStorageKept, savePostcards, storageKept, type NewPostcard } from './outbox';
 import type { Section, ShelfRecord } from './schema';
+import { sectionIdFor } from '@/domain/sections';
 
 const SHELF = '11111111-1111-4111-8111-111111111111';
 const ME = '22222222-2222-4222-8222-222222222222';
@@ -22,7 +23,7 @@ function record(over: Partial<ShelfRecord> = {}): ShelfRecord {
     catalog: null,
     year: null,
     format: null,
-    genre: 'jazz',
+    sectionId: sectionIdFor(SHELF, 'jazz'),
     discGrade: null,
     sleeveGrade: null,
     pricePaid: null,
@@ -264,10 +265,23 @@ describe('applyPostcard: sections', () => {
     expect(await db.sections.get(S2)).toMatchObject({ discogsGenres: ['Jazz', 'Blues', 'Rock'], takesHoliday: true });
   });
 
+  it('section.merge moves the section’s records, deleted ones too, and leaves the rest', async () => {
+    await db.sections.bulkPut([section(S1), section(S2, { name: 'Jazz' }), section(S3, { name: 'Other' })]);
+    await db.records.bulkPut([
+      record({ id: '00000000-0000-4000-8000-0000000000a1', sectionId: S1 }),
+      record({ id: '00000000-0000-4000-8000-0000000000a2', sectionId: S1, deletedAt: WHEN }),
+      record({ id: '00000000-0000-4000-8000-0000000000a3', sectionId: S3 }),
+    ]);
+    await sApply(sMerge(S1, S2));
+    expect((await db.records.orderBy('id').toArray()).map((r) => r.sectionId)).toEqual([S2, S2, S3]);
+  });
+
   it('section.merge does nothing while the section it goes into is not on the phone', async () => {
     await db.sections.put(section(S1, { discogsGenres: ['Rock'] }));
+    await db.records.put(record({ sectionId: S1 }));
     await sApply(sMerge(S1, S2));
     expect(await db.sections.get(S1)).toBeDefined();
+    expect((await db.records.get(REC))?.sectionId).toBe(S1);
   });
 
   it('a section that takes holiday takes it off the shelf’s others, and repeating is harmless', async () => {
@@ -302,8 +316,10 @@ describe('applyPostcard: sections', () => {
 
   it('section.merge refuses to merge the catch-all away', async () => {
     await db.sections.bulkPut([section(S1, { isCatchAll: true }), section(S2)]);
+    await db.records.put(record({ sectionId: S1 }));
     await expect(sApply(sMerge(S1, S2))).rejects.toThrow(BackendError);
     expect(await db.sections.count()).toBe(2);
+    expect((await db.records.get(REC))?.sectionId).toBe(S1);
   });
 
   it('savePostcards applies and queues a section postcard, held by the section id', async () => {

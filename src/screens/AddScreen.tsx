@@ -7,7 +7,7 @@ import { useLeaveGuard } from '@/app/useLeaveGuard';
 import { addRecord, perform, type RecordFields } from '@/data/actions';
 import { db } from '@/data/db';
 import { wantFunFact } from '@/data/funFacts';
-import { useShelfItems } from '@/data/hooks';
+import { useSections, useShelfItems } from '@/data/hooks';
 import { clearDrafts, restoreDrafts, useDrafts } from '@/data/photoDrafts';
 import { addPhotosTo, hasDrafts } from '@/data/photos';
 import { emptyForm } from '@/domain/recordForm';
@@ -20,6 +20,7 @@ export function AddScreen() {
   const { shelfId, userId } = useCurrentShelf();
   const items = useShelfItems(shelfId, userId);
   const records = useMemo(() => (items ?? []).map((i) => i.record), [items]);
+  const sections = useSections(shelfId);
   const { runNow } = useSyncStatus();
   const drafts = useDrafts();
   const waiting = drafts && hasDrafts(drafts) ? drafts : null;
@@ -89,6 +90,7 @@ export function AddScreen() {
         <RecordForm
           mode="add"
           initial={initial}
+          sections={sections ?? []}
           records={records}
           onSave={onSave}
           onOpenDuplicate={(id) => leave(() => navigate(`/record/${id}`))}

@@ -1,7 +1,9 @@
 import collection from '../../collection.json';
+import { KAHRMANS_NINE, type SectionSeed } from '@/domain/sections';
 import { BackendError, CLAUDE_DOWN, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED, type Backend, type FoundRecord, type Identified, type Invite, type Member, type SignedIn } from '@/data/backend';
+import { sectionsFromSet } from '@/data/db';
 import { importCollection } from '@/data/importCollection';
-import { ratingToRow, recordToRow, type NewRecordRow, type NewSectionRow, type RatingRow, type RecordPatchRow, type RecordRow, type SectionPatchRow, type SectionRow } from '@/data/rowMapping';
+import { ratingToRow, recordToRow, sectionToRow, type NewRecordRow, type NewSectionRow, type RatingRow, type RecordPatchRow, type RecordRow, type SectionPatchRow, type SectionRow } from '@/data/rowMapping';
 
 type Options = {
   users?: Record<string, string>;
@@ -261,7 +263,7 @@ export class FakeBackend implements Backend {
       const into = this.sectionRows.find((s) => s.id === intoId);
       if (!into || into.shelf_id !== from.shelf_id) throw new BackendError(REJECTED.sectionMissing);
       if (from.is_catch_all || from.id === into.id) throw new BackendError(REJECTED.other('P0001'));
-      // Records carry a section_id from Plan 5 Task 4 on; until then there is nothing to move.
+      for (const r of this.recordRows) if (r.section_id === fromId) Object.assign(r, { section_id: intoId, updated_at: this.stamp() });
       into.discogs_genres = [...into.discogs_genres, ...from.discogs_genres.filter((g) => !into.discogs_genres.includes(g))];
       into.takes_holiday = into.takes_holiday || from.takes_holiday;
       into.updated_at = this.stamp();
@@ -330,7 +332,13 @@ export class FakeBackend implements Backend {
   }
 }
 
-export function collectionRows(shelfId: string, userId: string): { records: RecordRow[]; ratings: RatingRow[] } {
+/** Kahrman's collection on a shelf, with the nine sections the server gives a shelf with imported records. */
+export function collectionRows(shelfId: string, userId: string): { records: RecordRow[]; ratings: RatingRow[]; sections: SectionRow[] } {
   const { records, ratings } = importCollection(collection, { shelfId, userId, newId: () => crypto.randomUUID() });
-  return { records: records.map(recordToRow), ratings: ratings.map(ratingToRow) };
+  return { records: records.map(recordToRow), ratings: ratings.map(ratingToRow), sections: sectionRowsFor(shelfId, KAHRMANS_NINE) };
+}
+
+/** A set of sections as the server makes it for a shelf. */
+export function sectionRowsFor(shelfId: string, set: SectionSeed[]): SectionRow[] {
+  return sectionsFromSet(shelfId, set, '2026-01-01T00:00:00.000Z').map(sectionToRow);
 }

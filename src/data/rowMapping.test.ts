@@ -6,7 +6,7 @@ import { RowError, newRecordToRow, patchToRow, ratingFromRow, ratingToRow, recor
 const record: ShelfRecord = {
   id: '00000000-0000-4000-8000-000000000001', shelfId: '00000000-0000-4000-8000-0000000000aa', status: 'owned',
   wantsUpgrade: false, upgradeNote: null, artist: 'Ahmad Jamal Trio', title: 'At the Pershing', label: 'Argo',
-  catalog: 'LP-628', year: 1958, format: 'Mono', genre: 'jazz', discGrade: 'G', sleeveGrade: null, pricePaid: null,
+  catalog: 'LP-628', year: 1958, format: 'Mono', sectionId: 'f1d2c3b4-a5e6-0718-293a-4b5c6d7e8f90', discGrade: 'G', sleeveGrade: null, pricePaid: null,
   nmEstimateLow: 12, nmEstimateHigh: 32, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, backPath: null,
   funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null, addedBy: '00000000-0000-4000-8000-0000000000bb', createdAt: '2025-09-17T00:00:00.000Z',
   updatedAt: '2025-09-17T00:00:00.000Z', deletedAt: null, importKey: 'ahmad-jamal-pershing',
@@ -25,9 +25,30 @@ describe('record rows', () => {
   });
 
   it('fails loudly on a row it does not understand, naming the record and field', () => {
-    const row = { ...recordToRow(record), genre: 'polka' };
+    const row = { ...recordToRow(record), section_id: 'polka' };
     expect(() => recordFromRow(row)).toThrow(RowError);
-    expect(() => recordFromRow(row)).toThrow(/00000000-0000-4000-8000-000000000001: genre/);
+    expect(() => recordFromRow(row)).toThrow(/00000000-0000-4000-8000-000000000001: sectionId/);
+  });
+});
+
+describe('the record’s section', () => {
+  it('section_id round-trips, and a derived (non-v4) id is fine', () => {
+    expect(recordToRow(record)).toMatchObject({ section_id: 'f1d2c3b4-a5e6-0718-293a-4b5c6d7e8f90' });
+    expect(recordFromRow(recordToRow(record)).sectionId).toBe('f1d2c3b4-a5e6-0718-293a-4b5c6d7e8f90');
+  });
+
+  it('never writes genre', () => {
+    expect(recordToRow(record)).not.toHaveProperty('genre');
+    expect(newRecordToRow(record)).not.toHaveProperty('genre');
+    expect(patchToRow({ sectionId: record.sectionId })).toEqual({ section_id: record.sectionId });
+    expect(() => patchToRow({ genre: 'jazz' } as never)).toThrow(/Not an editable field: genre/);
+  });
+
+  it('reads a row that still carries genre, and ignores it', () => {
+    const row = { ...recordToRow(record), genre: 'rock' };
+    const read = recordFromRow(row);
+    expect(read).toEqual(record);
+    expect(read).not.toHaveProperty('genre');
   });
 });
 

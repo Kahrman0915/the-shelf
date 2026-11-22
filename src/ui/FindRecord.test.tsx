@@ -6,9 +6,10 @@ import { CurrentShelfProvider } from '@/app/CurrentShelf';
 import { UNDO_WINDOW_MS, UndoBar, UndoProvider } from '@/app/UndoContext';
 import * as actions from '@/data/actions';
 import type { FoundRecord, Identified } from '@/data/backend';
-import { db } from '@/data/db';
+import { db, sectionsFromSet } from '@/data/db';
 import type { Drafts } from '@/data/photos';
 import type { ShelfRecord } from '@/data/schema';
+import { KAHRMANS_NINE, STARTER_SET, sectionIdFor } from '@/domain/sections';
 import { FakeBackend } from '@/test/fakeBackend';
 import { FindRecord } from './FindRecord';
 
@@ -46,7 +47,7 @@ const SPARSE: FoundRecord = {
 function onShelf(p: Partial<ShelfRecord> = {}): ShelfRecord {
   return {
     id: '00000000-0000-4000-8000-000000000009', shelfId: SHELF, status: 'owned', wantsUpgrade: false, upgradeNote: null,
-    artist: 'McCoy Tyner', title: 'Sahara', label: null, catalog: null, year: null, format: null, genre: 'jazz',
+    artist: 'McCoy Tyner', title: 'Sahara', label: null, catalog: null, year: null, format: null, sectionId: sectionIdFor(SHELF, 'jazz'),
     discGrade: 'NM', sleeveGrade: null, pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null, valueNote: null, notes: null,
     discogsReleaseId: null, coverPath: null, backPath: null, funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null, addedBy: ME,
     createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: null, importKey: null, ...p,
@@ -96,6 +97,7 @@ function setOnline(value: boolean) {
 beforeEach(async () => {
   await db.delete();
   await db.open();
+  await db.sections.bulkPut(sectionsFromSet(SHELF, KAHRMANS_NINE, '2026-01-01T00:00:00.000Z'));
 });
 
 afterEach(() => {
@@ -190,7 +192,7 @@ describe('FindRecord', () => {
       artist: 'McCoy Tyner',
       title: 'Forces Of Nature (Live At Slugs’)',
       status: 'owned',
-      genre: 'jazz',
+      sectionId: sectionIdFor(SHELF, 'jazz'),
       discGrade: null,
       discogsReleaseId: 28843512,
     });
@@ -1097,5 +1099,31 @@ describe('FindRecord', () => {
         await finish();
       });
     });
+  });
+});
+
+describe('FindRecord: the shelf’s own sections', () => {
+  const SOUL: FoundRecord = { ...SPARSE, releaseId: 222, artist: 'Al Green', title: 'Let’s Stay Together', genres: ['Funk / Soul'], styles: ['Soul'] };
+  const sectionNameOfSaved = async () => {
+    const [saved] = await db.records.toArray();
+    return (await db.sections.get(saved.sectionId))?.name;
+  };
+
+  it('a Funk / Soul result lands in Pop / soul / contemporary on Kahrman’s shelf', async () => {
+    setup({ prepare: (b) => (b.discogsResults = [SOUL]) });
+    await search('al green');
+    await userEvent.click(await card(/Let’s Stay Together/));
+    expect(await screen.findByText('On the shelf: Let’s Stay Together')).toBeInTheDocument();
+    expect(await sectionNameOfSaved()).toBe('Pop / soul / contemporary');
+  });
+
+  it('and in Soul & Funk on a starter shelf', async () => {
+    await db.sections.clear();
+    await db.sections.bulkPut(sectionsFromSet(SHELF, STARTER_SET, '2026-01-01T00:00:00.000Z'));
+    setup({ prepare: (b) => (b.discogsResults = [SOUL]) });
+    await search('al green');
+    await userEvent.click(await card(/Let’s Stay Together/));
+    expect(await screen.findByText('On the shelf: Let’s Stay Together')).toBeInTheDocument();
+    expect(await sectionNameOfSaved()).toBe('Soul & Funk');
   });
 });

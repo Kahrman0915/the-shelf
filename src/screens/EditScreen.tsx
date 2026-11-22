@@ -8,7 +8,7 @@ import { useLeaveGuard } from '@/app/useLeaveGuard';
 import { useUnsavedMark } from '@/app/useUnsavedMark';
 import { deleteRecord, editRecord, FORM_FIELDS, perform, restoreWithEdits, type RecordFields } from '@/data/actions';
 import { db } from '@/data/db';
-import { useRecordAnyState, useShelfItems } from '@/data/hooks';
+import { useRecordAnyState, useSections, useShelfItems } from '@/data/hooks';
 import { editPhotos, type PhotoChanges } from '@/data/photos';
 import type { ShelfRecord } from '@/data/schema';
 import { formFromRecord, parseRecordForm, type RecordFormValues } from '@/domain/recordForm';
@@ -37,6 +37,7 @@ export function EditScreen() {
   const record = useRecordAnyState(shelfId, id);
   const items = useShelfItems(shelfId, userId);
   const records = useMemo(() => (items ?? []).map((i) => i.record), [items]);
+  const sections = useSections(shelfId);
   const { runNow } = useSyncStatus();
   const { offer } = useUndo();
   const navigate = useNavigate();
@@ -121,6 +122,7 @@ export function EditScreen() {
             mode="edit"
             formId={FORM_ID}
             initial={opened.values}
+            sections={sections ?? []}
             records={records}
             excludeId={record.id}
             onSave={onSave}

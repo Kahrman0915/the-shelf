@@ -1,6 +1,5 @@
-import type { GenreKey } from '@/domain/genres';
 import type { Grade } from '@/domain/grades';
-import { sectionFor } from '@/domain/discogsGenre';
+import { sectionFor, type SortableSection } from '@/domain/sections';
 import { BackendError, type FoundRecord } from './backend';
 import type { ShelfDB } from './db';
 import { savePostcards, type NewPostcard } from './outbox';
@@ -10,13 +9,13 @@ import { RecordSchema, type ShelfRecord } from './schema';
 /** What an action needs from outside: who is acting and when. Actions never read a clock or make ids. */
 export type Ctx = { me: string; now: string };
 export type ActionResult = { postcards: NewPostcard[]; undo: NewPostcard[] | null };
-export type NewBuy = { artist: string; title: string; genre: GenreKey; grade: Grade; pricePaid: number | null };
+export type NewBuy = { artist: string; title: string; sectionId: string; grade: Grade; pricePaid: number | null };
 
 /** The fields the Add and Edit form shows, in form order. */
 export const FORM_FIELDS = [
   'artist',
   'title',
-  'genre',
+  'sectionId',
   'discGrade',
   'sleeveGrade',
   'label',
@@ -100,7 +99,7 @@ export function boughtNew(input: NewBuy, ctx: Ctx & { shelfId: string; newId: st
     catalog: null,
     year: null,
     format: null,
-    genre: input.genre,
+    sectionId: input.sectionId,
     discGrade: input.grade,
     sleeveGrade: null,
     pricePaid: input.pricePaid,
@@ -160,12 +159,13 @@ export function addRecord(
   return { postcards, undo: null };
 }
 
-/** A record picked from Discogs results: owned, ungraded, only the Discogs facts filled in, undone by soft-delete. */
-export function addFound(found: FoundRecord, ctx: Ctx & { shelfId: string; newId: string }): ActionResult {
+/** A record picked from Discogs results: owned, ungraded, only the Discogs facts filled in, undone by soft-delete.
+ *  It goes in the shelf's own section that its Discogs genres and styles sort into. */
+export function addFound(found: FoundRecord, ctx: Ctx & { shelfId: string; newId: string; sections: SortableSection[] }): ActionResult {
   const fields: RecordFields = {
     artist: found.artist,
     title: found.title,
-    genre: sectionFor(found.genres, found.styles),
+    sectionId: sectionFor(found.genres, found.styles, ctx.sections),
     discGrade: null,
     sleeveGrade: null,
     label: found.label,

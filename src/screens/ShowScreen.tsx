@@ -9,7 +9,7 @@ import { useUndo } from '@/app/UndoContext';
 import { boughtNew, perform, type NewBuy } from '@/data/actions';
 import { db } from '@/data/db';
 import { wantFunFact } from '@/data/funFacts';
-import { useShelfItems } from '@/data/hooks';
+import { useSections, useSectionsById, useShelfItems } from '@/data/hooks';
 import { spineColor } from '@/domain/labels';
 import { collectionTag, showResults } from '@/domain/shelf';
 import { BuyNewSheet } from '@/ui/BuyNewSheet';
@@ -20,6 +20,8 @@ import { SpineRow } from '@/ui/SpineRow';
 export function ShowScreen() {
   const { shelfId, userId } = useCurrentShelf();
   const items = useShelfItems(shelfId, userId);
+  const sections = useSections(shelfId);
+  const sectionsById = useSectionsById(shelfId);
   const [searchParams, setSearchParams] = useSearchParams();
   const query = searchParams.get('q') ?? '';
   const navigate = useNavigate();
@@ -80,14 +82,14 @@ export function ShowScreen() {
               key={item.record.id}
               record={item.record}
               rating={item.myRating}
-              color={spineColor(item.record, 'all')}
+              color={spineColor(item.record, sectionsById, 'all')}
               tag={collectionTag(item.record)}
               onOpen={() => navigate(`/price/${item.record.id}${query ? `?q=${encodeURIComponent(query)}` : ''}`)}
             />
           ))}
         </div>
       )}
-      <BuyNewSheet open={buying} initialArtist={query.trim()} onOpenChange={setBuying} onSave={onSave} />
+      <BuyNewSheet open={buying} initialArtist={query.trim()} sections={sections ?? []} onOpenChange={setBuying} onSave={onSave} />
     </main>
   );
 }

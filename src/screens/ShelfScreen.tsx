@@ -5,21 +5,23 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCurrentShelf } from '@/app/CurrentShelf';
 import { SyncNotice, useSyncStatus } from '@/app/SyncContext';
-import { useShelfItems } from '@/data/hooks';
-import { spineColor, type GenreFilter } from '@/domain/labels';
+import { useSections, useSectionsById, useShelfItems } from '@/data/hooks';
+import { spineColor, type SectionFilter } from '@/domain/labels';
 import { newArrivals, shelfRows, shelfTag } from '@/domain/shelf';
-import { GenreSelect } from '@/ui/GenreSelect';
 import { PileRow } from '@/ui/PileRow';
+import { SectionSelect } from '@/ui/SectionSelect';
 import { SpineRow } from '@/ui/SpineRow';
 
 export function ShelfScreen() {
   const { shelfId, userId } = useCurrentShelf();
   const navigate = useNavigate();
   const items = useShelfItems(shelfId, userId);
+  const sections = useSections(shelfId);
+  const sectionsById = useSectionsById(shelfId);
   const { lastSyncedAt } = useSyncStatus();
-  const [genre, setGenre] = useState<GenreFilter>('all');
+  const [section, setSection] = useState<SectionFilter>('all');
   const [query, setQuery] = useState('');
-  const rows = items ? shelfRows(items, { genre, query }) : [];
+  const rows = items ? shelfRows(items, { section, query }) : [];
   const pile = items ? newArrivals(items).map((i) => i.record) : [];
 
   return (
@@ -42,7 +44,7 @@ export function ShelfScreen() {
       </header>
       <SyncNotice />
       <div className="flex flex-col gap-3 px-4 pb-4 sm:flex-row">
-        <GenreSelect value={genre} onChange={setGenre} />
+        <SectionSelect sections={sections ?? []} value={section} onChange={setSection} />
         <label className="relative block flex-1">
           <Search aria-hidden className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-ink-muted" />
           <Input
@@ -55,7 +57,7 @@ export function ShelfScreen() {
           />
         </label>
       </div>
-      <PileRow records={pile} onOpen={() => navigate('/arrivals')} />
+      <PileRow records={pile} sectionsById={sectionsById} onOpen={() => navigate('/arrivals')} />
       {items === undefined ? null : items.filter((i) => i.record.status === 'owned').length === 0 ? (
         <p className="px-4 py-8 text-ink-muted">{lastSyncedAt ? 'Nothing on the shelf yet.' : 'Filling the shelf…'}</p>
       ) : rows.length === 0 ? (
@@ -63,7 +65,7 @@ export function ShelfScreen() {
       ) : (
         <div className="border-t border-line">
           {rows.map((item) => (
-            <SpineRow key={item.record.id} record={item.record} rating={item.myRating} color={spineColor(item.record, genre)} tag={shelfTag(item)} onOpen={() => navigate(`/record/${item.record.id}`)} />
+            <SpineRow key={item.record.id} record={item.record} rating={item.myRating} color={spineColor(item.record, sectionsById, section)} tag={shelfTag(item)} onOpen={() => navigate(`/record/${item.record.id}`)} />
           ))}
         </div>
       )}

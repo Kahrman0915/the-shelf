@@ -8,9 +8,9 @@ import { didntBuyIt, perform, rate } from '@/data/actions';
 import { db } from '@/data/db';
 import { wantFunFact } from '@/data/funFacts';
 import { useFunFactStatus } from '@/app/useFunFacts';
-import { useMembers, useRatings, useRecord } from '@/data/hooks';
+import { useMembers, useRatings, useRecord, useSectionsById } from '@/data/hooks';
+import { colorKeyOf, sectionOf } from '@/domain/labels';
 import { formatMoney } from '@/domain/price';
-import { GENRE_LABELS } from '@/domain/genres';
 import { RATING_WORDS } from '@/domain/rating';
 import { collectionTag } from '@/domain/shelf';
 import { RecordCover } from '@/ui/RecordCover';
@@ -42,6 +42,7 @@ export function RecordScreen() {
   const record = useRecord(shelfId, id);
   const ratings = useRatings(id ?? '');
   const members = useMembers(shelfId);
+  const sectionsById = useSectionsById(shelfId);
   const navigate = useNavigate();
   const location = useLocation();
   const back = () => (location.key !== 'default' ? navigate(-1) : navigate('/'));
@@ -64,7 +65,8 @@ export function RecordScreen() {
       const wasArrival = record.status === 'new_arrival';
       const ctx = { me: userId, now: new Date().toISOString() };
       await perform(db, rate(record, value, ctx).postcards, runNow);
-      setConfirmation(wasArrival ? `${RATING_WORDS[value]} · On the shelf · ${GENRE_LABELS[record.genre]}` : RATING_WORDS[value]);
+      const sectionName = sectionOf(record, sectionsById)?.name;
+      setConfirmation(wasArrival ? [RATING_WORDS[value], 'On the shelf', sectionName].filter(Boolean).join(' · ') : RATING_WORDS[value]);
     } catch (e) {
       fail(e);
     } finally {
@@ -116,7 +118,7 @@ export function RecordScreen() {
         <p className="px-4 text-ink-muted">That record isn’t on this phone.</p>
       ) : (
         <>
-          <RecordCover record={record} />
+          <RecordCover record={record} color={colorKeyOf(record, sectionsById)} />
           <div className="flex flex-col gap-6 px-4">
             <div className="flex flex-col gap-2">
               <div className="w-fit">

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type AnimationEvent, type ReactNode } from 'react';
-import { GENRE_KEYS } from '@/domain/genres';
+import { KAHRMANS_NINE } from '@/domain/sections';
 
 /** How long after mount the panel-rise animation (`intro-panel`, 500ms delayed 2000ms) is done. A fallback in case `animationend` never fires. */
 const PANEL_RISE_FALLBACK_MS = 2600;
@@ -7,7 +7,8 @@ const PANEL_RISE_FALLBACK_MS = 2600;
 export type Spine = { width: number; height: number; color: string };
 
 const PLAYED_KEY = 'shelf:intro-played';
-const GENRE_COLORS = GENRE_KEYS.map((k) => `var(--genre-${k})`);
+/** The nine colours the first shelf's sections wear. */
+const SECTION_COLORS = KAHRMANS_NINE.map((s) => `var(--section-${s.color})`);
 /** Real spines are mostly cream, grey and black card with the odd colour, so the plain tones come up more often. */
 const PLAIN_COLORS = [
   ...Array<string>(5).fill('var(--ink)'),
@@ -15,7 +16,7 @@ const PLAIN_COLORS = [
   ...Array<string>(3).fill('var(--line-strong)'),
   'var(--bourbon)',
 ];
-const COLORS = [...GENRE_COLORS, ...PLAIN_COLORS];
+const COLORS = [...SECTION_COLORS, ...PLAIN_COLORS];
 
 /** Zoomed in on one section of the wall: three shelves, so each record stands tall. */
 const SHELVES = 3;

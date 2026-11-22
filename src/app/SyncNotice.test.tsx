@@ -5,6 +5,7 @@ import { db } from '@/data/db';
 import { savePostcards } from '@/data/outbox';
 import type { ShelfRecord } from '@/data/schema';
 import { SyncContext, SyncNotice } from './SyncContext';
+import { sectionIdFor } from '@/domain/sections';
 
 const SHELF = '11111111-1111-4111-8111-111111111111';
 const ME = '22222222-2222-4222-8222-222222222222';
@@ -14,7 +15,7 @@ const WHEN = '2026-11-11T10:00:00.000Z';
 function record(id: string): ShelfRecord {
   return {
     id, shelfId: SHELF, status: 'owned', wantsUpgrade: false, upgradeNote: null, artist: 'Miles Davis', title: 'Kind of Blue',
-    label: null, catalog: null, year: null, format: null, genre: 'jazz', discGrade: null, sleeveGrade: null, pricePaid: null,
+    label: null, catalog: null, year: null, format: null, sectionId: sectionIdFor(SHELF, 'jazz'), discGrade: null, sleeveGrade: null, pricePaid: null,
     nmEstimateLow: null, nmEstimateHigh: null, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, backPath: null, funFact: null, funFactSource: null, coverImageUrl: null,
     boughtAt: null, addedBy: ME, createdAt: WHEN, updatedAt: WHEN, deletedAt: null, importKey: null,
   };

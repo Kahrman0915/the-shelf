@@ -3,19 +3,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { RecordFields } from '@/data/actions';
-import type { ShelfRecord } from '@/data/schema';
-import { GENRE_KEYS, GENRE_LABELS } from '@/domain/genres';
+import type { Section, ShelfRecord } from '@/data/schema';
 import { sanitizeAsking } from '@/domain/price';
 import { emptyForm, findDuplicate, isDirty, parseRecordForm, type FormErrors, type RecordFormValues } from '@/domain/recordForm';
 import { useUnsavedMark } from '@/app/useUnsavedMark';
 import { cn } from '@/lib/utils';
-import { GENRE_ITEM_CLASS } from './GenreSelect';
 import { GradePicker } from './GradePicker';
 import { RatingRecords } from './RatingRecords';
+import { SECTION_ITEM_CLASS } from './SectionSelect';
 
 type Props = {
   mode: 'add' | 'edit';
   initial: RecordFormValues;
+  /** The shelf's sections, in shelf order, for the Section picker. */
+  sections: Section[];
   /** For the duplicate check. */
   records: ShelfRecord[];
   /** Edit: the record itself, which is never its own duplicate. */
@@ -35,12 +36,12 @@ const TEXTAREA = 'min-h-24 w-full rounded-lg border-[1.5px] border-line-strong b
 const ERROR = 'text-[15px] text-brick-ink';
 
 /** Top to bottom, so focus lands on the first problem a person would see. */
-const FIELD_ORDER: (keyof RecordFormValues)[] = ['artist', 'title', 'genre', 'year', 'funFact', 'funFactSource', 'nmLow', 'nmHigh', 'pricePaid'];
+const FIELD_ORDER: (keyof RecordFormValues)[] = ['artist', 'title', 'sectionId', 'year', 'funFact', 'funFactSource', 'nmLow', 'nmHigh', 'pricePaid'];
 const DETAIL_FIELDS: (keyof RecordFormValues)[] = ['year', 'funFact', 'funFactSource', 'nmLow', 'nmHigh', 'pricePaid'];
 
 const fieldId = (name: keyof RecordFormValues) => `rf-${name}`;
 
-export function RecordForm({ mode, initial, records, excludeId, onSave, onOpenDuplicate, onDirtyChange, footer, formId }: Props) {
+export function RecordForm({ mode, initial, sections, records, excludeId, onSave, onOpenDuplicate, onDirtyChange, footer, formId }: Props) {
   const [opened, setOpened] = useState(initial);
   const [values, setValues] = useState(initial);
   const [rating, setRating] = useState<number | null>(null);
@@ -85,7 +86,7 @@ export function RecordForm({ mode, initial, records, excludeId, onSave, onOpenDu
     try {
       await onSave(parsed.fields, { rating: mode === 'add' ? rating : null, another });
       if (another) {
-        const next = emptyForm({ genre: parsed.fields.genre, label: parsed.fields.label ?? '' });
+        const next = emptyForm({ sectionId: parsed.fields.sectionId, label: parsed.fields.label ?? '' });
         setOpened(next);
         setValues(next);
         setRating(null);
@@ -161,24 +162,24 @@ export function RecordForm({ mode, initial, records, excludeId, onSave, onOpenDu
       </div>
 
       <div className="flex flex-col gap-2">
-        <label htmlFor={fieldId('genre')} className={LABEL}>Genre</label>
-        <Select value={values.genre} onValueChange={(g) => set('genre', g as RecordFormValues['genre'])}>
+        <label htmlFor={fieldId('sectionId')} className={LABEL}>Section</label>
+        <Select value={values.sectionId} onValueChange={(id) => set('sectionId', id)}>
           <SelectTrigger
-            id={fieldId('genre')}
+            id={fieldId('sectionId')}
             className="w-full rounded-lg border-[1.5px] border-line-strong bg-surface-sunk px-4 text-base text-ink data-[size=default]:h-12 [&_svg]:text-ink-muted"
-            {...err('genre')}
+            {...err('sectionId')}
           >
-            <SelectValue placeholder="Choose a genre" />
+            <SelectValue placeholder="Choose a section" />
           </SelectTrigger>
           <SelectContent className="rounded-lg">
-            {GENRE_KEYS.map((key) => (
-              <SelectItem key={key} value={key} className={GENRE_ITEM_CLASS}>
-                {GENRE_LABELS[key]}
+            {sections.map((s) => (
+              <SelectItem key={s.id} value={s.id} className={SECTION_ITEM_CLASS}>
+                {s.name}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        {errorLine('genre')}
+        {errorLine('sectionId')}
       </div>
 
       <GradePicker value={values.discGrade} onChange={(g) => set('discGrade', g)} part="Disc" />

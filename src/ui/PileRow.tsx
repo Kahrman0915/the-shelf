@@ -1,10 +1,10 @@
 import type { ShelfRecord } from '@/data/schema';
-import { spineColor } from '@/domain/labels';
+import { spineColor, type ColouredSection } from '@/domain/labels';
 
-type Props = { records: ShelfRecord[]; onOpen: () => void };
+type Props = { records: ShelfRecord[]; sectionsById: ReadonlyMap<string, ColouredSection>; onOpen: () => void };
 
 /** The pile on the shelf: one raised row that says how many records are waiting to be rated. */
-export function PileRow({ records, onOpen }: Props) {
+export function PileRow({ records, sectionsById, onOpen }: Props) {
   if (records.length === 0) return null;
   const n = records.length;
   return (
@@ -16,7 +16,7 @@ export function PileRow({ records, onOpen }: Props) {
     >
       <span aria-hidden className="flex flex-none gap-1">
         {records.slice(0, 3).map((r) => (
-          <span key={r.id} className="h-8 w-1.5 rounded-xs" style={{ background: spineColor(r, 'all') }} />
+          <span key={r.id} className="h-8 w-1.5 rounded-xs" style={{ background: spineColor(r, sectionsById, 'all') }} />
         ))}
       </span>
       <span className="min-w-0 flex-1">

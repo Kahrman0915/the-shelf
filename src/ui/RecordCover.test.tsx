@@ -6,6 +6,7 @@ import { db } from '@/data/db';
 import type { ShelfRecord } from '@/data/schema';
 import { FakeBackend } from '@/test/fakeBackend';
 import { RecordCover } from './RecordCover';
+import { sectionIdFor } from '@/domain/sections';
 
 const FRONT = 's/r/front-1.jpg';
 const BACK = 's/r/back-1.jpg';
@@ -14,7 +15,7 @@ const bytes = () => new Uint8Array([1, 2, 3]).buffer;
 function record(p: Partial<ShelfRecord> = {}): ShelfRecord {
   return {
     id: 'r', shelfId: 's', status: 'owned', wantsUpgrade: false, upgradeNote: null,
-    artist: 'McCoy Tyner', title: 'Sahara', label: null, catalog: null, year: null, format: null, genre: 'jazz',
+    artist: 'McCoy Tyner', title: 'Sahara', label: null, catalog: null, year: null, format: null, sectionId: sectionIdFor('s', 'jazz'),
     discGrade: 'NM', sleeveGrade: null, pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null, valueNote: null, notes: null,
     discogsReleaseId: null, coverPath: null, backPath: null, funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null, addedBy: 'u',
     createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: null, importKey: null, ...p,
@@ -25,7 +26,7 @@ let backend: FakeBackend;
 const show = (r: ShelfRecord) =>
   render(
     <BackendProvider backend={backend}>
-      <RecordCover record={r} />
+      <RecordCover record={r} color="jazz" />
     </BackendProvider>,
   );
 

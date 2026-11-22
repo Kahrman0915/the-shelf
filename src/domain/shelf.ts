@@ -1,12 +1,11 @@
-import type { GenreKey } from './genres';
-import type { GenreFilter } from './labels';
+import type { SectionFilter } from './labels';
 import { isDisliked } from './rating';
 import { matchesQuery, normalise, type SearchableRecord } from './search';
 
 export type TagKind = 'own' | 'want' | 'upgrade' | 'new' | 'disliked';
 
 export type ShelfLike = SearchableRecord & {
-  genre: GenreKey;
+  sectionId: string;
   status: 'wanted' | 'new_arrival' | 'owned';
   wantsUpgrade: boolean;
 };
@@ -17,10 +16,10 @@ function byArtistThenTitle(a: { record: ShelfLike }, b: { record: ShelfLike }): 
   return normalise(a.record.artist).localeCompare(normalise(b.record.artist)) || normalise(a.record.title).localeCompare(normalise(b.record.title));
 }
 
-export function shelfRows<T extends Item>(items: T[], opts: { genre: GenreFilter; query: string }): T[] {
+export function shelfRows<T extends Item>(items: T[], opts: { section: SectionFilter; query: string }): T[] {
   return items
     .filter((i) => i.record.status === 'owned')
-    .filter((i) => opts.genre === 'all' || i.record.genre === opts.genre)
+    .filter((i) => opts.section === 'all' || i.record.sectionId === opts.section)
     .filter((i) => matchesQuery(i.record, opts.query))
     .sort((a, b) => Number(isDisliked(a.myRating)) - Number(isDisliked(b.myRating)) || byArtistThenTitle(a, b));
 }

@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { GENRE_KEYS } from '@/domain/genres';
 import { GRADE_KEYS } from '@/domain/grades';
+import { LEGACY_GENRES, sectionIdFor } from '@/domain/sections';
 import { RecordSchema, type Rating, type ShelfRecord } from './schema';
 
 const gradeOrBlank = z.union([z.enum(GRADE_KEYS), z.literal('')]);
@@ -13,7 +13,8 @@ const SeedRecord = z.object({
   catalog: z.string(),
   year: z.string(),
   format: z.string(),
-  genre: z.enum(GENRE_KEYS),
+  /** collection.json still names one of the nine genres; the record goes in the section made for it. */
+  genre: z.enum(LEGACY_GENRES),
   grade: gradeOrBlank,
   sleeveGrade: gradeOrBlank,
   rating: z.number().int().min(0).max(5),
@@ -87,7 +88,7 @@ export function importCollection(
       catalog: blank(s.catalog),
       year: year === null ? null : Number(year),
       format: blank(s.format),
-      genre: s.genre,
+      sectionId: sectionIdFor(ctx.shelfId, s.genre),
       discGrade: s.grade === '' ? null : s.grade,
       sleeveGrade: s.sleeveGrade === '' ? null : s.sleeveGrade,
       pricePaid: s.price > 0 ? s.price : null,

@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import type { ShelfRecord } from '@/data/schema';
+import type { SwatchKey } from '@/domain/sections';
 import { usePhotoUrl } from '@/data/usePhoto';
 import { Poster } from './Poster';
 
-function PosterFor({ record }: { record: ShelfRecord }) {
-  return <Poster artist={record.artist} title={record.title} genre={record.genre} className="w-full" />;
+function PosterFor({ record, color }: { record: ShelfRecord; color: SwatchKey }) {
+  return <Poster artist={record.artist} title={record.title} color={color} className="w-full" />;
 }
 
-function Photos({ record }: { record: ShelfRecord }) {
+function Photos({ record, color }: { record: ShelfRecord; color: SwatchKey }) {
   const front = usePhotoUrl(record.coverPath);
   const back = usePhotoUrl(record.backPath);
   const [flipped, setFlipped] = useState(false);
-  if (!front && !back) return <PosterFor record={record} />;
+  if (!front && !back) return <PosterFor record={record} color={color} />;
   const showBack = flipped && back !== null;
   const face = 'absolute inset-0 size-full [backface-visibility:hidden]';
   return (
@@ -27,7 +28,7 @@ function Photos({ record }: { record: ShelfRecord }) {
           ) : (
             // No front photo (or not on the phone yet): the poster is the front, so a back photo can still be seen.
             <div aria-hidden={showBack ? true : undefined} className={face}>
-              <PosterFor record={record} />
+              <PosterFor record={record} color={color} />
             </div>
           )}
           {back && (
@@ -57,8 +58,8 @@ function Photos({ record }: { record: ShelfRecord }) {
 }
 
 /** The record's front photo (with Flip to the back), or its poster while there is no front photo on the phone.
- *  A back photo without a front still gets Flip, with the poster as the front. */
-export function RecordCover({ record }: { record: ShelfRecord }) {
-  if (!record.coverPath && !record.backPath) return <PosterFor record={record} />;
-  return <Photos record={record} />;
+ *  A back photo without a front still gets Flip, with the poster as the front. `color`: the record's section colour, for the poster. */
+export function RecordCover({ record, color }: { record: ShelfRecord; color: SwatchKey }) {
+  if (!record.coverPath && !record.backPath) return <PosterFor record={record} color={color} />;
+  return <Photos record={record} color={color} />;
 }

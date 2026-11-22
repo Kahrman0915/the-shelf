@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import collection from '../../collection.json';
+import { sectionIdFor } from '@/domain/sections';
 import { ImportError, importCollection } from './importCollection';
 
 const SHELF = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -20,6 +21,11 @@ describe('importCollection with the real collection.json', () => {
     const { records } = importCollection(collection, ctx);
     expect(records).toHaveLength(11);
     expect(records.every((r) => r.status === 'owned' && r.shelfId === SHELF && r.addedBy === USER)).toBe(true);
+  });
+
+  it('puts each record in the section made for its genre', () => {
+    expect(byKey('coltrane-ballads').sectionId).toBe(sectionIdFor(SHELF, 'jazz'));
+    expect(byKey('mcguffey-lane-christmas').sectionId).toBe(sectionIdFor(SHELF, 'christmas'));
   });
 
   it('turns price 0 into unknown and keeps real prices', () => {

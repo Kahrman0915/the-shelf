@@ -3,6 +3,7 @@ import { BackendError, CLAUDE_DOWN, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED, type 
 import { newRecordToRow, newSectionToRow, sectionToRow, type SectionRow } from '@/data/rowMapping';
 import type { Section, ShelfRecord } from '@/data/schema';
 import { FakeBackend, collectionRows } from './fakeBackend';
+import { sectionIdFor } from '@/domain/sections';
 
 const K = '11111111-1111-4111-8111-111111111111';
 const SHELF = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -114,7 +115,7 @@ describe('FakeBackend', () => {
     const newRow = (status: ShelfRecord['status'] = 'new_arrival') =>
       newRecordToRow({
         id: REC, shelfId: SHELF, status, wantsUpgrade: false, upgradeNote: null, artist: 'Sade', title: 'Diamond Life', label: null,
-        catalog: null, year: null, format: null, genre: 'popsoul', discGrade: null, sleeveGrade: null, pricePaid: 15, nmEstimateLow: null,
+        catalog: null, year: null, format: null, sectionId: sectionIdFor(SHELF, 'popsoul'), discGrade: null, sleeveGrade: null, pricePaid: 15, nmEstimateLow: null,
         nmEstimateHigh: null, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, backPath: null, funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null, addedBy: K,
         createdAt: '2025-01-01T00:00:00.000Z', updatedAt: '2025-01-01T00:00:00.000Z', deletedAt: null, importKey: null,
       });
@@ -269,6 +270,18 @@ describe('FakeBackend sections', () => {
     await b.mergeSection(id(1), id(2));
     await expect(b.mergeSection(id(3), id(2))).rejects.toBeInstanceOf(BackendError);
     await expect(b.mergeSection(id(2), id(9))).rejects.toThrow(REJECTED.sectionMissing);
+  });
+
+  it('a merge moves every record in the section, deleted ones too, like merge_section', async () => {
+    const rows = collectionRows(SHELF, K);
+    const jazz = sectionIdFor(SHELF, 'jazz');
+    const misc = sectionIdFor(SHELF, 'misc');
+    const inJazz = rows.records.filter((r) => r.section_id === jazz).map((r) => r.id);
+    const b = new FakeBackend({ ...rows, members: [] });
+    b.touchRecord(inJazz[0], { deleted_at: '2026-01-01T00:00:00.000Z' });
+    await b.mergeSection(jazz, misc);
+    expect(inJazz.map((r) => b.recordRow(r)?.section_id)).toEqual(inJazz.map(() => misc));
+    expect(b.sectionRow(jazz)).toBeUndefined();
   });
 
   it('honours rejectNext and loseNextReply on section writes', async () => {

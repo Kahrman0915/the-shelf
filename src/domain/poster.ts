@@ -1,7 +1,7 @@
-import type { GenreKey } from './genres';
+import type { SwatchKey } from './sections';
 import { normalise } from './search';
 
-export type PosterRole = 'genre' | 'accent' | 'sky' | 'window';
+export type PosterRole = 'section' | 'accent' | 'sky' | 'window';
 export type PosterShape =
   | { type: 'circle'; role: PosterRole; cx: number; cy: number; r: number; fill: string }
   | { type: 'rect'; role: PosterRole; x: number; y: number; w: number; h: number; fill: string };
@@ -48,13 +48,13 @@ function truncate(text: string, keep: number): string {
   return `${text.slice(0, keep)}…`;
 }
 
-export function posterPlan(artist: string, title: string, genre: GenreKey): PosterPlan {
+export function posterPlan(artist: string, title: string, colorKey: SwatchKey): PosterPlan {
   const r = mulberry32(posterSeed(artist, title));
   const shapes: PosterShape[] = [];
 
-  // 1. Accents: two of bourbon / brick / teal, never the one that matches the genre colour.
+  // 1. Accents: two of bourbon / brick / teal, never the one that matches the section colour.
   const pool = ['bourbon', 'brick', 'teal'].filter(
-    (a) => !(genre === 'rock' && a === 'brick') && !(genre === 'popsoul' && a === 'bourbon'),
+    (a) => !(colorKey === 'rock' && a === 'brick') && !(colorKey === 'popsoul' && a === 'bourbon') && !(colorKey === 'teal' && a === 'teal'),
   );
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(r() * (i + 1));
@@ -62,11 +62,11 @@ export function posterPlan(artist: string, title: string, genre: GenreKey): Post
   }
   const [a1, a2] = pool;
 
-  // 2. Genre circle.
+  // 2. Section circle.
   const gr = CELL * (1.4 + r() * 0.9);
   const gcx = CELL * (1 + Math.floor(r() * 4));
   const gcy = CELL * (1 + Math.floor(r() * 2));
-  shapes.push({ type: 'circle', role: 'genre', cx: gcx, cy: gcy, r: gr, fill: `var(--genre-${genre})` });
+  shapes.push({ type: 'circle', role: 'section', cx: gcx, cy: gcy, r: gr, fill: `var(--section-${colorKey})` });
 
   // 3. Accent square.
   const side = CELL * (1 + Math.floor(r() * 2));

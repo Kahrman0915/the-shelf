@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { KAHRMANS_NINE, STARTER_SET, sectionIdFor } from '@/domain/sections';
 import { FakeBackend } from '@/test/fakeBackend';
 import {
   addFound,
@@ -20,12 +21,13 @@ import {
 } from './actions';
 import { BackendError, type FoundRecord } from './backend';
 import { pushOutbox, syncOnce } from './courier';
-import { ShelfDB, writeSession } from './db';
+import { ShelfDB, sectionsFromSet, writeSession } from './db';
 import { recordToRow } from './rowMapping';
 import type { ShelfRecord } from './schema';
 import { pullShelf } from './sync';
 
 const SHELF = '11111111-1111-4111-8111-111111111111';
+const JAZZ = sectionIdFor(SHELF, 'jazz');
 const ME = '22222222-2222-4222-8222-222222222222';
 const A = '33333333-3333-4333-8333-333333333333';
 const NEW_ID = '55555555-5555-4555-8555-555555555555';
@@ -46,7 +48,7 @@ function record(over: Partial<ShelfRecord> = {}): ShelfRecord {
     catalog: null,
     year: null,
     format: null,
-    genre: 'jazz',
+    sectionId: JAZZ,
     discGrade: null,
     sleeveGrade: null,
     pricePaid: null,
@@ -130,7 +132,7 @@ describe('boughtIt', () => {
 });
 
 describe('boughtNew', () => {
-  const input = { artist: '  Nina Simone ', title: ' Pastel Blues ', genre: 'jazz' as const, grade: 'VG+' as const, pricePaid: 12 };
+  const input = { artist: '  Nina Simone ', title: ' Pastel Blues ', sectionId: JAZZ, grade: 'VG+' as const, pricePaid: 12 };
   const c = { ...ctx, shelfId: SHELF, newId: NEW_ID };
 
   it('creates a new arrival and can soft-delete it', () => {
@@ -147,7 +149,7 @@ describe('boughtNew', () => {
       status: 'new_arrival',
       artist: 'Nina Simone',
       title: 'Pastel Blues',
-      genre: 'jazz',
+      sectionId: JAZZ,
       discGrade: 'VG+',
       sleeveGrade: null,
       pricePaid: 12,
@@ -215,7 +217,7 @@ describe('undo after the purchase reached the server', () => {
 
   it('reverses a new purchase there', async () => {
     const { postcards, undo } = boughtNew(
-      { artist: 'Nina Simone', title: 'Pastel Blues', genre: 'jazz', grade: 'VG+', pricePaid: 12 },
+      { artist: 'Nina Simone', title: 'Pastel Blues', sectionId: JAZZ, grade: 'VG+', pricePaid: 12 },
       { ...ctx, shelfId: SHELF, newId: NEW_ID },
     );
     await perform(db, postcards);
@@ -293,7 +295,9 @@ describe('addRecord', () => {
 });
 
 describe('addFound', () => {
-  const c = { ...ctx, shelfId: SHELF, newId: NEW_ID };
+  const kahrmans = sectionsFromSet(SHELF, KAHRMANS_NINE, OLD);
+  const starter = sectionsFromSet(SHELF, STARTER_SET, OLD);
+  const c = { ...ctx, shelfId: SHELF, newId: NEW_ID, sections: kahrmans };
   const found: FoundRecord = {
     releaseId: 1234567,
     artist: 'McCoy Tyner',
@@ -323,7 +327,7 @@ describe('addFound', () => {
       catalog: 'BN-LA 1',
       year: 1994,
       format: 'Vinyl, LP',
-      genre: 'jazz',
+      sectionId: JAZZ,
       discogsReleaseId: 1234567,
       discGrade: null,
       sleeveGrade: null,
@@ -331,6 +335,29 @@ describe('addFound', () => {
       addedBy: ME,
     });
     expect(postcards.some((p) => p.kind === 'rating.set')).toBe(false);
+  });
+
+  const sectionName = (genres: string[], styles: string[], sections: typeof kahrmans) => {
+    const [create] = addFound({ ...found, genres, styles }, { ...c, sections }).postcards;
+    if (create.kind !== 'record.create') throw new Error('expected record.create');
+    return sections.find((s) => s.id === create.fields.sectionId)?.name;
+  };
+
+  it('lands in the shelf’s own mapped section, on each set', () => {
+    const cases: [string[], string[], string, string][] = [
+      [['Jazz'], [], 'Jazz / big band', 'Jazz'],
+      [['Funk / Soul'], [], 'Pop / soul / contemporary', 'Soul & Funk'],
+      [['Pop'], [], 'Popular pop', 'Pop'],
+      [['Folk, World, & Country'], [], 'Country', 'Country & Folk'],
+      [['Stage & Screen'], [], 'Soundtracks', 'Soundtracks'],
+      [['Electronic', 'Rock'], [], 'Rock', 'Rock'],
+      [['Pop'], ['Holiday'], 'Christmas', 'Christmas'],
+      [['Classical'], [], 'Miscellaneous', 'Everything else'],
+    ];
+    for (const [genres, styles, onKahrmans, onStarter] of cases) {
+      expect(sectionName(genres, styles, kahrmans)).toBe(onKahrmans);
+      expect(sectionName(genres, styles, starter)).toBe(onStarter);
+    }
   });
 
   it('has an undo that soft-deletes it', () => {

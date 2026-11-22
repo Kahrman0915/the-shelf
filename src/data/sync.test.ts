@@ -62,7 +62,7 @@ describe('pullShelf', () => {
   });
 
   it('writes nothing when the server sends a row it doesn’t understand', async () => {
-    const bad = new FakeBackend({ records: [{ ...rows.records[0], genre: 'polka' as RecordRow['genre'] }], ratings: [], members: [] });
+    const bad = new FakeBackend({ records: [{ ...rows.records[0], section_id: 'polka' }], ratings: [], members: [] });
     await expect(pullShelf(db, bad, SHELF)).rejects.toBeInstanceOf(RowError);
     expect(await db.records.count()).toBe(0);
   });

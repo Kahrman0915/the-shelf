@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendProvider } from '@/app/BackendContext';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
 import { UndoBar, UndoProvider } from '@/app/UndoContext';
-import { db } from '@/data/db';
+import { db, sectionsFromSet } from '@/data/db';
 import { markPhotoTipsSeen } from '@/data/photoDrafts';
 import type { ShelfRecord } from '@/data/schema';
 import { squareUpPhoto } from '@/photo/squareUp';
@@ -13,6 +13,7 @@ import { FakeBackend } from '@/test/fakeBackend';
 import { EditScreen } from './EditScreen';
 import { RecordScreen } from './RecordScreen';
 import { ShelfScreen } from './ShelfScreen';
+import { KAHRMANS_NINE, sectionIdFor } from '@/domain/sections';
 
 vi.mock('@/photo/squareUp');
 
@@ -24,7 +25,7 @@ function record(p: Partial<ShelfRecord> = {}): ShelfRecord {
   return {
     id: ID, shelfId: SHELF, status: 'owned', wantsUpgrade: false, upgradeNote: null,
     artist: 'John Coltrane', title: 'Ascension', label: 'Impulse!', catalog: null, year: 1966, format: null,
-    genre: 'jazz', discGrade: 'NM', sleeveGrade: null, pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null,
+    sectionId: sectionIdFor(SHELF, 'jazz'), discGrade: 'NM', sleeveGrade: null, pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null,
     valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, backPath: null, funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null, addedBy: ME,
     createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: null, importKey: null, ...p,
   };
@@ -64,6 +65,7 @@ beforeEach(async () => {
   vi.mocked(squareUpPhoto).mockResolvedValue(squared);
   await db.delete();
   await db.open();
+  await db.sections.bulkPut(sectionsFromSet(SHELF, KAHRMANS_NINE, '2026-01-01T00:00:00.000Z'));
   await markPhotoTipsSeen();
 });
 
@@ -74,7 +76,7 @@ describe('EditScreen', () => {
     expect(await screen.findByRole('heading', { name: 'Edit' })).toBeInTheDocument();
     expect(box('Artist')).toHaveValue('John Coltrane');
     expect(box('Title')).toHaveValue('Ascension');
-    expect(screen.getByRole('combobox', { name: 'Genre' })).toHaveTextContent('Jazz');
+    expect(screen.getByRole('combobox', { name: 'Section' })).toHaveTextContent('Jazz / big band');
     expect(screen.getByRole('button', { name: 'More details' })).toHaveAttribute('aria-expanded', 'true');
     expect(box('Label')).toHaveValue('Impulse!');
     expect(box('Year')).toHaveValue('1966');

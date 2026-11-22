@@ -3,10 +3,11 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
-import { db } from '@/data/db';
+import { db, sectionsFromSet } from '@/data/db';
 import { FUN_FACT_NONE_PREFIX, wantFunFact } from '@/data/funFacts';
 import type { ShelfRecord } from '@/data/schema';
 import { RecordScreen } from './RecordScreen';
+import { KAHRMANS_NINE, sectionIdFor } from '@/domain/sections';
 
 const SHELF = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ME = '11111111-1111-4111-8111-111111111111';
@@ -17,7 +18,7 @@ function record(p: Partial<ShelfRecord> = {}): ShelfRecord {
   return {
     id: ID, shelfId: SHELF, status: 'owned', wantsUpgrade: false, upgradeNote: null,
     artist: 'John Coltrane', title: 'Ascension', label: 'Impulse!', catalog: null, year: 1966, format: null,
-    genre: 'jazz', discGrade: 'Sealed', sleeveGrade: null, pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null,
+    sectionId: sectionIdFor(SHELF, 'jazz'), discGrade: 'Sealed', sleeveGrade: null, pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null,
     valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, backPath: null, funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null, addedBy: ME,
     createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: null, importKey: null, ...p,
   };
@@ -41,6 +42,7 @@ function renderRecord(id = ID) {
 beforeEach(async () => {
   await db.delete();
   await db.open();
+  await db.sections.bulkPut(sectionsFromSet(SHELF, KAHRMANS_NINE, '2026-01-01T00:00:00.000Z'));
   await db.members.bulkPut([
     { shelfId: SHELF, userId: ME, role: 'owner', displayName: 'Kahrman' },
     { shelfId: SHELF, userId: MEGAN, role: 'member', displayName: 'Megan' },
@@ -97,8 +99,15 @@ describe('RecordScreen', () => {
     expect(await screen.findByText('That record isn’t on this phone.')).toBeInTheDocument();
   });
 
+  it('the confirmation names the record’s section, or the catch-all while its own isn’t on the phone yet', async () => {
+    await db.records.put(record({ status: 'new_arrival', sectionId: '0f0f0f0f-0000-0000-0000-000000000000' }));
+    renderRecord();
+    await userEvent.click(await screen.findByRole('radio', { name: '5 of 5, Desert island' }));
+    expect(await screen.findByText(/On the shelf · Miscellaneous$/)).toBeInTheDocument();
+  });
+
   it('rating a new arrival puts it on the shelf', async () => {
-    await db.records.put(record({ status: 'new_arrival', genre: 'jazz' }));
+    await db.records.put(record({ status: 'new_arrival', sectionId: sectionIdFor(SHELF, 'jazz') }));
     renderRecord();
     await userEvent.click(await screen.findByRole('radio', { name: '4 of 5, Love it' }));
     expect(await screen.findByText('Love it · On the shelf · Jazz / big band')).toBeInTheDocument();

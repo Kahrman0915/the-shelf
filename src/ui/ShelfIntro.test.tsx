@@ -27,7 +27,7 @@ describe('makeShelves', () => {
       expect(s.width).toBeGreaterThanOrEqual(3);
       expect(s.width).toBeLessThanOrEqual(12);
       expect([80, 96, 97]).toContain(s.height);
-      expect(s.color).toMatch(/^var\(--(genre-[a-z]+|bourbon|ink|ink-muted|line-strong)\)$/);
+      expect(s.color).toMatch(/^var\(--(section-(jazz|rock|popsoul|popularpop|misc|country|reggae|soundtracks|christmas)|bourbon|ink|ink-muted|line-strong)\)$/);
     }
     // Records, not books: nearly all are a few pixels of card, and nearly all stand the same height.
     expect(spines.filter((s) => s.width <= 6).length / spines.length).toBeGreaterThan(0.9);

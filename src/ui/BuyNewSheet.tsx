@@ -5,22 +5,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { NewBuy } from '@/data/actions';
-import { GENRE_KEYS, GENRE_LABELS } from '@/domain/genres';
+import type { Section } from '@/data/schema';
 import { GRADE_KEYS, type Grade } from '@/domain/grades';
 import { parsePrice, sanitizeAsking } from '@/domain/price';
-import { GENRE_ITEM_CLASS } from './GenreSelect';
 import { GradePicker } from './GradePicker';
+import { SECTION_ITEM_CLASS } from './SectionSelect';
 
 /** The sheet's fields as typed (all strings); `price` comes out as dollars or null. */
 export const BuyNewFormSchema = z.object({
   artist: z.string().trim().min(1, 'Add the artist'),
   title: z.string().trim().min(1, 'Add the title'),
-  genre: z.enum(GENRE_KEYS, 'Choose a genre'),
+  sectionId: z.string().min(1, 'Choose a section'),
   grade: z.enum(GRADE_KEYS),
   price: z.string().transform((s) => parsePrice(s)),
 });
 
-type Field = 'artist' | 'title' | 'genre';
+type Field = 'artist' | 'title' | 'sectionId';
 type Errors = Partial<Record<Field, string>>;
 
 const LABEL = 'text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted';
@@ -30,17 +30,20 @@ const ERROR = 'text-[15px] text-brick-ink';
 export function BuyNewSheet({
   open,
   initialArtist,
+  sections,
   onOpenChange,
   onSave,
 }: {
   open: boolean;
   initialArtist: string;
+  /** The shelf's sections, in shelf order, for the Section picker. */
+  sections: Section[];
   onOpenChange: (open: boolean) => void;
   onSave: (buy: NewBuy) => Promise<void>;
 }) {
   const [artist, setArtist] = useState(initialArtist);
   const [title, setTitle] = useState('');
-  const [genre, setGenre] = useState('');
+  const [sectionId, setSectionId] = useState('');
   const [grade, setGrade] = useState<Grade>('NM');
   const [price, setPrice] = useState('');
   const [errors, setErrors] = useState<Errors>({});
@@ -54,7 +57,7 @@ export function BuyNewSheet({
     if (!open) return;
     setArtist(initialArtist);
     setTitle('');
-    setGenre('');
+    setSectionId('');
     setGrade('NM');
     setPrice('');
     setErrors({});
@@ -66,12 +69,12 @@ export function BuyNewSheet({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (saving.current) return;
-    const parsed = BuyNewFormSchema.safeParse({ artist, title, genre, grade, price });
+    const parsed = BuyNewFormSchema.safeParse({ artist, title, sectionId, grade, price });
     if (!parsed.success) {
       const next: Errors = {};
       for (const issue of parsed.error.issues) {
         const key = issue.path[0];
-        if ((key === 'artist' || key === 'title' || key === 'genre') && !next[key]) next[key] = issue.message;
+        if ((key === 'artist' || key === 'title' || key === 'sectionId') && !next[key]) next[key] = issue.message;
       }
       setErrors(next);
       return;
@@ -80,9 +83,9 @@ export function BuyNewSheet({
     setFailure(null);
     saving.current = true;
     setBusy(true);
-    const { artist: a, title: t, genre: g, grade: gr, price: p } = parsed.data;
+    const { artist: a, title: t, sectionId: sid, grade: gr, price: p } = parsed.data;
     try {
-      await onSave({ artist: a, title: t, genre: g, grade: gr, pricePaid: p });
+      await onSave({ artist: a, title: t, sectionId: sid, grade: gr, pricePaid: p });
       // Held on success: the sheet closes, and re-opening resets it.
     } catch (err) {
       setFailure(err instanceof Error ? err.message : String(err));
@@ -128,25 +131,25 @@ export function BuyNewSheet({
             </div>
 
             <div className="flex flex-col gap-2">
-              <label htmlFor="buy-genre" className={LABEL}>Genre</label>
-              <Select value={genre} onValueChange={setGenre}>
+              <label htmlFor="buy-section" className={LABEL}>Section</label>
+              <Select value={sectionId} onValueChange={setSectionId}>
                 <SelectTrigger
-                  id="buy-genre"
-                  aria-invalid={errors.genre ? true : undefined}
-                  aria-describedby={errors.genre ? 'buy-genre-error' : undefined}
+                  id="buy-section"
+                  aria-invalid={errors.sectionId ? true : undefined}
+                  aria-describedby={errors.sectionId ? 'buy-section-error' : undefined}
                   className="w-full rounded-lg border-[1.5px] border-line-strong bg-surface-sunk px-4 text-base text-ink data-[size=default]:h-12 [&_svg]:text-ink-muted"
                 >
-                  <SelectValue placeholder="Choose a genre" />
+                  <SelectValue placeholder="Choose a section" />
                 </SelectTrigger>
                 <SelectContent className="rounded-lg">
-                  {GENRE_KEYS.map((key) => (
-                    <SelectItem key={key} value={key} className={GENRE_ITEM_CLASS}>
-                      {GENRE_LABELS[key]}
+                  {sections.map((s) => (
+                    <SelectItem key={s.id} value={s.id} className={SECTION_ITEM_CLASS}>
+                      {s.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {errors.genre && <p id="buy-genre-error" className={ERROR}>{errors.genre}</p>}
+              {errors.sectionId && <p id="buy-section-error" className={ERROR}>{errors.sectionId}</p>}
             </div>
 
             <GradePicker value={grade} onChange={setGrade} part="Disc" />

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RecordSchema, type ShelfRecord } from './schema';
+import { sectionIdFor } from '@/domain/sections';
 
 function record(over: Partial<ShelfRecord> = {}): ShelfRecord {
   return {
@@ -14,7 +15,7 @@ function record(over: Partial<ShelfRecord> = {}): ShelfRecord {
     catalog: null,
     year: null,
     format: null,
-    genre: 'jazz',
+    sectionId: sectionIdFor('11111111-1111-4111-8111-111111111111', 'jazz'),
     discGrade: null,
     sleeveGrade: null,
     pricePaid: null,

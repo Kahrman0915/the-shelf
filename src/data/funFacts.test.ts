@@ -3,6 +3,7 @@ import { FakeBackend } from '@/test/fakeBackend';
 import { ShelfDB, writeSession } from './db';
 import { readFunFactQueue, runFunFacts, wantFunFact } from './funFacts';
 import type { ShelfRecord } from './schema';
+import { sectionIdFor } from '@/domain/sections';
 
 const SHELF = '11111111-1111-4111-8111-111111111111';
 const ME = '22222222-2222-4222-8222-222222222222';
@@ -24,7 +25,7 @@ function record(id: string, over: Partial<ShelfRecord> = {}): ShelfRecord {
     catalog: null,
     year: 1959,
     format: null,
-    genre: 'jazz',
+    sectionId: sectionIdFor(SHELF, 'jazz'),
     discGrade: null,
     sleeveGrade: null,
     pricePaid: null,

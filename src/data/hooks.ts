@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { Member } from './backend';
 import { db } from './db';
@@ -44,6 +45,12 @@ export function useMembers(shelfId: string): Member[] | undefined {
 /** The shelf's sections in shelf order; undefined while loading. */
 export function useSections(shelfId: string): Section[] | undefined {
   return useLiveQuery(async () => (await db.sections.where('shelfId').equals(shelfId).toArray()).sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)), [shelfId]);
+}
+
+/** The shelf's sections by id, for colouring and naming records; empty while loading. */
+export function useSectionsById(shelfId: string): ReadonlyMap<string, Section> {
+  const sections = useSections(shelfId);
+  return useMemo(() => new Map((sections ?? []).map((s) => [s.id, s])), [sections]);
 }
 
 /** Whether the browser agreed to keep this phone's data; null until it has been asked. */

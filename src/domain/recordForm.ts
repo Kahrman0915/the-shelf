@@ -1,6 +1,5 @@
 import { changedFields, type RecordFields } from '@/data/actions';
 import { MONEY_MAX, type ShelfRecord } from '@/data/schema';
-import { GENRE_KEYS, type GenreKey } from './genres';
 import type { Grade } from './grades';
 import { parsePrice } from './price';
 import { normalise } from './search';
@@ -9,7 +8,8 @@ import { normalise } from './search';
 export type RecordFormValues = {
   artist: string;
   title: string;
-  genre: GenreKey | '';
+  /** A section id, or '' before one is chosen. */
+  sectionId: string;
   discGrade: Grade | null;
   sleeveGrade: Grade | null;
   label: string;
@@ -28,11 +28,11 @@ export type FormErrors = Partial<Record<keyof RecordFormValues, string>>;
 
 const FUN_FACT_MAX = 500;
 
-export function emptyForm(keep?: { genre: GenreKey | ''; label: string }): RecordFormValues {
+export function emptyForm(keep?: { sectionId: string; label: string }): RecordFormValues {
   return {
     artist: '',
     title: '',
-    genre: keep?.genre ?? '',
+    sectionId: keep?.sectionId ?? '',
     discGrade: null,
     sleeveGrade: null,
     label: keep?.label ?? '',
@@ -53,7 +53,7 @@ export function formFromRecord(r: ShelfRecord): RecordFormValues {
   return {
     artist: r.artist,
     title: r.title,
-    genre: r.genre,
+    sectionId: r.sectionId,
     discGrade: r.discGrade,
     sleeveGrade: r.sleeveGrade,
     label: r.label ?? '',
@@ -91,8 +91,8 @@ export function parseRecordForm(v: RecordFormValues): { ok: true; fields: Record
   const title = textOrNull(v.title);
   if (artist === null) errors.artist = 'Add the artist';
   if (title === null) errors.title = 'Add the title';
-  const genre = GENRE_KEYS.find((g) => g === v.genre);
-  if (!genre) errors.genre = 'Choose a genre';
+  const sectionId = v.sectionId === '' ? null : v.sectionId;
+  if (sectionId === null) errors.sectionId = 'Choose a section';
 
   let year: number | null = null;
   const yearText = v.year.trim();
@@ -124,13 +124,13 @@ export function parseRecordForm(v: RecordFormValues): { ok: true; fields: Record
     else if (funFact === null) errors.funFactSource = 'Add the fun fact this source is for';
   }
 
-  if (Object.keys(errors).length > 0 || artist === null || title === null || !genre) return { ok: false, errors };
+  if (Object.keys(errors).length > 0 || artist === null || title === null || sectionId === null) return { ok: false, errors };
   return {
     ok: true,
     fields: {
       artist,
       title,
-      genre,
+      sectionId,
       discGrade: v.discGrade,
       sleeveGrade: v.sleeveGrade,
       label: textOrNull(v.label),

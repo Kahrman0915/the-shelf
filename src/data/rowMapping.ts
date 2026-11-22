@@ -12,7 +12,7 @@ export type RecordRow = {
   catalog: string | null;
   year: number | null;
   format: string | null;
-  genre: ShelfRecord['genre'];
+  section_id: string;
   disc_grade: ShelfRecord['discGrade'];
   sleeve_grade: ShelfRecord['sleeveGrade'];
   price_paid: number | null;
@@ -64,7 +64,7 @@ export function recordToRow(r: ShelfRecord): RecordRow {
     catalog: r.catalog,
     year: r.year,
     format: r.format,
-    genre: r.genre,
+    section_id: r.sectionId,
     disc_grade: r.discGrade,
     sleeve_grade: r.sleeveGrade,
     price_paid: r.pricePaid,
@@ -89,7 +89,7 @@ export function recordToRow(r: ShelfRecord): RecordRow {
 
 /** The fields the shelf lets a member change: the `grant update (...)` columns on public.records, minus updated_at (server-stamped). */
 export const EDITABLE_FIELDS = [
-  'status', 'wantsUpgrade', 'upgradeNote', 'artist', 'title', 'label', 'catalog', 'year', 'format', 'genre',
+  'status', 'wantsUpgrade', 'upgradeNote', 'artist', 'title', 'label', 'catalog', 'year', 'format', 'sectionId',
   'discGrade', 'sleeveGrade', 'pricePaid', 'nmEstimateLow', 'nmEstimateHigh', 'valueNote', 'notes',
   'discogsReleaseId', 'coverPath', 'backPath', 'funFact', 'funFactSource', 'coverImageUrl', 'boughtAt', 'deletedAt',
 ] as const satisfies readonly (keyof ShelfRecord)[];
@@ -110,6 +110,7 @@ export function patchToRow(fields: Partial<ShelfRecord>): RecordPatchRow {
   return out as RecordPatchRow;
 }
 
+/** Reads a record row. A `genre` column, kept filled on the server for older apps, is ignored. */
 export function recordFromRow(row: Record<string, unknown>): ShelfRecord {
   const parsed = RecordSchema.safeParse({
     id: row.id,
@@ -123,7 +124,7 @@ export function recordFromRow(row: Record<string, unknown>): ShelfRecord {
     catalog: row.catalog,
     year: num(row.year),
     format: row.format,
-    genre: row.genre,
+    sectionId: row.section_id,
     discGrade: row.disc_grade,
     sleeveGrade: row.sleeve_grade,
     pricePaid: num(row.price_paid),

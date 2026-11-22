@@ -4,7 +4,8 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
 import { UndoBar, UndoProvider } from '@/app/UndoContext';
-import { db } from '@/data/db';
+import { db, sectionsFromSet } from '@/data/db';
+import { KAHRMANS_NINE } from '@/domain/sections';
 import { ShowScreen } from './ShowScreen';
 
 const SHELF = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -29,6 +30,7 @@ function renderShow() {
 beforeEach(async () => {
   await db.delete();
   await db.open();
+  await db.sections.bulkPut(sectionsFromSet(SHELF, KAHRMANS_NINE, '2026-01-01T00:00:00.000Z'));
 });
 
 describe('ShowScreen', () => {
@@ -42,7 +44,7 @@ describe('ShowScreen', () => {
     await userEvent.clear(screen.getByRole('textbox', { name: 'Artist' }));
     await userEvent.type(screen.getByRole('textbox', { name: 'Artist' }), 'Art Blakey');
     await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Moanin’');
-    await userEvent.click(screen.getByRole('combobox', { name: 'Genre' }));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Section' }));
     await userEvent.click(await screen.findByRole('option', { name: /Jazz/ }));
     await userEvent.click(screen.getAllByRole('button', { name: 'Bought it' }).at(-1)!);
 
@@ -57,7 +59,7 @@ describe('ShowScreen', () => {
     await userEvent.type(screen.getByRole('searchbox', { name: 'Search your records' }), 'Art Blakey');
     await userEvent.click(await screen.findByRole('button', { name: 'Bought it' }));
     await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Moanin’');
-    await userEvent.click(screen.getByRole('combobox', { name: 'Genre' }));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Section' }));
     await userEvent.click(await screen.findByRole('option', { name: /Jazz/ }));
     await userEvent.click(screen.getAllByRole('button', { name: 'Bought it' }).at(-1)!);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());

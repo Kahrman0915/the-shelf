@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { BackendError } from './backend';
-import { GENRE_KEYS } from '@/domain/genres';
 import { GRADE_KEYS } from '@/domain/grades';
 import { DISCOGS_GENRES, LEGACY_GENRES, SWATCH_KEYS } from '@/domain/sections';
 
@@ -24,7 +23,8 @@ export const RecordSchema = z
     catalog: optionalText,
     year: z.number().int().min(1900).max(2100).nullable(),
     format: optionalText,
-    genre: z.enum(GENRE_KEYS),
+    /** The shelf section it sits in. A guid, not a v4 uuid: see SectionSchema. */
+    sectionId: z.guid(),
     discGrade: z.enum(GRADE_KEYS).nullable(),
     sleeveGrade: z.enum(GRADE_KEYS).nullable(),
     pricePaid: money,

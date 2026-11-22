@@ -5,13 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendProvider } from '@/app/BackendContext';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
 import type { FoundRecord } from '@/data/backend';
-import { db } from '@/data/db';
+import { db, sectionsFromSet } from '@/data/db';
 import { saveDraft } from '@/data/photoDrafts';
 import { squareUpPhoto } from '@/photo/squareUp';
 import { FakeBackend } from '@/test/fakeBackend';
 import { AddScreen } from './AddScreen';
 import { RecordScreen } from './RecordScreen';
 import { ShelfScreen } from './ShelfScreen';
+import { KAHRMANS_NINE, sectionIdFor } from '@/domain/sections';
 
 vi.mock('@/photo/squareUp');
 
@@ -48,20 +49,21 @@ async function openHandForm() {
 
 const box = (name: string) => screen.getByRole('textbox', { name });
 
-async function chooseGenre(label: string) {
-  await userEvent.click(screen.getByRole('combobox', { name: 'Genre' }));
+async function chooseSection(label: string) {
+  await userEvent.click(screen.getByRole('combobox', { name: 'Section' }));
   await userEvent.click(await screen.findByRole('option', { name: new RegExp(label) }));
 }
 
 async function fillRequired(artist = 'John Coltrane', title = 'Ascension') {
   await userEvent.type(box('Artist'), artist);
   await userEvent.type(box('Title'), title);
-  await chooseGenre('Jazz');
+  await chooseSection('Jazz');
 }
 
 beforeEach(async () => {
   await db.delete();
   await db.open();
+  await db.sections.bulkPut(sectionsFromSet(SHELF, KAHRMANS_NINE, '2026-01-01T00:00:00.000Z'));
   URL.createObjectURL = vi.fn(() => `blob:${crypto.randomUUID()}`);
   URL.revokeObjectURL = vi.fn();
 });
@@ -302,7 +304,7 @@ describe('AddScreen', () => {
     expect(await db.ratings.toArray()).toMatchObject([{ userId: ME, value: 4 }]);
   });
 
-  it('Save and add another stays, keeping genre and label', async () => {
+  it('Save and add another stays, keeping section and label', async () => {
     renderAdd('/add');
     await openHandForm();
     await fillRequired();
@@ -312,7 +314,7 @@ describe('AddScreen', () => {
     await waitFor(() => expect(box('Artist')).toHaveValue(''));
     expect(screen.getByRole('heading', { name: 'Add a record' })).toBeInTheDocument();
     expect(box('Label')).toHaveValue('Impulse!');
-    expect(screen.getByRole('combobox', { name: 'Genre' })).toHaveTextContent('Jazz');
+    expect(screen.getByRole('combobox', { name: 'Section' })).toHaveTextContent('Jazz / big band');
     expect(await db.records.count()).toBe(1);
   });
 
@@ -352,7 +354,7 @@ describe('AddScreen', () => {
   it('Open it on the duplicate line asks first, then opens the record', async () => {
     await db.records.put({
       id: '00000000-0000-4000-8000-000000000009', shelfId: SHELF, status: 'owned', wantsUpgrade: false, upgradeNote: null,
-      artist: 'John Coltrane', title: 'Ascension', label: null, catalog: null, year: null, format: null, genre: 'jazz',
+      artist: 'John Coltrane', title: 'Ascension', label: null, catalog: null, year: null, format: null, sectionId: sectionIdFor(SHELF, 'jazz'),
       discGrade: 'NM', sleeveGrade: null, pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null, valueNote: null, notes: null,
       discogsReleaseId: null, coverPath: null, backPath: null, funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null, addedBy: ME,
       createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: null, importKey: null,

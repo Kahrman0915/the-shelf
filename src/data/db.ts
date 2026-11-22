@@ -2,6 +2,7 @@ import Dexie, { type EntityTable, type Table } from 'dexie';
 import { BackendError, type Member } from './backend';
 import type { Postcard } from './outbox';
 import type { DraftPhoto, StoredPhoto } from './photos';
+import { KAHRMANS_NINE, LEGACY_GENRES, STARTER_SET, sectionIdFor, type LegacyGenre, type SectionSeed } from '@/domain/sections';
 import type { Rating, Section, ShelfRecord } from './schema';
 
 export type Meta = { key: string; value: string };
@@ -94,7 +95,65 @@ export class ShelfDB extends Dexie {
       photoDrafts: 'side',
       sections: 'id, shelfId',
     });
+    this.version(7)
+      .stores({
+        records: 'id, shelfId, status, sectionId, importKey',
+        ratings: '[recordId+userId], recordId, userId',
+        members: '[shelfId+userId], shelfId',
+        meta: 'key',
+        outbox: '++seq, recordId, state',
+        photos: 'path',
+        photoDrafts: 'side',
+        sections: 'id, shelfId',
+      })
+      .upgrade(async (tx) => {
+        // Records stop carrying one of nine genres and point at their shelf's own section. The sections the
+        // server made for the old genres have ids the phone can work out (sectionIdFor), so this needs no signal.
+        // Only Dexie is awaited here: anything else would end the upgrade transaction.
+        await tx.table('records').toCollection().modify((r: Record<string, unknown>) => toSection(r, r.shelfId));
+        await tx
+          .table('outbox')
+          .toCollection()
+          .modify((p: { kind: string; shelfId: string; fields: Record<string, unknown> }) => {
+            if (p.kind === 'record.create') toSection(p.fields, p.fields.shelfId);
+            if (p.kind === 'record.patch') toSection(p.fields, p.shelfId);
+          });
+        // Until the first sync, the phone's own shelf needs its sections: the set the server gave it.
+        const session = await tx.table('meta').get(SESSION_KEY);
+        const shelfId = session ? parseSession(session.value)?.shelfId : undefined;
+        if (shelfId && (await tx.table('sections').where('shelfId').equals(shelfId).count()) === 0) {
+          // Kahrman's shelf is the one with imported records, as the server decides it.
+          const imported = await tx.table('records').where('shelfId').equals(shelfId).filter((r: ShelfRecord) => r.importKey !== null && r.importKey !== undefined).count();
+          await tx.table('sections').bulkPut(sectionsFromSet(shelfId, imported > 0 ? KAHRMANS_NINE : STARTER_SET, new Date(0).toISOString()));
+        }
+        // The first pull after updating fetches everything, sections included, and corrects anything seeded.
+        await tx.table('meta').where('key').startsWith(LAST_PULLED_PREFIX).delete();
+      });
   }
+}
+
+/** An upgrade step: swap a record's (or a queued change's) genre for the section that replaced it. */
+function toSection(r: Record<string, unknown>, shelfId: unknown): void {
+  if (!('genre' in r)) return;
+  const genre = r.genre;
+  delete r.genre;
+  if (typeof shelfId === 'string' && (LEGACY_GENRES as readonly unknown[]).includes(genre)) r.sectionId = sectionIdFor(shelfId, genre as LegacyGenre);
+}
+
+/** A set of sections as the server makes it for a shelf: derived ids, positions in set order. */
+export function sectionsFromSet(shelfId: string, set: SectionSeed[], updatedAt: string): Section[] {
+  return set.map((seed, position) => ({
+    id: sectionIdFor(shelfId, seed.legacyGenre),
+    shelfId,
+    name: seed.name,
+    color: seed.color,
+    position,
+    discogsGenres: [...seed.discogsGenres],
+    takesHoliday: seed.takesHoliday,
+    isCatchAll: seed.isCatchAll,
+    legacyGenre: seed.legacyGenre,
+    updatedAt,
+  }));
 }
 
 const DETAIL_KEYS = ['funFact', 'funFactSource', 'coverImageUrl'] as const;
@@ -117,14 +176,17 @@ export const db = new ShelfDB();
 export type RememberedSession = { userId: string; email: string; shelfId: string };
 const SESSION_KEY = 'session';
 
-export async function readSession(database: ShelfDB): Promise<RememberedSession | null> {
-  const row = await database.meta.get(SESSION_KEY);
-  if (!row) return null;
+function parseSession(value: string): RememberedSession | null {
   try {
-    return JSON.parse(row.value) as RememberedSession;
+    return JSON.parse(value) as RememberedSession;
   } catch {
     return null;
   }
+}
+
+export async function readSession(database: ShelfDB): Promise<RememberedSession | null> {
+  const row = await database.meta.get(SESSION_KEY);
+  return row ? parseSession(row.value) : null;
 }
 
 export async function writeSession(database: ShelfDB, session: RememberedSession): Promise<void> {

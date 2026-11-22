@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FORM_FIELDS, type RecordFields } from '@/data/actions';
 import type { ShelfRecord } from '@/data/schema';
 import { emptyForm, findDuplicate, formFromRecord, isDirty, parseRecordForm, type RecordFormValues } from './recordForm';
+import { sectionIdFor } from '@/domain/sections';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
@@ -19,7 +20,7 @@ function record(p: Partial<ShelfRecord> = {}): ShelfRecord {
     catalog: '60725',
     year: 1987,
     format: 'LP',
-    genre: 'rock',
+    sectionId: sectionIdFor('33333333-3333-4333-8333-333333333333', 'rock'),
     discGrade: 'VG+',
     sleeveGrade: 'VG',
     pricePaid: 15.5,
@@ -43,7 +44,7 @@ function record(p: Partial<ShelfRecord> = {}): ShelfRecord {
 }
 
 function valid(p: Partial<RecordFormValues> = {}): RecordFormValues {
-  return { ...emptyForm(), artist: 'Art Blakey', title: 'Moanin’', genre: 'jazz', ...p };
+  return { ...emptyForm(), artist: 'Art Blakey', title: 'Moanin’', sectionId: sectionIdFor('33333333-3333-4333-8333-333333333333', 'jazz'), ...p };
 }
 
 function errorsOf(p: Partial<RecordFormValues>) {
@@ -55,7 +56,7 @@ function errorsOf(p: Partial<RecordFormValues>) {
 describe('parseRecordForm', () => {
   it('turns a minimal form into fields, with blank text as null', () => {
     const r = parseRecordForm(valid({ label: '   ', notes: '' }));
-    expect(r).toMatchObject({ ok: true, fields: { artist: 'Art Blakey', title: 'Moanin’', genre: 'jazz', label: null, notes: null, funFact: null, year: null, pricePaid: null } });
+    expect(r).toMatchObject({ ok: true, fields: { artist: 'Art Blakey', title: 'Moanin’', sectionId: sectionIdFor('33333333-3333-4333-8333-333333333333', 'jazz'), label: null, notes: null, funFact: null, year: null, pricePaid: null } });
   });
 
   it('trims text', () => {
@@ -63,10 +64,10 @@ describe('parseRecordForm', () => {
     expect(r).toMatchObject({ ok: true, fields: { artist: 'Art Blakey', funFact: 'A fact' } });
   });
 
-  it('asks for the artist, the title and a genre', () => {
+  it('asks for the artist, the title and a section', () => {
     expect(errorsOf({ artist: '  ' })).toEqual({ artist: 'Add the artist' });
     expect(errorsOf({ title: '' })).toEqual({ title: 'Add the title' });
-    expect(errorsOf({ genre: '' })).toEqual({ genre: 'Choose a genre' });
+    expect(errorsOf({ sectionId: '' })).toEqual({ sectionId: 'Choose a section' });
   });
 
   it('keeps the year between 1900 and 2100', () => {
@@ -116,9 +117,9 @@ describe('parseRecordForm', () => {
 });
 
 describe('emptyForm', () => {
-  it('keeps only the genre and label it is given', () => {
-    const f = emptyForm({ genre: 'jazz', label: 'Impulse!' });
-    expect(f).toEqual({ ...emptyForm(), genre: 'jazz', label: 'Impulse!' });
+  it('keeps only the section and label it is given', () => {
+    const f = emptyForm({ sectionId: sectionIdFor('33333333-3333-4333-8333-333333333333', 'jazz'), label: 'Impulse!' });
+    expect(f).toEqual({ ...emptyForm(), sectionId: sectionIdFor('33333333-3333-4333-8333-333333333333', 'jazz'), label: 'Impulse!' });
     expect(f.artist).toBe('');
   });
 });

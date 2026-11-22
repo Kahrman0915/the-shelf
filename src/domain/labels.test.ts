@@ -17,16 +17,30 @@ describe('labelKey', () => {
 });
 
 describe('spineColor', () => {
-  const ballads = { genre: 'jazz' as const, label: 'Impulse!' };
-  const legend = { genre: 'reggae' as const, label: 'Island / Tuff Gong' };
-  it('uses the genre colour when viewing all genres', () => {
-    expect(spineColor(ballads, 'all')).toBe('var(--genre-jazz)');
-    expect(spineColor(legend, 'all')).toBe('var(--genre-reggae)');
+  const sections = [
+    { id: 'j', color: 'jazz' as const, discogsGenres: ['Jazz'], isCatchAll: false },
+    { id: 'r', color: 'reggae' as const, discogsGenres: ['Reggae'], isCatchAll: false },
+    { id: 'm', color: 'misc' as const, discogsGenres: [], isCatchAll: true },
+    // A section someone made later and gave Jazz to.
+    { id: 'b', color: 'teal' as const, discogsGenres: ['Blues', 'Jazz'], isCatchAll: false },
+  ];
+  const byId = new Map(sections.map((s) => [s.id, s]));
+  const ballads = { sectionId: 'j', label: 'Impulse!' };
+  const legend = { sectionId: 'r', label: 'Island / Tuff Gong' };
+  it('uses the section colour when viewing all sections', () => {
+    expect(spineColor(ballads, byId, 'all')).toBe('var(--section-jazz)');
+    expect(spineColor(legend, byId, 'all')).toBe('var(--section-reggae)');
   });
-  it('switches to the label colour when filtered to jazz', () => {
-    expect(spineColor(ballads, 'jazz')).toBe('var(--label-impulse)');
+  it('switches to the label colour when filtered to a section that takes Jazz', () => {
+    expect(spineColor(ballads, byId, 'j')).toBe('var(--label-impulse)');
+    expect(spineColor({ sectionId: 'b', label: 'Blue Note' }, byId, 'b')).toBe('var(--label-bluenote)');
   });
-  it('keeps the genre colour for other genre filters', () => {
-    expect(spineColor(legend, 'reggae')).toBe('var(--genre-reggae)');
+  it('keeps the section colour for other section filters', () => {
+    expect(spineColor(legend, byId, 'r')).toBe('var(--section-reggae)');
+    expect(spineColor(ballads, byId, 'm')).toBe('var(--section-jazz)');
+  });
+  it('a record whose section isn’t on the phone yet takes the catch-all’s colour', () => {
+    expect(spineColor({ sectionId: 'gone', label: null }, byId, 'all')).toBe('var(--section-misc)');
+    expect(spineColor({ sectionId: 'gone', label: null }, new Map([['m', { ...sections[2], color: 'sand' as const }]]), 'all')).toBe('var(--section-sand)');
   });
 });

@@ -1,8 +1,9 @@
-import type { GenreKey } from '@/domain/genres';
+import type { SwatchKey } from '@/domain/sections';
 import { POSTER_BAND, posterPlan } from '@/domain/poster';
 
-export function Poster({ artist, title, genre, className }: { artist: string; title: string; genre: GenreKey; className?: string }) {
-  const plan = posterPlan(artist, title, genre);
+/** `color`: the colour key of the record's section. */
+export function Poster({ artist, title, color, className }: { artist: string; title: string; color: SwatchKey; className?: string }) {
+  const plan = posterPlan(artist, title, color);
   return (
     <svg viewBox="0 0 300 300" role="img" aria-label={`Poster for ${artist}, ${title}`} className={className}>
       <rect x={0} y={0} width={300} height={300} fill="var(--surface)" />

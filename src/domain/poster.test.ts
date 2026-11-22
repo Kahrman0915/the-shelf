@@ -18,16 +18,31 @@ describe('posterPlan', () => {
       expect(accents.some((s) => s.fill === 'var(--brick)')).toBe(false);
     }
   });
-  it('pop/soul never gets a bourbon accent', () => {
+  it('pop/soul (by colour key) never gets a bourbon accent', () => {
     for (let i = 0; i < 200; i++) {
       const accents = posterPlan(`artist ${i}`, `title ${i}`, 'popsoul').shapes.filter((s) => s.role === 'accent');
       expect(accents).toHaveLength(2);
       expect(accents.some((s) => s.fill === 'var(--bourbon)')).toBe(false);
     }
   });
-  it('the genre circle uses the genre colour', () => {
-    const genre = posterPlan('Bob Marley', 'Exodus', 'reggae').shapes.find((s) => s.role === 'genre');
-    expect(genre).toMatchObject({ type: 'circle', fill: 'var(--genre-reggae)' });
+  it('a teal section never gets a teal accent', () => {
+    for (let i = 0; i < 200; i++) {
+      const accents = posterPlan(`artist ${i}`, `title ${i}`, 'teal').shapes.filter((s) => s.role === 'accent');
+      expect(accents).toHaveLength(2);
+      expect(accents.some((s) => s.fill === 'var(--teal)')).toBe(false);
+    }
+  });
+  it('other colours draw from all three accents', () => {
+    const fills = new Set<string>();
+    for (let i = 0; i < 200; i++) {
+      for (const s of posterPlan(`artist ${i}`, `title ${i}`, 'slate').shapes) if (s.role === 'accent') fills.add(s.fill);
+    }
+    expect([...fills].sort()).toEqual(['var(--bourbon)', 'var(--brick)', 'var(--teal)']);
+  });
+  it('the section circle uses the section colour', () => {
+    const circle = posterPlan('Bob Marley', 'Exodus', 'reggae').shapes.find((s) => s.role === 'section');
+    expect(circle).toMatchObject({ type: 'circle', fill: 'var(--section-reggae)' });
+    expect(posterPlan('Bob Marley', 'Exodus', 'sand').shapes.find((s) => s.role === 'section')).toMatchObject({ fill: 'var(--section-sand)' });
   });
   it('a very long artist name stays inside the band', () => {
     const plan = posterPlan('A'.repeat(60), 'Title', 'misc');

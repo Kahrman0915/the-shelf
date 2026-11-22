@@ -3,9 +3,13 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { ShelfRecord } from '@/data/schema';
 import { emptyForm, formFromRecord } from '@/domain/recordForm';
+import { sectionsFromSet } from '@/data/db';
+import { KAHRMANS_NINE, sectionIdFor } from '@/domain/sections';
 import { RecordForm } from './RecordForm';
 
 const ID = '11111111-1111-4111-8111-111111111111';
+const SHELF = '33333333-3333-4333-8333-333333333333';
+const sections = sectionsFromSet(SHELF, KAHRMANS_NINE, '2026-01-01T00:00:00.000Z');
 
 function record(p: Partial<ShelfRecord> = {}): ShelfRecord {
   return {
@@ -20,7 +24,7 @@ function record(p: Partial<ShelfRecord> = {}): ShelfRecord {
     catalog: null,
     year: 1966,
     format: null,
-    genre: 'jazz',
+    sectionId: sectionIdFor(SHELF, 'jazz'),
     discGrade: 'Sealed',
     sleeveGrade: null,
     pricePaid: null,
@@ -52,6 +56,7 @@ function setup(over: Partial<React.ComponentProps<typeof RecordForm>> = {}) {
     <RecordForm
       mode="add"
       initial={emptyForm()}
+      sections={sections}
       records={[]}
       onSave={onSave as never}
       onOpenDuplicate={onOpenDuplicate}
@@ -61,14 +66,21 @@ function setup(over: Partial<React.ComponentProps<typeof RecordForm>> = {}) {
   return { onSave, onOpenDuplicate };
 }
 
-async function chooseGenre(label: string) {
-  await userEvent.click(screen.getByRole('combobox', { name: 'Genre' }));
+async function chooseSection(label: string) {
+  await userEvent.click(screen.getByRole('combobox', { name: 'Section' }));
   await userEvent.click(await screen.findByRole('option', { name: new RegExp(label) }));
 }
 
 const box = (name: string) => screen.getByRole('textbox', { name });
 
 describe('RecordForm', () => {
+  it('the Section picker lists the shelf’s sections in order', async () => {
+    setup();
+    expect(screen.getByRole('combobox', { name: 'Section' })).toHaveTextContent('Choose a section');
+    await userEvent.click(screen.getByRole('combobox', { name: 'Section' }));
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(KAHRMANS_NINE.map((s) => s.name));
+  });
+
   it('add starts short, More details opens the rest', async () => {
     setup();
     expect(box('Artist')).toBeInTheDocument();
@@ -101,12 +113,12 @@ describe('RecordForm', () => {
     expect(screen.queryByText(/Already on the shelf/)).not.toBeInTheDocument();
   });
 
-  it('will not save without artist, title and genre', async () => {
+  it('will not save without artist, title and section', async () => {
     const { onSave } = setup();
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(await screen.findByText('Add the artist')).toBeInTheDocument();
     expect(screen.getByText('Add the title')).toBeInTheDocument();
-    expect(screen.getByText('Choose a genre', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.getByText('Choose a section', { selector: 'p' })).toBeInTheDocument();
     expect(box('Artist')).toHaveAttribute('aria-describedby');
     expect(box('Artist')).toHaveFocus();
     expect(onSave).not.toHaveBeenCalled();
@@ -116,7 +128,7 @@ describe('RecordForm', () => {
     const { onSave } = setup();
     await userEvent.type(box('Artist'), ' John Coltrane ');
     await userEvent.type(box('Title'), 'A Love Supreme');
-    await chooseGenre('Jazz');
+    await chooseSection('Jazz');
     await userEvent.click(screen.getByRole('radio', { name: 'NM' }));
     await userEvent.click(screen.getAllByRole('radio', { name: /^4 of 5/ })[0]);
     await userEvent.click(screen.getByRole('button', { name: 'More details' }));
@@ -125,15 +137,15 @@ describe('RecordForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     const [fields, opts] = onSave.mock.calls[0] as [Record<string, unknown>, { rating: number | null; another: boolean }];
-    expect(fields).toMatchObject({ artist: 'John Coltrane', title: 'A Love Supreme', genre: 'jazz', discGrade: 'NM', year: 1966, pricePaid: 15.5, label: null });
+    expect(fields).toMatchObject({ artist: 'John Coltrane', title: 'A Love Supreme', sectionId: sectionIdFor(SHELF, 'jazz'), discGrade: 'NM', year: 1966, pricePaid: 15.5, label: null });
     expect(opts).toEqual({ rating: 4, another: false });
   });
 
-  it('Save and add another keeps genre and label and clears the rest', async () => {
+  it('Save and add another keeps section and label and clears the rest', async () => {
     const { onSave } = setup();
     await userEvent.type(box('Artist'), 'John Coltrane');
     await userEvent.type(box('Title'), 'Ascension');
-    await chooseGenre('Jazz');
+    await chooseSection('Jazz');
     await userEvent.click(screen.getByRole('button', { name: 'More details' }));
     await userEvent.type(box('Label'), 'Impulse!');
     await userEvent.type(box('Year'), '1966');
@@ -146,14 +158,14 @@ describe('RecordForm', () => {
     expect(box('Title')).toHaveValue('');
     expect(box('Year')).toHaveValue('');
     expect(box('Label')).toHaveValue('Impulse!');
-    expect(screen.getByRole('combobox', { name: 'Genre' })).toHaveTextContent('Jazz');
+    expect(screen.getByRole('combobox', { name: 'Section' })).toHaveTextContent('Jazz / big band');
     expect(screen.getByRole('radio', { name: /^3 of 5/ })).toHaveAttribute('aria-checked', 'false');
   });
 
   it('a double tap on Save saves once', async () => {
     let release: () => void = () => {};
     const onSave = vi.fn<Save>(() => new Promise<void>((r) => { release = r; }));
-    setup({ onSave: onSave as never, initial: { ...emptyForm(), artist: 'A', title: 'T', genre: 'jazz' } });
+    setup({ onSave: onSave as never, initial: { ...emptyForm(), artist: 'A', title: 'T', sectionId: sectionIdFor(SHELF, 'jazz') } });
     await userEvent.dblClick(screen.getByRole('button', { name: 'Save' }));
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
@@ -183,12 +195,12 @@ describe('RecordForm', () => {
     setup({ onSave: onSave as never });
     await userEvent.type(box('Artist'), 'John Coltrane');
     await userEvent.type(box('Title'), 'Ascension');
-    await chooseGenre('Jazz');
+    await chooseSection('Jazz');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('The server said no');
     expect(box('Artist')).toHaveValue('John Coltrane');
     expect(box('Title')).toHaveValue('Ascension');
-    expect(screen.getByRole('combobox', { name: 'Genre' })).toHaveTextContent('Jazz');
+    expect(screen.getByRole('combobox', { name: 'Section' })).toHaveTextContent('Jazz / big band');
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
   });
 

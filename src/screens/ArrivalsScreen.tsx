@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { useCurrentShelf } from '@/app/CurrentShelf';
 import { SyncNotice } from '@/app/SyncContext';
-import { useShelfItems } from '@/data/hooks';
+import { useSectionsById, useShelfItems } from '@/data/hooks';
 import { spineColor } from '@/domain/labels';
 import { newArrivals } from '@/domain/shelf';
 import { SpineRow } from '@/ui/SpineRow';
@@ -11,6 +11,7 @@ export function ArrivalsScreen() {
   const { shelfId, userId } = useCurrentShelf();
   const navigate = useNavigate();
   const items = useShelfItems(shelfId, userId);
+  const sectionsById = useSectionsById(shelfId);
   const rows = items ? newArrivals(items) : [];
 
   return (
@@ -28,7 +29,7 @@ export function ArrivalsScreen() {
       ) : (
         <div className="border-t border-line">
           {rows.map((item) => (
-            <SpineRow key={item.record.id} record={item.record} rating={item.myRating} color={spineColor(item.record, 'all')} tag="new" onOpen={() => navigate(`/record/${item.record.id}`)} />
+            <SpineRow key={item.record.id} record={item.record} rating={item.myRating} color={spineColor(item.record, sectionsById, 'all')} tag="new" onOpen={() => navigate(`/record/${item.record.id}`)} />
           ))}
         </div>
       )}

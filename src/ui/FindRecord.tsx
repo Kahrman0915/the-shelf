@@ -9,6 +9,7 @@ import { UNDO_WINDOW_MS } from '@/app/UndoContext';
 import { addFound, perform } from '@/data/actions';
 import type { FoundRecord, Identified, Read } from '@/data/backend';
 import { db } from '@/data/db';
+import { useSections } from '@/data/hooks';
 import { wantFunFact } from '@/data/funFacts';
 import { addPhotosTo, PATH_FIELD, PHOTO_SIDES, type Drafts, type PhotoCtx } from '@/data/photos';
 import type { ShelfRecord } from '@/data/schema';
@@ -62,6 +63,7 @@ export function FindRecord({ records, onAdded, photos, handFormEdited = false }:
   const backend = useBackend();
   const { shelfId, userId } = useCurrentShelf();
   const { runNow } = useSyncStatus();
+  const sections = useSections(shelfId);
 
   const [query, setQuery] = useState('');
   // `asked`: the cards are the pressings Claude found, shown under "Which pressing is yours?".
@@ -250,7 +252,7 @@ export function FindRecord({ records, onAdded, photos, handFormEdited = false }:
         await perform(db, plan.postcards, runNow, plan.photos);
         made = { text: `Photos added: ${to.existing.title}`, undo: plan.undo, drafts, later: plan.later, readWords: recognisedAs?.readWords ?? null };
       } else {
-        const added = addFound(record, ctx);
+        const added = addFound(record, { ...ctx, sections: sections ?? [] });
         const create = added.postcards[0];
         const plan = drafts && create.kind === 'record.create' ? addPhotosTo(create.fields, drafts, ctx) : null;
         await perform(db, [...added.postcards, ...(plan?.postcards ?? [])], runNow, plan?.photos ?? []);

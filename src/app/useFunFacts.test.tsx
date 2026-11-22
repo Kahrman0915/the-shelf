@@ -9,6 +9,7 @@ import { BackendProvider } from './BackendContext';
 import { CurrentShelfProvider } from './CurrentShelf';
 import { SyncContext } from './SyncContext';
 import { FUN_FACT_RETRY_MS, useFunFacts, useFunFactStatus } from './useFunFacts';
+import { sectionIdFor } from '@/domain/sections';
 
 const SHELF = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ME = '11111111-1111-4111-8111-111111111111';
@@ -18,7 +19,7 @@ const FACT = { fact: 'Recorded in two sessions in 1959.', sourceUrl: 'https://ex
 function record(over: Partial<ShelfRecord> = {}): ShelfRecord {
   return {
     id: A, shelfId: SHELF, status: 'owned', wantsUpgrade: false, upgradeNote: null,
-    artist: 'Miles Davis', title: 'Kind of Blue', label: null, catalog: null, year: null, format: null, genre: 'jazz',
+    artist: 'Miles Davis', title: 'Kind of Blue', label: null, catalog: null, year: null, format: null, sectionId: sectionIdFor(SHELF, 'jazz'),
     discGrade: null, sleeveGrade: null, pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null, valueNote: null, notes: null,
     discogsReleaseId: null, coverPath: null, backPath: null, funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null,
     addedBy: ME, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: null, importKey: null, ...over,

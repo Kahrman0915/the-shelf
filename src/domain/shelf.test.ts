@@ -2,24 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { collectionTag, newArrivals, shelfRows, shelfTag, showResults, type ShelfLike } from './shelf';
 
 function rec(p: Partial<ShelfLike> & { artist: string }): ShelfLike {
-  return { title: 'T', label: null, catalog: null, genre: 'jazz', status: 'owned', wantsUpgrade: false, ...p };
+  return { title: 'T', label: null, catalog: null, sectionId: 'jazz-id', status: 'owned', wantsUpgrade: false, ...p };
 }
 
 const items = [
   { record: rec({ artist: 'McCoy Tyner', title: 'The Real McCoy' }), myRating: 4 },
   { record: rec({ artist: 'Ahmad Jamal', title: 'At the Top' }), myRating: 2 },
-  { record: rec({ artist: 'Bob Marley', genre: 'reggae' }), myRating: undefined },
+  { record: rec({ artist: 'Bob Marley', sectionId: 'reggae-id' }), myRating: undefined },
   { record: rec({ artist: 'Kenny Burrell', status: 'wanted' }), myRating: undefined },
   { record: rec({ artist: 'Art Blakey', status: 'new_arrival' }), myRating: undefined },
 ];
 
 describe('shelfRows', () => {
   it('shows owned records only, by artist, with didn\'t-love-it last', () => {
-    expect(shelfRows(items, { genre: 'all', query: '' }).map((i) => i.record.artist)).toEqual(['Bob Marley', 'McCoy Tyner', 'Ahmad Jamal']);
+    expect(shelfRows(items, { section: 'all', query: '' }).map((i) => i.record.artist)).toEqual(['Bob Marley', 'McCoy Tyner', 'Ahmad Jamal']);
   });
-  it('filters by genre and query', () => {
-    expect(shelfRows(items, { genre: 'reggae', query: '' }).map((i) => i.record.artist)).toEqual(['Bob Marley']);
-    expect(shelfRows(items, { genre: 'all', query: 'mccoy' }).map((i) => i.record.artist)).toEqual(['McCoy Tyner']);
+  it('filters by section and query', () => {
+    expect(shelfRows(items, { section: 'reggae-id', query: '' }).map((i) => i.record.artist)).toEqual(['Bob Marley']);
+    expect(shelfRows(items, { section: 'all', query: 'mccoy' }).map((i) => i.record.artist)).toEqual(['McCoy Tyner']);
   });
 });
 

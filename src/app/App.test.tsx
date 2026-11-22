@@ -10,6 +10,7 @@ import type { ShelfRecord } from '@/data/schema';
 import { FakeBackend, collectionRows } from '@/test/fakeBackend';
 import App from './App';
 import { BackendProvider } from './BackendContext';
+import { sectionIdFor } from '@/domain/sections';
 
 const K = { userId: '11111111-1111-4111-8111-111111111111', email: 'kahrman@example.com' };
 const MEG = { userId: '22222222-2222-4222-8222-222222222222', email: 'meg@example.com' };
@@ -22,6 +23,7 @@ function kahrmansShelf(extra: { records?: ReturnType<typeof collectionRows>['rec
     shelfFor: { [K.userId]: SHELF },
     records: rows.records,
     ratings: rows.ratings,
+    sections: rows.sections,
     members: [{ shelfId: SHELF, userId: K.userId, role: 'owner', displayName: 'Kahrman' }],
     ...extra,
   });
@@ -107,6 +109,23 @@ describe('a signed-in person', () => {
     renderApp(returning());
     expect(await screen.findByText('Ahmad Jamal Trio')).toBeInTheDocument();
     expect(document.documentElement.dataset.theme).toBe('midnight');
+  });
+
+  it('filters the shelf by its own sections, with Jazz by label', async () => {
+    renderApp(returning());
+    await screen.findByText('Ahmad Jamal Trio');
+    const spine = (name: RegExp) => (screen.getByRole('button', { name }).querySelector('[aria-hidden]') as HTMLElement).style.background;
+    expect(spine(/^Ahmad Jamal Trio, /)).toBe('var(--section-jazz)');
+    await userEvent.click(screen.getByRole('combobox', { name: 'Section' }));
+    const options = await screen.findAllByRole('option');
+    expect(options.map((o) => o.textContent)).toEqual(['All sections', 'Jazz / big band', 'Rock', 'Pop / soul / contemporary', 'Popular pop', 'Miscellaneous', 'Country', 'Reggae', 'Soundtracks', 'Christmas']);
+    await userEvent.click(screen.getByRole('option', { name: 'Reggae' }));
+    await waitFor(() => expect(screen.queryByText('Ahmad Jamal Trio')).toBeNull());
+    expect(screen.getAllByRole('button', { name: /^Bob Marley/ }).length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole('combobox', { name: 'Section' }));
+    await userEvent.click(await screen.findByRole('option', { name: 'Jazz / big band' }));
+    expect(await screen.findByText('Ahmad Jamal Trio')).toBeInTheDocument();
+    expect(spine(/^Ahmad Jamal Trio, /)).toBe('var(--label-argo)');
   });
 
   it('finds a record at the show, checks its price, and comes back to the same search', async () => {
@@ -409,7 +428,7 @@ describe('the pile', () => {
   it('the pile appears with a new arrival and goes once it is rated', async () => {
     const arrival: ShelfRecord = {
       id: '00000000-0000-4000-8000-0000000000aa', shelfId: SHELF, status: 'new_arrival', wantsUpgrade: false, upgradeNote: null,
-      artist: 'Art Blakey', title: 'Moanin’', label: null, catalog: null, year: null, format: null, genre: 'jazz', discGrade: null, sleeveGrade: null,
+      artist: 'Art Blakey', title: 'Moanin’', label: null, catalog: null, year: null, format: null, sectionId: sectionIdFor(SHELF, 'jazz'), discGrade: null, sleeveGrade: null,
       pricePaid: null, nmEstimateLow: null, nmEstimateHigh: null, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, backPath: null, funFact: null, funFactSource: null, coverImageUrl: null,
       boughtAt: '2026-06-01T00:00:00.000Z', addedBy: K.userId, createdAt: '2026-06-01T00:00:00.000Z', updatedAt: '2026-06-01T00:00:00.000Z', deletedAt: null, importKey: null,
     };
@@ -431,7 +450,7 @@ describe('the pile', () => {
 describe('Bought it on the price check', () => {
   const WANTED: ShelfRecord = {
     id: '00000000-0000-4000-8000-0000000000bb', shelfId: SHELF, status: 'wanted', wantsUpgrade: false, upgradeNote: null,
-    artist: 'Art Blakey', title: 'Moanin’', label: null, catalog: null, year: null, format: null, genre: 'jazz', discGrade: null, sleeveGrade: null,
+    artist: 'Art Blakey', title: 'Moanin’', label: null, catalog: null, year: null, format: null, sectionId: sectionIdFor(SHELF, 'jazz'), discGrade: null, sleeveGrade: null,
     pricePaid: null, nmEstimateLow: 40, nmEstimateHigh: 60, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, backPath: null, funFact: null, funFactSource: null, coverImageUrl: null,
     boughtAt: null, addedBy: K.userId, createdAt: '2026-06-01T00:00:00.000Z', updatedAt: '2026-06-01T00:00:00.000Z', deletedAt: null, importKey: null,
   };
