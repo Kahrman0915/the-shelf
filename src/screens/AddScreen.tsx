@@ -38,7 +38,8 @@ export function AddScreen() {
     const create = postcards[0];
     const plan = waiting && create.kind === 'record.create' ? addPhotosTo(create.fields, waiting, ctx) : null;
     await perform(db, [...postcards, ...(plan?.postcards ?? [])], runNow, plan?.photos ?? []);
-    if (plan) await clearDrafts();
+    // The record is saved: a failure to clear the drafts mustn't make Save look failed and tempt a second tap.
+    if (plan) await clearDrafts().catch(console.error);
     if (!another) navigate('/');
   }
 
@@ -54,7 +55,7 @@ export function AddScreen() {
       <PhotoCapture />
       <FindRecord
         records={records}
-        photos={waiting ? { drafts: waiting, onUsed: () => void clearDrafts(), onBack: (d) => void (d && restoreDrafts(d)) } : undefined}
+        photos={waiting ? { drafts: waiting, onUsed: () => void clearDrafts().catch(console.error), onBack: (d) => void (d && restoreDrafts(d).catch(console.error)) } : undefined}
       />
       <div className="px-4">
         <button

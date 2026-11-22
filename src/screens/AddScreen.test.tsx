@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendProvider } from '@/app/BackendContext';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
 import type { FoundRecord } from '@/data/backend';
@@ -65,6 +65,10 @@ beforeEach(async () => {
   URL.revokeObjectURL = vi.fn();
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('AddScreen', () => {
   it('Take photos comes before Find a record', () => {
     renderAdd('/add');
@@ -89,6 +93,21 @@ describe('AddScreen', () => {
     expect(record.backPath).toMatch(new RegExp(`^${SHELF}/${record.id}/back-.+\\.jpg$`));
     expect((await db.photos.toArray()).map((p) => p.path).sort()).toEqual([record.coverPath, record.backPath].sort());
     expect((await db.outbox.toArray()).map((p) => p.kind)).toEqual(['record.create', 'photo.upload', 'photo.upload', 'record.patch']);
+  });
+
+  it('a hand save whose drafts fail to clear still counts as saved, so Save isn’t tapped again', async () => {
+    await saveDraft({ side: 'front', bytes: new Uint8Array([1]).buffer, foundEdges: true });
+    const failed = new Error('IndexedDB is busy');
+    vi.spyOn(db.photoDrafts, 'clear').mockRejectedValue(failed);
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderAdd('/add');
+    expect(await screen.findByAltText('Front photo')).toBeInTheDocument();
+    await openHandForm();
+    await fillRequired();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByRole('heading', { name: 'The Shelf' });
+    expect(await db.records.count()).toBe(1);
+    await waitFor(() => expect(logged).toHaveBeenCalledWith(failed));
   });
 
   it('a found record takes the waiting photos, and Undo brings them back', async () => {

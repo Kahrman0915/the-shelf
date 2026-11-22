@@ -48,6 +48,9 @@ export function FindRecord({ records, onAdded, photos }: { records: ShelfRecord[
   const [searching, setSearching] = useState(false);
   // Where an undone save hands its photos back. Kept from the save itself: once the drafts are used, `photos` goes.
   const handBack = useRef<Photos['onBack'] | null>(null);
+  // The drafts a save already took. Until clearing them reaches `photos`, they're still passed in; a second
+  // save meanwhile must not put the same photos on another record. New drafts are a different object.
+  const usedDrafts = useRef<Drafts | null>(null);
   // The save that can still be undone. Shown inline under the box: the app-wide bottom bar is hidden
   // by the iPhone keyboard, which stays open here on purpose.
   const { saved, error: undoError, offer, undo: undoSaved } = useSavedOffer({
@@ -126,13 +129,14 @@ export function FindRecord({ records, onAdded, photos }: { records: ShelfRecord[
     if (saving.current !== 'idle') return;
     saving.current = 'running';
     const searchBefore = latest.current;
-    const existing = photos ? findDuplicate(records, record.artist, record.title) : null;
-    if (photos && existing) {
+    const waiting = photos && photos.drafts !== usedDrafts.current ? photos : null;
+    const existing = waiting ? findDuplicate(records, record.artist, record.title) : null;
+    if (waiting && existing) {
       // Stays 'running' while the question is up, so another tap can't start a save meanwhile.
-      setAsking({ record, existing, photos, searchBefore });
+      setAsking({ record, existing, photos: waiting, searchBefore });
       return;
     }
-    void save(record, { kind: 'new', photos: photos ?? null }, searchBefore);
+    void save(record, { kind: 'new', photos: waiting }, searchBefore);
   }
 
   /** Save a new record (with the photos, if any) or put the photos on one already on the shelf. Called with saving 'running'. */
@@ -159,6 +163,7 @@ export function FindRecord({ records, onAdded, photos }: { records: ShelfRecord[
         made = { text: `On the shelf: ${record.title}`, undo: [...(found.undo ?? []), ...(plan?.undo ?? [])], drafts, later: [] };
       }
       if (to.photos) {
+        usedDrafts.current = to.photos.drafts;
         handBack.current = to.photos.onBack;
         to.photos.onUsed();
       }

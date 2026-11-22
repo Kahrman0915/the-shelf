@@ -55,20 +55,25 @@ function onShelf(p: Partial<ShelfRecord> = {}): ShelfRecord {
 
 type PhotosProp = { drafts: Drafts; onUsed: () => void; onBack: (drafts: Drafts | null) => void };
 
+/** Show FindRecord again with other photos waiting, as the Add screen does when the drafts change. */
+let rerenderPhotos: (photos: PhotosProp | undefined) => void = () => {};
+
 function setup({ records = [] as ShelfRecord[], onAdded = () => {}, photos = undefined as PhotosProp | undefined } = {}) {
   const backend = new FakeBackend({});
   backend.discogsResults = [FORCES, SPARSE];
   const shelf = { shelfId: SHELF, userId: ME, email: 'k@example.com', signOut: async () => null, signOutAndDelete: async () => {} };
-  render(
+  const tree = (p: PhotosProp | undefined) => (
     <BackendProvider backend={backend}>
       <CurrentShelfProvider value={shelf}>
         <UndoProvider>
-          <FindRecord records={records} onAdded={onAdded} photos={photos} />
+          <FindRecord records={records} onAdded={onAdded} photos={p} />
           <UndoBar />
         </UndoProvider>
       </CurrentShelfProvider>
-    </BackendProvider>,
+    </BackendProvider>
   );
+  const { rerender } = render(tree(photos));
+  rerenderPhotos = (p) => rerender(tree(p));
   return backend;
 }
 
@@ -583,6 +588,36 @@ describe('FindRecord', () => {
       await screen.findByText(/On the shelf:/);
       expect(await db.records.count()).toBe(1);
       expect((await kinds()).filter((k) => k === 'photo.upload')).toHaveLength(2);
+    });
+
+    it('photos already used by a save don’t go on a second record saved before they’re cleared', async () => {
+      const photos = withPhotos();
+      await search('mccoy tyner forces of nature');
+      const finishSave = slowSaves();
+      await userEvent.click(await card(/Forces Of Nature/));
+      await search('sahara');
+      await finishSave();
+      await screen.findByText('On the shelf: Forces Of Nature (Live At Slugs’)');
+      // The drafts are still showing (clearing them hasn't landed yet); the new card is fair game.
+      await userEvent.click(screen.getByRole('button', { name: /Sahara/ }));
+      await screen.findByText('On the shelf: Sahara');
+      const sahara = (await db.records.toArray()).find((r) => r.title === 'Sahara')!;
+      expect(sahara).toMatchObject({ coverPath: null, backPath: null });
+      expect((await kinds()).filter((k) => k === 'photo.upload')).toHaveLength(2);
+      expect(photos.onUsed).toHaveBeenCalledOnce();
+    });
+
+    it('new photos taken after a save go on the next record', async () => {
+      withPhotos();
+      await search('mccoy tyner forces of nature');
+      await userEvent.click(await card(/Forces Of Nature/));
+      await screen.findByText(/On the shelf:/);
+      rerenderPhotos({ drafts: drafts(), onUsed: vi.fn(), onBack: vi.fn() });
+      await pickSahara();
+      await screen.findByText('On the shelf: Sahara');
+      const sahara = (await db.records.toArray()).find((r) => r.title === 'Sahara')!;
+      expect(sahara.coverPath).not.toBeNull();
+      expect((await kinds()).filter((k) => k === 'photo.upload')).toHaveLength(4);
     });
 
     describe('a record already on the shelf', () => {
