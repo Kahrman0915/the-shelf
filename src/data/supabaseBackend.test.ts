@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BackendError, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED } from './backend';
+import { BackendError, CLAUDE_DOWN, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED } from './backend';
 import { StorageClient } from '@supabase/storage-js';
 import { AUTH_STORAGE_KEY } from './supabase';
-import { DISCOGS_TIMEOUT_MS, offlineLooking, rejectionReason, supabaseBackend } from './supabaseBackend';
+import { base64, DISCOGS_TIMEOUT_MS, offlineLooking, rejectionReason, supabaseBackend } from './supabaseBackend';
 
 /** A chainable stand-in for a Supabase PostgrestFilterBuilder: every filter/order method returns
  *  the same object, and it resolves (like the real one does when awaited) when range() is called,
@@ -361,6 +361,120 @@ describe('supabaseBackend().searchDiscogs', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     fetchMock.mockResolvedValue(reply(200, { results: [found] }));
     expect(await backend.searchDiscogs(`  ${'x'.repeat(200)}  `)).toEqual([found]);
+  });
+});
+
+describe('supabaseBackend() Claude functions', () => {
+  const withSession = (session: { access_token: string } | null) =>
+    ({ auth: { getSession: vi.fn().mockResolvedValue({ data: { session }, error: null }) } }) as never;
+  const reply = (status: number, body: unknown = {}) => new Response(JSON.stringify(body), { status });
+  const identified = { read: { artist: null, title: null, barcode: null, catalog: null, label: null }, match: 'none', results: [] };
+  const bytes = (...n: number[]) => new Uint8Array(n).buffer;
+  const fact = { artist: 'Sade', title: 'Diamond Life', year: 1984, label: null };
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'pub-key');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('base64 round-trips a 3-byte buffer and handles 2 MB without blowing the stack', () => {
+    expect(base64(bytes(1, 2, 3))).toBe(btoa('\x01\x02\x03'));
+    expect(base64(bytes(255, 0))).toBe('/wA=');
+    const big = new Uint8Array(2 * 1024 * 1024).map((_, i) => i % 251);
+    const decoded = Uint8Array.from(atob(base64(big.buffer)), (c) => c.charCodeAt(0));
+    expect(decoded.length).toBe(big.length);
+    expect(decoded[1000]).toBe(1000 % 251);
+    expect(decoded[big.length - 1]).toBe((big.length - 1) % 251);
+  });
+
+  it('identifyRecord posts front and back as base64 and returns the answer', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(reply(200, identified));
+    vi.stubGlobal('fetch', fetchMock);
+    const out = await supabaseBackend(withSession({ access_token: 'tok' })).identifyRecord(bytes(1, 2, 3), null);
+    expect(out).toEqual(identified);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://example.supabase.co/functions/v1/identify-record');
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer tok', apikey: 'pub-key', 'Content-Type': 'application/json' });
+    expect(JSON.parse(init.body)).toEqual({ front: 'AQID', back: null });
+  });
+
+  it('identifyRecord sends the back photo too, and gives Claude 30 s', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const fetchMock = vi.fn().mockResolvedValue(reply(200, identified));
+    vi.stubGlobal('fetch', fetchMock);
+    await supabaseBackend(withSession({ access_token: 't' })).identifyRecord(bytes(1, 2, 3), bytes(255, 0));
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ front: 'AQID', back: '/wA=' });
+    expect(timeout).toHaveBeenCalledWith(30_000);
+    timeout.mockRestore();
+  });
+
+  it.each([
+    [401, 'Sign in again to look it up.'],
+    [429, DISCOGS_MESSAGES.rateLimited],
+    [502, CLAUDE_DOWN],
+  ])('identifyRecord maps %i to its message', async (status, message) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(status)));
+    const failure = supabaseBackend(withSession({ access_token: 't' })).identifyRecord(bytes(1), null);
+    await expect(failure).rejects.toBeInstanceOf(BackendError);
+    await expect(failure).rejects.toThrow(message);
+  });
+
+  it('identifyRecord maps a timeout to CLAUDE_DOWN and a network failure to NO_SIGNAL', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('The request timed out.', 'AbortError')));
+    await expect(supabaseBackend(withSession({ access_token: 't' })).identifyRecord(bytes(1), null)).rejects.toThrow(CLAUDE_DOWN);
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    await expect(supabaseBackend(withSession({ access_token: 't' })).identifyRecord(bytes(1), null)).rejects.toThrow(NO_SIGNAL);
+  });
+
+  it('identifyRecord maps anything to NO_SIGNAL when offline', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
+    try {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('The request timed out.', 'AbortError')));
+      await expect(supabaseBackend(withSession({ access_token: 't' })).identifyRecord(bytes(1), null)).rejects.toThrow(NO_SIGNAL);
+    } finally {
+      delete (navigator as unknown as Record<string, unknown>).onLine;
+    }
+  });
+
+  it('asks to sign in again when there is no session', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(supabaseBackend(withSession(null)).identifyRecord(bytes(1), null)).rejects.toThrow('Sign in again to look it up.');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('findFunFact posts the record, gives it 45 s and returns the fact', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const fetchMock = vi.fn().mockResolvedValue(reply(200, { fact: 'Recorded in a week.', sourceUrl: 'https://example.com/a' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const out = await supabaseBackend(withSession({ access_token: 'tok' })).findFunFact(fact);
+    expect(out).toEqual({ fact: 'Recorded in a week.', sourceUrl: 'https://example.com/a' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://example.supabase.co/functions/v1/fun-fact');
+    expect(JSON.parse(init.body)).toEqual(fact);
+    expect(timeout).toHaveBeenCalledWith(45_000);
+    timeout.mockRestore();
+  });
+
+  it('findFunFact returns null on { fact: null }', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(200, { fact: null })));
+    expect(await supabaseBackend(withSession({ access_token: 't' })).findFunFact(fact)).toBeNull();
+  });
+
+  it('findFunFact maps 401, 429, 500 and offline', async () => {
+    const b = () => supabaseBackend(withSession({ access_token: 't' })).findFunFact(fact);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(401)));
+    await expect(b()).rejects.toThrow('Sign in again to look it up.');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(429)));
+    await expect(b()).rejects.toThrow(DISCOGS_MESSAGES.rateLimited);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(500)));
+    await expect(b()).rejects.toThrow(CLAUDE_DOWN);
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    await expect(b()).rejects.toThrow(NO_SIGNAL);
   });
 });
 

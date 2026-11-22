@@ -1,5 +1,5 @@
 import collection from '../../collection.json';
-import { BackendError, DISCOGS_MESSAGES, NO_SIGNAL, type Backend, type FoundRecord, type Invite, type Member, type SignedIn } from '@/data/backend';
+import { BackendError, CLAUDE_DOWN, DISCOGS_MESSAGES, NO_SIGNAL, type Backend, type FoundRecord, type Identified, type Invite, type Member, type SignedIn } from '@/data/backend';
 import { importCollection } from '@/data/importCollection';
 import { ratingToRow, recordToRow, type NewRecordRow, type RatingRow, type RecordPatchRow, type RecordRow } from '@/data/rowMapping';
 
@@ -30,6 +30,14 @@ export class FakeBackend implements Backend {
   discogsFails: 'rate-limited' | 'down' | null = null;
   /** Every query that reached the "server" (under-2-character ones never do). */
   discogsCalls: string[] = [];
+  /** What identifyRecord() returns. */
+  identified: Identified = { read: { artist: null, title: null, barcode: null, catalog: null, label: null }, match: 'none', results: [] };
+  /** What findFunFact() returns, keyed by `${artist}|${title}`; a missing key means no fact found. */
+  funFacts = new Map<string, { fact: string; sourceUrl: string } | null>();
+  /** Makes identifyRecord() and findFunFact() fail the way the real ones do. */
+  claudeFails: 'down' | null = null;
+  identifyCalls = 0;
+  funFactCalls: string[] = [];
   /** The photos on the "server", by storage path. */
   photos = new Map<string, ArrayBuffer>();
   private lastStamp = 0;
@@ -141,6 +149,22 @@ export class FakeBackend implements Backend {
     if (this.discogsFails === 'rate-limited') throw new BackendError(DISCOGS_MESSAGES.rateLimited);
     if (this.discogsFails === 'down') throw new BackendError(DISCOGS_MESSAGES.down);
     return this.discogsResults.map((r) => ({ ...r }));
+  }
+
+  async identifyRecord(_front: ArrayBuffer, _back: ArrayBuffer | null): Promise<Identified> {
+    this.guard();
+    this.identifyCalls += 1;
+    if (this.claudeFails === 'down') throw new BackendError(CLAUDE_DOWN);
+    return structuredClone(this.identified);
+  }
+
+  async findFunFact(r: { artist: string; title: string; year: number | null; label: string | null }): Promise<{ fact: string; sourceUrl: string } | null> {
+    this.guard();
+    const key = `${r.artist}|${r.title}`;
+    this.funFactCalls.push(key);
+    if (this.claudeFails === 'down') throw new BackendError(CLAUDE_DOWN);
+    const found = this.funFacts.get(key);
+    return found ? { ...found } : null;
   }
 
   private stamp(): string {

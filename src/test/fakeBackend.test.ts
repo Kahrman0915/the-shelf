@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BackendError, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED, type FoundRecord } from '@/data/backend';
+import { BackendError, CLAUDE_DOWN, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED, type FoundRecord } from '@/data/backend';
 import { newRecordToRow } from '@/data/rowMapping';
 import type { ShelfRecord } from '@/data/schema';
 import { FakeBackend, collectionRows } from './fakeBackend';
@@ -71,6 +71,40 @@ describe('FakeBackend', () => {
       b.discogsResults = [found];
       expect(await b.searchDiscogs(' a ')).toEqual([]);
       expect(b.discogsCalls).toEqual([]);
+    });
+  });
+
+  describe('claude reads', () => {
+    const r = { artist: 'Sade', title: 'Diamond Life', year: 1984, label: null };
+
+    it('returns the canned identification and counts calls', async () => {
+      const b = new FakeBackend({});
+      expect(await b.identifyRecord(new ArrayBuffer(1), null)).toEqual({ read: { artist: null, title: null, barcode: null, catalog: null, label: null }, match: 'none', results: [] });
+      b.identified = { read: { artist: 'Sade', title: null, barcode: null, catalog: null, label: null }, match: 'several', results: [] };
+      expect((await b.identifyRecord(new ArrayBuffer(1), new ArrayBuffer(1))).match).toBe('several');
+      expect(b.identifyCalls).toBe(2);
+    });
+
+    it('returns canned fun facts by artist|title, null when none, and logs calls', async () => {
+      const b = new FakeBackend({});
+      b.funFacts.set('Sade|Diamond Life', { fact: 'A fact.', sourceUrl: 'https://example.com' });
+      expect(await b.findFunFact(r)).toEqual({ fact: 'A fact.', sourceUrl: 'https://example.com' });
+      expect(await b.findFunFact({ ...r, title: 'Other' })).toBeNull();
+      expect(b.funFactCalls).toEqual(['Sade|Diamond Life', 'Sade|Other']);
+    });
+
+    it('fails with CLAUDE_DOWN when told to', async () => {
+      const b = new FakeBackend({});
+      b.claudeFails = 'down';
+      await expect(b.identifyRecord(new ArrayBuffer(1), null)).rejects.toThrow(CLAUDE_DOWN);
+      await expect(b.findFunFact(r)).rejects.toThrow(CLAUDE_DOWN);
+    });
+
+    it('has no signal when offline', async () => {
+      const b = new FakeBackend({});
+      b.online = false;
+      await expect(b.identifyRecord(new ArrayBuffer(1), null)).rejects.toThrow(NO_SIGNAL);
+      await expect(b.findFunFact(r)).rejects.toThrow(NO_SIGNAL);
     });
   });
 

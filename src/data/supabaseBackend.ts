@@ -1,11 +1,22 @@
 import { isAuthRetryableFetchError, type SupabaseClient } from '@supabase/supabase-js';
-import { BackendError, COVERS_BUCKET, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED, type Backend, type FoundRecord, type Invite, type Member, type SignedIn } from './backend';
+import { BackendError, CLAUDE_DOWN, COVERS_BUCKET, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED, type Backend, type FoundRecord, type Identified, type Invite, type Member, type SignedIn } from './backend';
 import { AUTH_STORAGE_KEY, fetchWithTimeout, readConfig, supabase } from './supabase';
 
 const PAGE = 1000;
 
 /** The function's own limit: it waits on Discogs, so it gets longer than the shelf's 15 s. */
 export const DISCOGS_TIMEOUT_MS = 20_000;
+const IDENTIFY_TIMEOUT_MS = 30_000;
+const FUN_FACT_TIMEOUT_MS = 45_000;
+
+/** Base64 of the bytes, built in chunks: spreading a 2 MB array into String.fromCharCode overflows the stack. */
+export function base64(bytes: ArrayBuffer): string {
+  const view = new Uint8Array(bytes);
+  const CHUNK = 0x8000;
+  let binary = '';
+  for (let i = 0; i < view.length; i += CHUNK) binary += String.fromCharCode(...view.subarray(i, i + CHUNK));
+  return btoa(binary);
+}
 
 /** The longest query the function accepts (see cleanQuery() in the discogs-search function). */
 const MAX_QUERY = 200;
@@ -52,6 +63,36 @@ function photoFailure(error: PhotoError): never {
   if (error.statusCode === '413' || /too large|maximum allowed size/i.test(error.message)) throw new BackendError(REJECTED.photoTooBig);
   throw new BackendError(REJECTED.other(`photo ${error.statusCode ?? 'unknown'}`));
 }
+
+/** POSTs to a Claude-backed Edge Function and returns its JSON answer, mapping failures to plain words. */
+async function callClaudeFunction<T>(client: SupabaseClient, name: string, body: unknown, timeoutMs: number): Promise<T> {
+  const { data, error } = await client.auth.getSession();
+  if (error) throw new BackendError(offlineLooking(error) ? NO_SIGNAL : error.message);
+  if (!data.session) throw new BackendError(SIGN_IN_AGAIN);
+  const { url, key } = readConfig(import.meta.env as Record<string, string | undefined>);
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(timeoutMs)(`${url}/functions/v1/${name}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${data.session.access_token}`, apikey: key, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    const err = e as Error;
+    const offline = (typeof navigator !== 'undefined' && navigator.onLine === false) || err instanceof TypeError || (!abortedLooking(err) && offlineLooking(err));
+    throw new BackendError(offline ? NO_SIGNAL : CLAUDE_DOWN);
+  }
+  if (res.status === 401) throw new BackendError(SIGN_IN_AGAIN);
+  if (res.status === 429) throw new BackendError(DISCOGS_MESSAGES.rateLimited);
+  if (!res.ok) throw new BackendError(CLAUDE_DOWN);
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new BackendError(CLAUDE_DOWN);
+  }
+}
+
+const SIGN_IN_AGAIN = 'Sign in again to look it up.';
 
 export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
   return {
@@ -224,6 +265,15 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
       } catch {
         throw new BackendError(DISCOGS_MESSAGES.down);
       }
+    },
+
+    async identifyRecord(front, back): Promise<Identified> {
+      return callClaudeFunction<Identified>(client, 'identify-record', { front: base64(front), back: back ? base64(back) : null }, IDENTIFY_TIMEOUT_MS);
+    },
+
+    async findFunFact(r) {
+      const out = await callClaudeFunction<{ fact: string | null; sourceUrl?: string }>(client, 'fun-fact', r, FUN_FACT_TIMEOUT_MS);
+      return out.fact && out.sourceUrl ? { fact: out.fact, sourceUrl: out.sourceUrl } : null;
     },
 
     async signOut() {
