@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { dropDraft, markPhotoTipsSeen, saveDraft, useDrafts, usePhotoTipsSeen } from '@/data/photoDrafts';
 import { PHOTO_SIDES, type DraftPhoto, type PhotoSide } from '@/data/photos';
 import { useBytesUrl } from '@/data/usePhoto';
-import { squareUpPhoto } from '@/photo/squareUp';
+import { squareUpPhoto, warmUpSquaring } from '@/photo/squareUp';
 import { PhotoThumb } from './PhotoThumb';
 import { PhotoTips } from './PhotoTips';
 import { useCamera } from './useCamera';
@@ -65,9 +65,8 @@ export function PhotoCapture() {
     if (!tipsSeen) {
       setAfterTips(true);
       setTipsOpen(true);
-      return;
-    }
-    front.open();
+    } else front.open();
+    warmUpSquaring(); // after the camera's click, never before it
   }
 
   function tipsDismissed() {

@@ -7,7 +7,7 @@ import { db } from '@/data/db';
 import { markPhotoTipsSeen } from '@/data/photoDrafts';
 import type { PhotoChanges } from '@/data/photos';
 import type { ShelfRecord } from '@/data/schema';
-import { squareUpPhoto } from '@/photo/squareUp';
+import { squareUpPhoto, warmUpSquaring } from '@/photo/squareUp';
 import { FakeBackend } from '@/test/fakeBackend';
 import { EditPhotos } from './EditPhotos';
 
@@ -60,6 +60,20 @@ describe('EditPhotos', () => {
     render(<Harness r={record()} spy={() => {}} />);
     expect(screen.getAllByRole('button', { name: 'Take' })).toHaveLength(2);
     expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument();
+  });
+
+  it('starts loading the squaring-up after Take or Retake opens the camera, never before', async () => {
+    await db.photos.put({ path: BACK, bytes: new Uint8Array([1]).buffer });
+    render(<Harness r={record({ backPath: BACK })} spy={() => {}} />);
+    const front = vi.spyOn(screen.getByLabelText('Front photo file') as HTMLInputElement, 'click');
+    const back = vi.spyOn(screen.getByLabelText('Back photo file') as HTMLInputElement, 'click');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Take' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Take' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retake' }));
+    const warm = vi.mocked(warmUpSquaring).mock.invocationCallOrder;
+    expect(warm).toHaveLength(2);
+    expect(front.mock.invocationCallOrder[0]).toBeLessThan(warm[0]);
+    expect(back.mock.invocationCallOrder[0]).toBeLessThan(warm[1]);
   });
 
   it('a new front is reported as a change and offers Retake and Remove', async () => {

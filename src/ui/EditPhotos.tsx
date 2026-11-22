@@ -4,7 +4,7 @@ import { markPhotoTipsSeen, usePhotoTipsSeen } from '@/data/photoDrafts';
 import { PATH_FIELD, PHOTO_SIDES, type PhotoChanges, type PhotoSide } from '@/data/photos';
 import type { ShelfRecord } from '@/data/schema';
 import { useBytesUrl, usePhotoUrl } from '@/data/usePhoto';
-import { squareUpPhoto } from '@/photo/squareUp';
+import { squareUpPhoto, warmUpSquaring } from '@/photo/squareUp';
 import { PhotoThumb } from './PhotoThumb';
 import { PhotoTips } from './PhotoTips';
 import { useCamera } from './useCamera';
@@ -102,9 +102,8 @@ export function EditPhotos({
     if (!tipsSeen) {
       setTipsFor(side);
       setTipsOpen(true);
-      return;
-    }
-    camera[side].open();
+    } else camera[side].open();
+    warmUpSquaring(); // after the camera's click, never before it
   }
 
   function tipsDismissed() {

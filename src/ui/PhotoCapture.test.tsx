@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/data/db';
 import { markPhotoTipsSeen } from '@/data/photoDrafts';
-import { squareUpPhoto } from '@/photo/squareUp';
+import { squareUpPhoto, warmUpSquaring } from '@/photo/squareUp';
 import { PhotoCapture } from './PhotoCapture';
 
 vi.mock('@/photo/squareUp');
@@ -52,6 +52,22 @@ describe('PhotoCapture', () => {
     fireEvent.click(button);
     expect(click).toHaveBeenCalledOnce();
     expect(screen.queryByText('Tips for a sharp cover')).not.toBeInTheDocument();
+  });
+
+  it('starts loading the squaring-up after Take photos opens the camera, never before', async () => {
+    await markPhotoTipsSeen();
+    render(<PhotoCapture />);
+    const click = vi.spyOn(frontInput(), 'click');
+    fireEvent.click(await takeButton());
+    expect(warmUpSquaring).toHaveBeenCalledOnce();
+    expect(click.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(warmUpSquaring).mock.invocationCallOrder[0]);
+  });
+
+  it('starts loading the squaring-up while the first-time tips are read', async () => {
+    render(<PhotoCapture />);
+    fireEvent.click(await takeButton());
+    expect(await screen.findByText('Tips for a sharp cover')).toBeInTheDocument();
+    expect(warmUpSquaring).toHaveBeenCalled();
   });
 
   it('asks for the back after the front', async () => {
