@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendProvider } from '@/app/BackendContext';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
-import { UndoBar, UndoProvider } from '@/app/UndoContext';
+import { UNDO_WINDOW_MS, UndoBar, UndoProvider } from '@/app/UndoContext';
+import * as actions from '@/data/actions';
 import type { FoundRecord } from '@/data/backend';
 import { db } from '@/data/db';
 import type { ShelfRecord } from '@/data/schema';
@@ -270,6 +271,114 @@ describe('FindRecord', () => {
     await waitFor(async () => expect((await db.records.toArray())[0].deletedAt).not.toBeNull());
     expect((await db.outbox.toArray()).map((p) => p.kind)).toEqual(['record.create', 'record.patch']);
     await waitFor(() => expect(screen.queryByText(/On the shelf:/)).not.toBeInTheDocument());
+  });
+
+  describe('the confirmation under the box', () => {
+    const FORCES_TEXT = 'On the shelf: Forces Of Nature (Live At Slugs’)';
+    const undoButton = () => screen.getByRole('button', { name: 'Undo' });
+
+    async function saveForces() {
+      await search('mccoy tyner forces of nature');
+      await userEvent.click(await card(/Forces Of Nature/));
+      return screen.findByText(FORCES_TEXT);
+    }
+
+    it('after saving, the confirmation shows under the box with Undo', async () => {
+      setup();
+      const text = await saveForces();
+      // Shown once, inline in the form's section: not also in the app-wide bottom bar.
+      expect(screen.getAllByText(/On the shelf:/)).toHaveLength(1);
+      const section = searchBox().closest('section') as HTMLElement;
+      expect(section).toContainElement(text);
+      expect(section).toContainElement(undoButton());
+      expect(searchBox().closest('form')).not.toContainElement(text);
+      // A single row, in a live region that was already mounted.
+      expect(text.closest('[role="status"]')).toContainElement(undoButton());
+      expect(undoButton().className).toContain('h-12');
+      expect(undoButton().closest('.fixed')).toBeNull();
+    });
+
+    it('the confirmation goes after 8 seconds', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+      try {
+        setup();
+        await saveForces();
+        act(() => void vi.advanceTimersByTime(UNDO_WINDOW_MS - 100));
+        expect(screen.getByText(FORCES_TEXT)).toBeInTheDocument();
+        act(() => void vi.advanceTimersByTime(1000));
+        expect(screen.queryByText(/On the shelf:/)).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('a second save replaces the confirmation with a fresh 8 seconds', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+      try {
+        setup();
+        await saveForces();
+        act(() => void vi.advanceTimersByTime(5000));
+        await search('sahara');
+        await userEvent.click(await card(/Sahara/));
+        await screen.findByText('On the shelf: Sahara');
+        expect(screen.queryByText(FORCES_TEXT)).not.toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(1);
+        act(() => void vi.advanceTimersByTime(5000));
+        expect(screen.getByText('On the shelf: Sahara')).toBeInTheDocument();
+        act(() => void vi.advanceTimersByTime(4000));
+        expect(screen.queryByText(/On the shelf:/)).not.toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('starting a new search leaves the confirmation up', async () => {
+      setup();
+      await saveForces();
+      await search('sahara');
+      await card(/Sahara/);
+      expect(screen.getByText(FORCES_TEXT)).toBeInTheDocument();
+    });
+
+    it('Undo takes the record off the shelf and returns focus to the box', async () => {
+      setup();
+      await saveForces();
+      await userEvent.click(undoButton());
+      await waitFor(async () => expect((await db.records.toArray())[0].deletedAt).not.toBeNull());
+      expect((await db.outbox.toArray()).map((p) => p.kind)).toEqual(['record.create', 'record.patch']);
+      await waitFor(() => expect(screen.queryByText(/On the shelf:/)).not.toBeInTheDocument());
+      expect(searchBox()).toHaveFocus();
+    });
+
+    it('Undo runs once on a double tap', async () => {
+      setup();
+      await saveForces();
+      let finish: () => void = () => {};
+      const perform = vi.spyOn(actions, 'perform').mockImplementation(() => new Promise<void>((r) => { finish = r; }));
+      await userEvent.dblClick(undoButton());
+      expect(perform).toHaveBeenCalledTimes(1);
+      await act(async () => finish());
+      await waitFor(() => expect(screen.queryByText(/On the shelf:/)).not.toBeInTheDocument());
+      expect(perform).toHaveBeenCalledTimes(1);
+    });
+
+    it('a failed undo shows its message', async () => {
+      setup();
+      await saveForces();
+      vi.spyOn(actions, 'perform').mockRejectedValueOnce(new Error('The shelf is full'));
+      await userEvent.click(undoButton());
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('The shelf is full');
+      expect(searchBox().closest('section')).toContainElement(alert);
+      expect((await db.records.toArray())[0].deletedAt).toBeNull();
+    });
+
+    it('the status region is mounted before it has any text', async () => {
+      setup();
+      const regions = screen.getAllByRole('status');
+      expect(regions.some((r) => r.textContent === '' && r.getAttribute('aria-live') !== 'off')).toBe(true);
+    });
   });
 
   it('marks a record already on the shelf', async () => {

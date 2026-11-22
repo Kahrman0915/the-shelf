@@ -1,13 +1,15 @@
+import { Check } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useBackend } from '@/app/BackendContext';
 import { useCurrentShelf } from '@/app/CurrentShelf';
 import { useSyncStatus } from '@/app/SyncContext';
-import { useUndo } from '@/app/UndoContext';
+import { UNDO_WINDOW_MS } from '@/app/UndoContext';
 import { addFound, perform } from '@/data/actions';
 import { BackendError, NO_SIGNAL, type FoundRecord } from '@/data/backend';
 import { db } from '@/data/db';
+import type { NewPostcard } from '@/data/outbox';
 import type { ShelfRecord } from '@/data/schema';
 import { findDuplicate } from '@/domain/recordForm';
 import { cn } from '@/lib/utils';
@@ -35,12 +37,17 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
   const backend = useBackend();
   const { shelfId, userId } = useCurrentShelf();
   const { runNow } = useSyncStatus();
-  const { offer } = useUndo();
 
   const [query, setQuery] = useState('');
   const [found, setFound] = useState<{ query: string; results: FoundRecord[]; at: number } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
+  // The save that can still be undone. Shown inline under the box: the app-wide bottom bar is hidden
+  // by the iPhone keyboard, which stays open here on purpose.
+  const [saved, setSaved] = useState<{ title: string; undo: NewPostcard[] } | null>(null);
+  const [undoError, setUndoError] = useState<string | null>(null);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const undoing = useRef(false);
   const [online, setOnline] = useState(isOnline);
   const box = useRef<HTMLInputElement>(null);
   // Only the latest search may show its answer: an older one that returns late is ignored.
@@ -52,6 +59,8 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
   useEffect(() => {
     if (saving.current === 'held') saving.current = 'idle';
   }, [found]);
+
+  useEffect(() => () => clearTimeout(savedTimer.current), []);
 
   useEffect(() => {
     const update = () => setOnline(isOnline());
@@ -113,7 +122,12 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
       const ctx = { me: userId, now: new Date().toISOString(), shelfId, newId: crypto.randomUUID() };
       const { postcards, undo } = addFound(record, ctx);
       await perform(db, postcards, runNow);
-      if (undo) offer(`On the shelf: ${record.title}`, () => perform(db, undo, runNow));
+      if (undo) {
+        clearTimeout(savedTimer.current);
+        setUndoError(null);
+        setSaved({ title: record.title, undo });
+        savedTimer.current = setTimeout(() => setSaved(null), UNDO_WINDOW_MS);
+      }
       if (latest.current === searchBefore) {
         saving.current = 'held';
         latest.current++;
@@ -129,6 +143,22 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
     } catch (err) {
       setMessage(messageFor(err));
       saving.current = 'idle';
+    }
+  }
+
+  async function undoSave() {
+    if (!saved || undoing.current) return;
+    undoing.current = true;
+    clearTimeout(savedTimer.current);
+    try {
+      await perform(db, saved.undo, runNow);
+      setSaved(null);
+      setUndoError(null);
+      box.current?.focus();
+    } catch (err) {
+      setUndoError(messageFor(err));
+    } finally {
+      undoing.current = false;
     }
   }
 
@@ -160,6 +190,31 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
           </Button>
         </div>
       </form>
+
+      {/* Always mounted, so a screen reader announces the text when it arrives. */}
+      <div role="status" aria-live="polite">
+        {saved && !undoError && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border-[1.5px] border-line-strong bg-surface-raised py-1 pr-1 pl-4">
+            <span className="flex min-w-0 items-center gap-2 text-[15px] font-semibold text-ink">
+              <Check aria-hidden="true" className="size-4 flex-none" />
+              <span>{`On the shelf: ${saved.title}`}</span>
+            </span>
+            <Button type="button" variant="outline" className="h-12 shrink-0 rounded-lg px-4 text-[15px] font-semibold" onClick={() => void undoSave()}>
+              Undo
+            </Button>
+          </div>
+        )}
+      </div>
+      {saved && undoError && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border-[1.5px] border-line-strong bg-surface-raised py-1 pr-1 pl-4">
+          <span role="alert" className="text-[15px] font-semibold text-ink">
+            {undoError}
+          </span>
+          <Button type="button" variant="outline" className="h-12 shrink-0 rounded-lg px-4 text-[15px] font-semibold" onClick={() => void undoSave()}>
+            Undo
+          </Button>
+        </div>
+      )}
 
       {shown && (
         <p role="status" className="text-[15px] leading-[22px] text-ink-muted">
