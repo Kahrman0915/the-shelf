@@ -2,8 +2,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { BackendProvider } from '@/app/BackendContext';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
 import { db } from '@/data/db';
+import { FakeBackend } from '@/test/fakeBackend';
 import { AddScreen } from './AddScreen';
 import { RecordScreen } from './RecordScreen';
 import { ShelfScreen } from './ShelfScreen';
@@ -14,16 +16,24 @@ const ME = '11111111-1111-4111-8111-111111111111';
 function renderAdd(path = '/') {
   const shelf = { shelfId: SHELF, userId: ME, email: 'k@example.com', signOut: async () => null, signOutAndDelete: async () => {} };
   return render(
-    <CurrentShelfProvider value={shelf}>
-      <MemoryRouter initialEntries={[path]}>
-        <Routes>
-          <Route path="/" element={<ShelfScreen />} />
-          <Route path="/add" element={<AddScreen />} />
-          <Route path="/record/:id" element={<RecordScreen />} />
-        </Routes>
-      </MemoryRouter>
-    </CurrentShelfProvider>,
+    <BackendProvider backend={new FakeBackend({})}>
+      <CurrentShelfProvider value={shelf}>
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route path="/" element={<ShelfScreen />} />
+            <Route path="/add" element={<AddScreen />} />
+            <Route path="/record/:id" element={<RecordScreen />} />
+          </Routes>
+        </MemoryRouter>
+      </CurrentShelfProvider>
+    </BackendProvider>,
   );
+}
+
+const HAND = 'Not here? Fill it in by hand';
+
+async function openHandForm() {
+  await userEvent.click(screen.getByRole('button', { name: HAND }));
 }
 
 const box = (name: string) => screen.getByRole('textbox', { name });
@@ -45,6 +55,40 @@ beforeEach(async () => {
 });
 
 describe('AddScreen', () => {
+  it('the find box is first and the hand form starts folded', async () => {
+    renderAdd('/add');
+    const find = screen.getByRole('searchbox', { name: 'Find a record' });
+    const hand = screen.getByRole('button', { name: HAND });
+    expect(find.compareDocumentPosition(hand) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Add a record' }).compareDocumentPosition(find) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(hand).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('textbox', { name: 'Artist' })).not.toBeInTheDocument();
+    await userEvent.click(hand);
+    expect(hand).toHaveAttribute('aria-expanded', 'true');
+    expect(box('Artist')).toBeInTheDocument();
+  });
+
+  it('folding the hand form keeps what was typed, and Back still asks', async () => {
+    renderAdd('/add');
+    await openHandForm();
+    await userEvent.type(box('Artist'), 'Miles');
+    await openHandForm();
+    expect(screen.queryByRole('textbox', { name: 'Artist' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Shelf/ }));
+    expect(await screen.findByText('Discard your changes?')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    await openHandForm();
+    expect(box('Artist')).toHaveValue('Miles');
+  });
+
+  it('text in the find box isn’t treated as unsaved', async () => {
+    renderAdd('/add');
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Find a record' }), 'mccoy tyner');
+    await userEvent.click(screen.getByRole('button', { name: /Shelf/ }));
+    expect(await screen.findByRole('heading', { name: 'The Shelf' })).toBeInTheDocument();
+    expect(screen.queryByText('Discard your changes?')).not.toBeInTheDocument();
+  });
+
   it('the shelf header has Add, and it opens Add a record', async () => {
     renderAdd('/');
     await userEvent.click(screen.getByRole('link', { name: 'Add' }));
@@ -53,6 +97,7 @@ describe('AddScreen', () => {
 
   it('saving adds an owned record and returns to the shelf', async () => {
     renderAdd('/add');
+    await openHandForm();
     await fillRequired();
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(await screen.findByRole('heading', { name: 'The Shelf' })).toBeInTheDocument();
@@ -64,6 +109,7 @@ describe('AddScreen', () => {
 
   it('rating while adding saves the rating too', async () => {
     renderAdd('/add');
+    await openHandForm();
     await fillRequired();
     await userEvent.click(screen.getAllByRole('radio', { name: /^4 of 5/ })[0]);
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -74,6 +120,7 @@ describe('AddScreen', () => {
 
   it('Save and add another stays, keeping genre and label', async () => {
     renderAdd('/add');
+    await openHandForm();
     await fillRequired();
     await userEvent.click(screen.getByRole('button', { name: 'More details' }));
     await userEvent.type(box('Label'), 'Impulse!');
@@ -87,6 +134,7 @@ describe('AddScreen', () => {
 
   it('a double tap on Save adds one record', async () => {
     renderAdd('/add');
+    await openHandForm();
     await fillRequired();
     const save = screen.getByRole('button', { name: 'Save' });
     await userEvent.dblClick(save);
@@ -97,6 +145,7 @@ describe('AddScreen', () => {
 
   it('Back with unsaved changes asks first', async () => {
     renderAdd('/add');
+    await openHandForm();
     await userEvent.type(box('Artist'), 'Miles');
     await userEvent.click(screen.getByRole('button', { name: /Shelf/ }));
     expect(await screen.findByText('Discard your changes?')).toBeInTheDocument();
@@ -110,6 +159,7 @@ describe('AddScreen', () => {
 
   it('Back with nothing typed just goes back', async () => {
     renderAdd('/add');
+    await openHandForm();
     await userEvent.click(screen.getByRole('button', { name: /Shelf/ }));
     expect(await screen.findByRole('heading', { name: 'The Shelf' })).toBeInTheDocument();
     expect(screen.queryByText('Discard your changes?')).not.toBeInTheDocument();
@@ -124,6 +174,7 @@ describe('AddScreen', () => {
       createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', deletedAt: null, importKey: null,
     });
     renderAdd('/add');
+    await openHandForm();
     await userEvent.type(box('Artist'), 'John Coltrane');
     await userEvent.type(box('Title'), 'Ascension');
     await userEvent.click(await screen.findByRole('button', { name: 'Open it' }));

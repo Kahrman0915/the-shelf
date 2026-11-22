@@ -118,6 +118,16 @@ export function RecordScreen() {
               <Grade part="Disc" grade={record.discGrade} />
               <Grade part="Sleeve" grade={record.sleeveGrade} />
             </dl>
+            {record.discogsReleaseId !== null && (
+              <a
+                href={`https://www.discogs.com/release/${record.discogsReleaseId}`}
+                target="_blank"
+                rel="noopener"
+                className="flex min-h-12 w-fit items-center text-[13px] text-ink-muted underline underline-offset-2"
+              >
+                Data provided by Discogs
+              </a>
+            )}
             {(record.status === 'new_arrival' || record.status === 'owned') && (
               <section className="flex flex-col gap-2">
                 <h2 className="text-[13px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Your rating</h2>

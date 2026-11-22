@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BackendError, NO_SIGNAL, REJECTED } from '@/data/backend';
+import { BackendError, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED, type FoundRecord } from '@/data/backend';
 import { newRecordToRow } from '@/data/rowMapping';
 import type { ShelfRecord } from '@/data/schema';
 import { FakeBackend, collectionRows } from './fakeBackend';
@@ -40,6 +40,38 @@ describe('FakeBackend', () => {
     await b.invite(SHELF, 'Megan@Example.com ', K);
     await expect(b.invite(SHELF, 'megan@example.com', K)).rejects.toThrow('That email is already invited.');
     expect(await b.invites(SHELF)).toEqual([{ email: 'megan@example.com', acceptedAt: null }]);
+  });
+
+  describe('discogs search', () => {
+    const found: FoundRecord = { releaseId: 7, artist: 'Sade', title: 'Diamond Life', label: null, catalog: null, year: 1984, format: 'LP', country: null, genres: [], styles: [], thumb: null };
+
+    it('returns canned results and records each query', async () => {
+      const b = new FakeBackend({});
+      b.discogsResults = [found];
+      expect(await b.searchDiscogs('sade')).toEqual([found]);
+      expect(b.discogsCalls).toEqual(['sade']);
+    });
+
+    it('fails with the plain-words messages when told to', async () => {
+      const b = new FakeBackend({});
+      b.discogsFails = 'rate-limited';
+      await expect(b.searchDiscogs('sade')).rejects.toThrow(DISCOGS_MESSAGES.rateLimited);
+      b.discogsFails = 'down';
+      await expect(b.searchDiscogs('sade')).rejects.toThrow(DISCOGS_MESSAGES.down);
+    });
+
+    it('has no signal when offline', async () => {
+      const b = new FakeBackend({});
+      b.online = false;
+      await expect(b.searchDiscogs('sade')).rejects.toThrow(NO_SIGNAL);
+    });
+
+    it('never calls out for a query under two characters', async () => {
+      const b = new FakeBackend({});
+      b.discogsResults = [found];
+      expect(await b.searchDiscogs(' a ')).toEqual([]);
+      expect(b.discogsCalls).toEqual([]);
+    });
   });
 
   describe('writes', () => {

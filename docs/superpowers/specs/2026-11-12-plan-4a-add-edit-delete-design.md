@@ -4,6 +4,7 @@ Date: 2026-11-12
 Status: approved in conversation, awaiting written review
 Builds on: `2026-09-18-the-shelf-design.md` (original spec), `2026-11-11-plan-3-bought-and-played-design.md` (outbox, actions, Record screen), `../notes/plan-2-handoff.md` (Plan 3 → Plan 4 handoff)
 Live app: https://the-shelf-sigma.vercel.app (Supabase `rlhhrzkaosngafcoxaas`, Pro)
+Updated by: `2026-11-12-plan-4a-build-2a-discogs-lookup-design.md`. Build 2 is now split into 2a (Discogs lookup, which replaces §6 for now) and 2b (Claude). Discogs covers are **not** stored, because their terms forbid it, which overrides decision #11 and §6.4.
 
 Plan 4 was split into parts. This spec is **part 1 (4a)**: adding, editing and deleting records, plus a Claude-powered lookup that drafts a record for you. Later parts: the want list and upgrades, then cover photos.
 

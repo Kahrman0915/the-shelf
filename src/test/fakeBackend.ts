@@ -1,5 +1,5 @@
 import collection from '../../collection.json';
-import { BackendError, NO_SIGNAL, type Backend, type Invite, type Member, type SignedIn } from '@/data/backend';
+import { BackendError, DISCOGS_MESSAGES, NO_SIGNAL, type Backend, type FoundRecord, type Invite, type Member, type SignedIn } from '@/data/backend';
 import { importCollection } from '@/data/importCollection';
 import { ratingToRow, recordToRow, type NewRecordRow, type RatingRow, type RecordPatchRow, type RecordRow } from '@/data/rowMapping';
 
@@ -24,6 +24,12 @@ export class FakeBackend implements Backend {
   loseNextReply = false;
   /** The next write is refused with this reason and stores nothing. */
   rejectNext: string | null = null;
+  /** What searchDiscogs() returns. */
+  discogsResults: FoundRecord[] = [];
+  /** Makes searchDiscogs() fail the way the real one does. */
+  discogsFails: 'rate-limited' | 'down' | null = null;
+  /** Every query that reached the "server" (under-2-character ones never do). */
+  discogsCalls: string[] = [];
   private lastStamp = 0;
   private users: Record<string, string>;
   private profiles: Record<string, string>;
@@ -123,6 +129,16 @@ export class FakeBackend implements Backend {
     // server heard about it.
     this.signedIn = null;
     this.guard();
+  }
+
+  async searchDiscogs(query: string): Promise<FoundRecord[]> {
+    const q = query.trim();
+    if (q.length < 2) return [];
+    this.guard();
+    this.discogsCalls.push(q);
+    if (this.discogsFails === 'rate-limited') throw new BackendError(DISCOGS_MESSAGES.rateLimited);
+    if (this.discogsFails === 'down') throw new BackendError(DISCOGS_MESSAGES.down);
+    return this.discogsResults.map((r) => ({ ...r }));
   }
 
   private stamp(): string {

@@ -1,4 +1,7 @@
+import type { FoundRecord } from '../../supabase/functions/discogs-search/shape';
 import type { NewRecordRow, RecordPatchRow } from './rowMapping';
+
+export type { FoundRecord } from '../../supabase/functions/discogs-search/shape';
 
 /** Everything the app needs from the server. Screens use this, never Supabase directly. */
 export type SignedIn = { userId: string; email: string };
@@ -30,6 +33,8 @@ export interface Backend extends ShelfSource, ShelfWriter {
   invites(shelfId: string): Promise<Invite[]>;
   invite(shelfId: string, email: string, invitedBy: string): Promise<void>;
   signOut(): Promise<void>;
+  /** Looks a record up on Discogs. Resolves [] for a query under 2 characters without calling the server. Results are never stored. */
+  searchDiscogs(query: string): Promise<FoundRecord[]>;
 }
 
 /** A failure worth showing to the person holding the phone; the message says what to do. */
@@ -41,6 +46,12 @@ export class BackendError extends Error {
 }
 
 export const NO_SIGNAL = 'No signal. Try again when you’re back online.';
+
+/** Plain words for why a Discogs lookup failed (other than having no signal). */
+export const DISCOGS_MESSAGES = {
+  rateLimited: 'Too many searches at once. Wait a minute and try again.',
+  down: 'Discogs isn’t responding. Try again, or fill it in by hand.',
+};
 
 export const REJECTED = {
   missing: 'That record is no longer on your shelf.',

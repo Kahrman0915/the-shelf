@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BackendError, NO_SIGNAL, REJECTED } from './backend';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { BackendError, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED } from './backend';
 import { AUTH_STORAGE_KEY } from './supabase';
-import { offlineLooking, rejectionReason, supabaseBackend } from './supabaseBackend';
+import { DISCOGS_TIMEOUT_MS, offlineLooking, rejectionReason, supabaseBackend } from './supabaseBackend';
 
 /** A chainable stand-in for a Supabase PostgrestFilterBuilder: every filter/order method returns
  *  the same object, and it resolves (like the real one does when awaited) when range() is called,
@@ -255,5 +255,110 @@ describe('rejectionReason', () => {
   it('falls back to the code', () => {
     expect(rejectionReason({ code: 'XX000', message: 'boom' })).toBe('The shelf refused this change. (XX000)');
     expect(rejectionReason({ message: 'boom' })).toBe('The shelf refused this change. (unknown)');
+  });
+});
+
+describe('supabaseBackend().searchDiscogs', () => {
+  const found = { releaseId: 1, artist: 'Sade', title: 'Diamond Life', label: null, catalog: null, year: 1984, format: 'LP', country: null, genres: [], styles: [], thumb: null };
+  const withSession = (session: { access_token: string } | null) =>
+    ({ auth: { getSession: vi.fn().mockResolvedValue({ data: { session }, error: null }) } }) as never;
+  const reply = (status: number, body: unknown = {}) => new Response(JSON.stringify(body), { status });
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'pub-key');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('posts the query with the bearer token and apikey, and returns results', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(reply(200, { results: [found] }));
+    vi.stubGlobal('fetch', fetchMock);
+    const results = await supabaseBackend(withSession({ access_token: 'tok' })).searchDiscogs('  sade diamond life ');
+    expect(results).toEqual([found]);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://example.supabase.co/functions/v1/discogs-search');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer tok', apikey: 'pub-key', 'Content-Type': 'application/json' });
+    expect(JSON.parse(init.body)).toEqual({ query: 'sade diamond life' });
+  });
+
+  it('turns a 429 into the rate-limited message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(429, { error: 'rate-limited' })));
+    await expect(supabaseBackend(withSession({ access_token: 't' })).searchDiscogs('sade')).rejects.toThrow(DISCOGS_MESSAGES.rateLimited);
+  });
+
+  it('turns any other failure into the down message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(500)));
+    await expect(supabaseBackend(withSession({ access_token: 't' })).searchDiscogs('sade')).rejects.toThrow(DISCOGS_MESSAGES.down);
+  });
+
+  it('treats a network error as no signal', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    await expect(supabaseBackend(withSession({ access_token: 't' })).searchDiscogs('sade')).rejects.toThrow(NO_SIGNAL);
+  });
+
+  it('treats Safari’s network failure (TypeError: Load failed) as no signal', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Load failed')));
+    await expect(supabaseBackend(withSession({ access_token: 't' })).searchDiscogs('sade')).rejects.toThrow(NO_SIGNAL);
+  });
+
+  it('treats a timeout (AbortError) as Discogs not responding', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('The request timed out.', 'AbortError')));
+    await expect(supabaseBackend(withSession({ access_token: 't' })).searchDiscogs('sade')).rejects.toThrow(DISCOGS_MESSAGES.down);
+  });
+
+  it('treats any failure as no signal when the phone is offline', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
+    try {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('The request timed out.', 'AbortError')));
+      await expect(supabaseBackend(withSession({ access_token: 't' })).searchDiscogs('sade')).rejects.toThrow(NO_SIGNAL);
+    } finally {
+      delete (navigator as unknown as Record<string, unknown>).onLine;
+    }
+  });
+
+  it('gives the function 20 s, not the shelf’s 15 s', async () => {
+    expect(DISCOGS_TIMEOUT_MS).toBe(20_000);
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(200, { results: [] })));
+    await supabaseBackend(withSession({ access_token: 't' })).searchDiscogs('sade');
+    expect(timeout).toHaveBeenCalledWith(20_000);
+    timeout.mockRestore();
+  });
+
+  it('asks to sign in again when the function answers 401', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(401, { msg: 'Invalid JWT' })));
+    const failure = supabaseBackend(withSession({ access_token: 't' })).searchDiscogs('sade');
+    await expect(failure).rejects.toBeInstanceOf(BackendError);
+    await expect(failure).rejects.toThrow('Sign in again to search.');
+  });
+
+  it('asks to sign in again when there is no session', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(supabaseBackend(withSession(null)).searchDiscogs('sade')).rejects.toThrow('Sign in again to search.');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('never calls the server for a query under two characters', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const backend = supabaseBackend(withSession({ access_token: 't' }));
+    expect(await backend.searchDiscogs(' a ')).toEqual([]);
+    expect(await backend.searchDiscogs('   ')).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('never calls the server for a query over 200 characters', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const backend = supabaseBackend(withSession({ access_token: 't' }));
+    expect(await backend.searchDiscogs(`  ${'x'.repeat(201)}  `)).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+    fetchMock.mockResolvedValue(reply(200, { results: [found] }));
+    expect(await backend.searchDiscogs(`  ${'x'.repeat(200)}  `)).toEqual([found]);
   });
 });

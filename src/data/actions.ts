@@ -1,6 +1,7 @@
 import type { GenreKey } from '@/domain/genres';
 import type { Grade } from '@/domain/grades';
-import { BackendError } from './backend';
+import { sectionFor } from '@/domain/discogsGenre';
+import { BackendError, type FoundRecord } from './backend';
 import type { ShelfDB } from './db';
 import { savePostcards, type NewPostcard } from './outbox';
 import { RecordSchema, type ShelfRecord } from './schema';
@@ -127,7 +128,12 @@ export function boughtNew(input: NewBuy, ctx: Ctx & { shelfId: string; newId: st
 }
 
 /** A record added by hand: owned, added by you, with an optional rating in the same batch. */
-export function addRecord(fields: RecordFields, rating: number | null, ctx: Ctx & { shelfId: string; newId: string }): ActionResult {
+export function addRecord(
+  fields: RecordFields,
+  rating: number | null,
+  ctx: Ctx & { shelfId: string; newId: string },
+  discogsReleaseId: number | null = null,
+): ActionResult {
   const checked = checkRecord({
     ...fields,
     id: ctx.newId,
@@ -135,7 +141,7 @@ export function addRecord(fields: RecordFields, rating: number | null, ctx: Ctx 
     status: 'owned',
     wantsUpgrade: false,
     upgradeNote: null,
-    discogsReleaseId: null,
+    discogsReleaseId,
     coverPath: null,
     coverImageUrl: null,
     boughtAt: null,
@@ -149,6 +155,31 @@ export function addRecord(fields: RecordFields, rating: number | null, ctx: Ctx 
   const postcards: NewPostcard[] = [{ ...base, kind: 'record.create', fields: checked }];
   if (rating !== null) postcards.push({ ...base, kind: 'rating.set', fields: { value: rating } });
   return { postcards, undo: null };
+}
+
+/** A record picked from Discogs results: owned, ungraded, only the Discogs facts filled in, undone by soft-delete. */
+export function addFound(found: FoundRecord, ctx: Ctx & { shelfId: string; newId: string }): ActionResult {
+  const fields: RecordFields = {
+    artist: found.artist,
+    title: found.title,
+    genre: sectionFor(found.genres, found.styles),
+    discGrade: null,
+    sleeveGrade: null,
+    label: found.label,
+    catalog: found.catalog,
+    year: found.year,
+    format: found.format,
+    notes: null,
+    funFact: null,
+    funFactSource: null,
+    nmEstimateLow: null,
+    nmEstimateHigh: null,
+    valueNote: null,
+    pricePaid: null,
+  };
+  const { postcards } = addRecord(fields, null, ctx, found.releaseId);
+  const base = { shelfId: ctx.shelfId, recordId: ctx.newId, userId: ctx.me, createdAt: ctx.now };
+  return { postcards, undo: [{ ...base, kind: 'record.patch', fields: { deletedAt: ctx.now } }] };
 }
 
 /** Fields the record rules check together: if either half changed, both are sent, so a change from another phone

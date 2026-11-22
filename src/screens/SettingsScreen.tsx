@@ -127,6 +127,10 @@ export function SettingsScreen() {
           <p className="text-[15px] leading-[22px] text-ink-muted">This phone may clear unsent changes if it runs low on space.</p>
         )}
       </section>
+
+      <p className="text-[13px] leading-5 text-ink-muted">
+        This application uses Discogs’ API but is not affiliated with, sponsored or endorsed by Discogs. ‘Discogs’ is a trademark of Zink Media, LLC.
+      </p>
     </main>
   );
 }
