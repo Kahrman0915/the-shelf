@@ -21,7 +21,7 @@ export function readConfig(env: Record<string, string | undefined>): { url: stri
  *  server round-trip fails offline (auth-js's own signOut() gives up before clearing it then). */
 export const AUTH_STORAGE_KEY = 'the-shelf-auth';
 
-/** How long any request to the shelf may take. A show's weak signal can leave one hanging
+/** How long a request to the shelf may take (photo uploads get UPLOAD_TIMEOUT_MS). A show's weak signal can leave one hanging
  *  for minutes; past this it counts as no signal (see offlineLooking() in supabaseBackend.ts). */
 export const FETCH_TIMEOUT_MS = 15_000;
 
@@ -51,6 +51,27 @@ export function fetchWithTimeout(ms = FETCH_TIMEOUT_MS, base: typeof fetch = (in
   };
 }
 
+/** How long a photo upload may take. A 1600 px JPEG over a show's weak uplink can need far longer than a read,
+ *  and timing out would count as no signal, stopping the whole courier run and the pull after it. */
+export const UPLOAD_TIMEOUT_MS = 120_000;
+
+/** Storage's own non-upload POSTs under /object/ (none used today, but they are not uploads). */
+const NOT_UPLOADS = /\/storage\/v1\/object\/(sign|move|copy|list|info|public|authenticated)(\/|$)/;
+
+/** The timeout for one request: Storage object uploads (POST or PUT) get UPLOAD_TIMEOUT_MS, everything else FETCH_TIMEOUT_MS. */
+export function timeoutFor(input: RequestInfo | URL, init?: RequestInit): number {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+  const { pathname } = new URL(url, 'http://localhost');
+  const upload = (method === 'POST' || method === 'PUT') && pathname.includes('/storage/v1/object/') && !NOT_UPLOADS.test(pathname);
+  return upload ? UPLOAD_TIMEOUT_MS : FETCH_TIMEOUT_MS;
+}
+
+/** The client's fetch: fetchWithTimeout, with the timeout picked per request by timeoutFor. */
+export function shelfFetch(base: typeof fetch = (input, init) => fetch(input, init)): typeof fetch {
+  return (input, init) => fetchWithTimeout(timeoutFor(input, init), base)(input, init);
+}
+
 let client: SupabaseClient | null = null;
 
 /** The one Supabase client. Screens never call this; only src/data/supabaseBackend.ts does. */
@@ -59,7 +80,7 @@ export function supabase(): SupabaseClient {
     const { url, key } = readConfig(import.meta.env as Record<string, string | undefined>);
     client = createClient(url, key, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: AUTH_STORAGE_KEY },
-      global: { fetch: fetchWithTimeout() },
+      global: { fetch: shelfFetch() },
     });
   }
   return client;

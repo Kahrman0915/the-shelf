@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ConfigError, FETCH_TIMEOUT_MS, fetchWithTimeout, readConfig } from './supabase';
+import { ConfigError, FETCH_TIMEOUT_MS, fetchWithTimeout, readConfig, shelfFetch, timeoutFor, UPLOAD_TIMEOUT_MS } from './supabase';
 
 describe('readConfig', () => {
   it('returns the URL and publishable key', () => {
@@ -106,5 +106,54 @@ describe('supabase()', () => {
     const client = mod.supabase();
     expect((client.auth as unknown as { storageKey: string }).storageKey).toBe(mod.AUTH_STORAGE_KEY);
     expect(mod.AUTH_STORAGE_KEY).toBeTruthy();
+  });
+});
+
+describe('timeoutFor', () => {
+  const base = 'https://x.supabase.co';
+
+  it('gives a photo upload two minutes, so a weak uplink at a show isn’t mistaken for no signal', () => {
+    expect(UPLOAD_TIMEOUT_MS).toBe(120_000);
+    expect(timeoutFor(`${base}/storage/v1/object/covers/s/r/front-p.jpg`, { method: 'POST' })).toBe(UPLOAD_TIMEOUT_MS);
+    expect(timeoutFor(new URL(`${base}/storage/v1/object/covers/s/r/back-p.jpg`), { method: 'put' })).toBe(UPLOAD_TIMEOUT_MS);
+    expect(timeoutFor(new Request(`${base}/storage/v1/object/covers/s/r/front-p.jpg`, { method: 'POST' }))).toBe(UPLOAD_TIMEOUT_MS);
+  });
+
+  it('keeps the usual timeout for everything else', () => {
+    expect(timeoutFor(`${base}/storage/v1/object/authenticated/covers/s/r/front-p.jpg`)).toBe(FETCH_TIMEOUT_MS);
+    expect(timeoutFor(`${base}/storage/v1/object/covers`, { method: 'DELETE' })).toBe(FETCH_TIMEOUT_MS);
+    expect(timeoutFor(`${base}/storage/v1/object/sign/covers/s/r/front-p.jpg`, { method: 'POST' })).toBe(FETCH_TIMEOUT_MS);
+    expect(timeoutFor(`${base}/storage/v1/object/list/covers`, { method: 'POST' })).toBe(FETCH_TIMEOUT_MS);
+    expect(timeoutFor(`${base}/rest/v1/records`, { method: 'POST' })).toBe(FETCH_TIMEOUT_MS);
+    expect(timeoutFor(`${base}/auth/v1/token?grant_type=refresh_token`, { method: 'POST' })).toBe(FETCH_TIMEOUT_MS);
+  });
+});
+
+describe('shelfFetch', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  /** A fetch that never answers, only gives up when its signal aborts. */
+  const hanging = (_input: RequestInfo | URL, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason)));
+
+  async function settlesAfter(input: string, init: RequestInit): Promise<number> {
+    vi.useFakeTimers();
+    // Without AbortSignal.timeout the fallback timer is used, which fake timers can move on.
+    vi.stubGlobal('AbortSignal', Object.assign(function () {}, { any: AbortSignal.any, abort: AbortSignal.abort }));
+    const started = Date.now();
+    const request = shelfFetch(hanging)(input, init).catch((e: unknown) => e);
+    let done = false;
+    void request.then(() => (done = true));
+    while (!done && Date.now() - started <= UPLOAD_TIMEOUT_MS) await vi.advanceTimersByTimeAsync(1_000);
+    expect(await request).toMatchObject({ name: 'AbortError' });
+    return Date.now() - started;
+  }
+
+  it('waits for an upload longer than for a read', async () => {
+    expect(await settlesAfter('https://x.supabase.co/storage/v1/object/covers/s/r/front-p.jpg', { method: 'POST' })).toBe(UPLOAD_TIMEOUT_MS);
+    expect(await settlesAfter('https://x.supabase.co/rest/v1/records', { method: 'GET' })).toBe(FETCH_TIMEOUT_MS);
   });
 });
