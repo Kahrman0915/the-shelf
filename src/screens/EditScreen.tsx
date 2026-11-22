@@ -5,12 +5,15 @@ import { useCurrentShelf } from '@/app/CurrentShelf';
 import { SyncNotice, useSyncStatus } from '@/app/SyncContext';
 import { useUndo } from '@/app/UndoContext';
 import { useLeaveGuard } from '@/app/useLeaveGuard';
+import { useUnsavedMark } from '@/app/useUnsavedMark';
 import { deleteRecord, editRecord, FORM_FIELDS, perform, restoreWithEdits, type RecordFields } from '@/data/actions';
 import { db } from '@/data/db';
 import { useRecordAnyState, useShelfItems } from '@/data/hooks';
+import { editPhotos, type PhotoChanges } from '@/data/photos';
 import type { ShelfRecord } from '@/data/schema';
 import { formFromRecord, parseRecordForm, type RecordFormValues } from '@/domain/recordForm';
 import { ConfirmDialog } from '@/ui/ConfirmDialog';
+import { EditPhotos } from '@/ui/EditPhotos';
 import { RecordForm } from '@/ui/RecordForm';
 
 const FORM_ID = 'edit-record';
@@ -43,8 +46,13 @@ export function EditScreen() {
   const [opened, setOpened] = useState<Opened | null>(null);
   if (opened === null && record && record.deletedAt === null) setOpened(openedFrom(record));
 
-  const [dirty, setDirty] = useState(false);
-  const { leave, dialog } = useLeaveGuard(dirty);
+  const [formDirty, setFormDirty] = useState(false);
+  // Our call: photo changes live only in memory. If iOS reloads the page while the camera is open, they are lost,
+  // along with any typed changes, as the form's already are.
+  const [photoChanges, setPhotoChanges] = useState<PhotoChanges>({});
+  const photosDirty = Object.keys(photoChanges).length > 0;
+  useUnsavedMark(photosDirty);
+  const { leave, dialog } = useLeaveGuard(formDirty || photosDirty);
   const [asking, setAsking] = useState(false);
   // Set before this screen deletes, so its own delete isn't taken for one from another phone.
   const [deleting, setDeleting] = useState(false);
@@ -59,9 +67,12 @@ export function EditScreen() {
     if (!record || !opened) throw new Error('That record isn’t on this phone.');
     const ctx = { me: userId, now: new Date().toISOString() };
     // Deleted on another phone: saving brings it back with these changes, the same as Restore with your changes.
+    const ph = editPhotos(record, photoChanges, { ...ctx, photoId: () => crypto.randomUUID() });
     const { postcards } =
-      record.deletedAt !== null ? restoreWithEdits(record, opened.fields, fields, ctx) : editRecord(record, opened.fields, fields, ctx);
-    if (postcards.length > 0) await perform(db, postcards, runNow);
+      record.deletedAt !== null
+        ? restoreWithEdits(record, opened.fields, fields, ctx, ph.fields)
+        : editRecord(record, opened.fields, fields, ctx, ph.fields);
+    if (postcards.length > 0) await perform(db, [...ph.uploads, ...postcards, ...ph.deletes], runNow, ph.photos);
     toRecord();
   }
 
@@ -105,6 +116,7 @@ export function EditScreen() {
               </Button>
             </div>
           )}
+          <EditPhotos record={record} changes={photoChanges} onChange={setPhotoChanges} />
           <RecordForm
             mode="edit"
             formId={FORM_ID}
@@ -113,7 +125,7 @@ export function EditScreen() {
             excludeId={record.id}
             onSave={onSave}
             onOpenDuplicate={(other) => leave(() => navigate(`/record/${other}`))}
-            onDirtyChange={setDirty}
+            onDirtyChange={setFormDirty}
             footer={
               deletedElsewhere ? null : (
                 <Button

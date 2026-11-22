@@ -1,14 +1,20 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BackendProvider } from '@/app/BackendContext';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
 import { UndoBar, UndoProvider } from '@/app/UndoContext';
 import { db } from '@/data/db';
+import { markPhotoTipsSeen } from '@/data/photoDrafts';
 import type { ShelfRecord } from '@/data/schema';
+import { squareUpPhoto } from '@/photo/squareUp';
+import { FakeBackend } from '@/test/fakeBackend';
 import { EditScreen } from './EditScreen';
 import { RecordScreen } from './RecordScreen';
 import { ShelfScreen } from './ShelfScreen';
+
+vi.mock('@/photo/squareUp');
 
 const SHELF = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ME = '11111111-1111-4111-8111-111111111111';
@@ -27,6 +33,7 @@ function record(p: Partial<ShelfRecord> = {}): ShelfRecord {
 function renderEdit(path = `/record/${ID}/edit`) {
   const shelf = { shelfId: SHELF, userId: ME, email: 'k@example.com', signOut: async () => null, signOutAndDelete: async () => {} };
   return render(
+    <BackendProvider backend={new FakeBackend({})}>
     <CurrentShelfProvider value={shelf}>
       <UndoProvider>
         <MemoryRouter initialEntries={[path]}>
@@ -38,16 +45,26 @@ function renderEdit(path = `/record/${ID}/edit`) {
         </MemoryRouter>
         <UndoBar />
       </UndoProvider>
-    </CurrentShelfProvider>,
+    </CurrentShelfProvider>
+    </BackendProvider>,
   );
 }
 
+const uploadedPath = (p: { fields: object }) => (p.fields as { path: string }).path;
 const box = (name: string) => screen.getByRole('textbox', { name });
 const poster = () => screen.findByRole('img', { name: 'Poster for John Coltrane, Ascension' });
 
+const squared = { bytes: new Uint8Array([9]).buffer, foundEdges: true };
+const shot = () => new File([new Uint8Array([1, 2])], 'shot.jpg', { type: 'image/jpeg' });
+const photoInput = (side: 'Front' | 'Back') => screen.getByLabelText(`${side} photo file`);
+
 beforeEach(async () => {
+  URL.createObjectURL = vi.fn(() => `blob:${crypto.randomUUID()}`);
+  URL.revokeObjectURL = vi.fn();
+  vi.mocked(squareUpPhoto).mockResolvedValue(squared);
   await db.delete();
   await db.open();
+  await markPhotoTipsSeen();
 });
 
 describe('EditScreen', () => {
@@ -177,5 +194,70 @@ describe('EditScreen', () => {
     renderEdit();
     expect(await screen.findByText('That record isn’t on this phone.')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Artist' })).not.toBeInTheDocument();
+  });
+  it('saving a new front with no field change uploads it, then points the record at it', async () => {
+    await db.records.put(record());
+    renderEdit();
+    await screen.findByRole('heading', { name: 'Edit' });
+    fireEvent.change(photoInput('Front'), { target: { files: [shot()] } });
+    await screen.findByRole('img', { name: 'Front photo' });
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await poster()).toBeInTheDocument();
+    const sent = await db.outbox.toArray();
+    expect(sent.map((p) => p.kind)).toEqual(['photo.upload', 'record.patch']);
+    const path = uploadedPath(sent[0]);
+    expect(path).toMatch(new RegExp(`^${SHELF}/${ID}/front-[0-9a-f-]{36}\\.jpg$`));
+    expect(sent[1].fields).toEqual({ coverPath: path });
+    expect((await db.records.get(ID))?.coverPath).toBe(path);
+    expect(await db.photos.get(path)).toBeDefined();
+  });
+
+  it('retaking the back while changing the year sends one patch, then deletes the old back', async () => {
+    const OLD = `${SHELF}/${ID}/back-old.jpg`;
+    await db.photos.put({ path: OLD, bytes: new Uint8Array([1]).buffer });
+    await db.records.put(record({ backPath: OLD }));
+    renderEdit();
+    await screen.findByRole('heading', { name: 'Edit' });
+    await userEvent.clear(box('Year'));
+    await userEvent.type(box('Year'), '1967');
+    fireEvent.change(photoInput('Back'), { target: { files: [shot()] } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Retake' })).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await poster()).toBeInTheDocument();
+    const sent = await db.outbox.toArray();
+    expect(sent.map((p) => p.kind)).toEqual(['photo.upload', 'record.patch', 'photo.delete']);
+    const path = uploadedPath(sent[0]);
+    expect(sent[1].fields).toEqual({ year: 1967, backPath: path });
+    expect(sent[2].fields).toEqual({ path: OLD });
+  });
+
+  it('a photo change alone marks the page unsaved and makes Back ask first', async () => {
+    await db.records.put(record());
+    renderEdit();
+    await screen.findByRole('heading', { name: 'Edit' });
+    expect(document.body.dataset.unsaved).toBeUndefined();
+    fireEvent.change(photoInput('Front'), { target: { files: [shot()] } });
+    await screen.findByRole('img', { name: 'Front photo' });
+    expect(document.body.dataset.unsaved).toBe('true');
+    await userEvent.click(screen.getByRole('button', { name: /Back/ }));
+    expect(await screen.findByText('Discard your changes?')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(await poster()).toBeInTheDocument();
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('Restore with your changes carries the photo fields in its one patch', async () => {
+    const OLD = `${SHELF}/${ID}/back-old.jpg`;
+    await db.records.put(record({ backPath: OLD }));
+    renderEdit();
+    await screen.findByRole('heading', { name: 'Edit' });
+    fireEvent.change(photoInput('Front'), { target: { files: [shot()] } });
+    await screen.findByRole('img', { name: 'Front photo' });
+    await db.records.update(ID, { deletedAt: '2026-02-01T00:00:00.000Z' });
+    await userEvent.click(await screen.findByRole('button', { name: 'Restore with your changes' }));
+    expect(await poster()).toBeInTheDocument();
+    const sent = await db.outbox.toArray();
+    expect(sent.map((p) => p.kind)).toEqual(['photo.upload', 'record.patch']);
+    expect(sent[1].fields).toEqual({ deletedAt: null, coverPath: uploadedPath(sent[0]) });
   });
 });
