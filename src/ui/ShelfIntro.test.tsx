@@ -1,6 +1,6 @@
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ShelfIntro, makeShelves } from './ShelfIntro';
+import { ShelfIntro, makeShelves, spinesPerRow } from './ShelfIntro';
 
 function mockReducedMotion(reduce: boolean) {
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: reduce && query.includes('reduce'), media: query, addEventListener() {}, removeEventListener() {} }));
@@ -21,14 +21,23 @@ describe('makeShelves', () => {
     expect(makeShelves(5, 28).flat()).toHaveLength(140);
   });
 
-  it('keeps spines within believable sizes and paints them in the shelf palette', () => {
-    for (const s of makeShelves(5, 28).flat()) {
-      expect(s.width).toBeGreaterThanOrEqual(10);
-      expect(s.width).toBeLessThanOrEqual(26);
-      expect(s.height).toBeGreaterThanOrEqual(70);
-      expect(s.height).toBeLessThanOrEqual(96);
-      expect(s.color).toMatch(/^var\(--(genre-[a-z]+|bourbon|ink-muted)\)$/);
+  it('makes spines record-thin with level tops, in the shelf palette', () => {
+    const spines = makeShelves(5, 90).flat();
+    for (const s of spines) {
+      expect(s.width).toBeGreaterThanOrEqual(2);
+      expect(s.width).toBeLessThanOrEqual(8);
+      expect([80, 96, 97]).toContain(s.height);
+      expect(s.color).toMatch(/^var\(--(genre-[a-z]+|bourbon|ink|ink-muted|line-strong)\)$/);
     }
+    // Records, not books: nearly all are a few pixels of card, and nearly all stand the same height.
+    expect(spines.filter((s) => s.width <= 4).length / spines.length).toBeGreaterThan(0.9);
+    expect(spines.filter((s) => s.height >= 96).length / spines.length).toBeGreaterThan(0.9);
+  });
+
+  it('fills a row on a phone and on a desktop without fattening the spines', () => {
+    expect(spinesPerRow(390)).toBe(100);
+    expect(spinesPerRow(1440)).toBe(356);
+    expect(spinesPerRow(5000)).toBe(640);
   });
 });
 

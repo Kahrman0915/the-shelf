@@ -161,7 +161,7 @@
   }
 }
 
-/* The opening: spines fill the shelf, the title drops, sign-in rises. Flat poster colour, square spines. */
+/* The opening: spines fill the shelf, the title drops, sign-in rises. Flat poster colour, record-thin spines with level tops. */
 .shelf-intro {
   position: relative;
   display: flex;
@@ -180,9 +180,8 @@
   padding: calc(env(safe-area-inset-top) + 12px) 0 12px;
 }
 .shelf-intro__row { display: flex; flex: 1; flex-direction: column; }
-.shelf-intro__spines { display: flex; flex: 1; align-items: flex-end; gap: 3px; overflow: hidden; padding: 0 8px; }
+.shelf-intro__spines { display: flex; flex: 1; align-items: flex-end; gap: 1px; overflow: hidden; padding: 0 8px; }
 .shelf-intro__spine { position: relative; flex: none; }
-.shelf-intro__band { position: absolute; top: 16%; right: 0; left: 0; height: 6px; background: var(--surface); opacity: 0.35; }
 .shelf-intro__plank { height: 8px; background: var(--line); }
 .shelf-intro__title {
   position: relative;
@@ -209,7 +208,7 @@
 .shelf-intro__panel > main { min-height: 0; padding-top: 24px; }
 .shelf-intro__panel > main > h1 { display: none; }
 
-@keyframes intro-spine { from { opacity: 0; transform: translateX(-24px); } to { opacity: 1; transform: none; } }
+@keyframes intro-spine { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
 @keyframes intro-title { from { opacity: 0; transform: translateY(-48px); } to { opacity: 1; transform: none; } }
 @keyframes intro-panel { from { transform: translateY(100%); } to { transform: none; } }
 @keyframes intro-fade { from { opacity: 0; } to { opacity: 1; } }
