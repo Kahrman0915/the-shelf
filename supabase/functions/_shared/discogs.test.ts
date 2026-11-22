@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { askDiscogs, DISCOGS_TIMEOUT_MS } from './discogs';
+import { askDiscogs, DISCOGS_TIMEOUT_MS, searchDiscogsWith } from './discogs';
 
 const TOKEN = 'secret-token-123';
 const entry = { id: 5, title: 'Sade - Diamond Life', label: ['Epic'], genre: ['Funk / Soul'], style: [] };
@@ -19,8 +19,24 @@ describe('askDiscogs', () => {
     expect(answer.status).toBe(200);
     expect(answer.body).toMatchObject({ results: [{ releaseId: 5, artist: 'Sade', title: 'Diamond Life', label: 'Epic' }] });
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://api.discogs.com/database/search?q=sade%20diamond%20life&type=release&format=Vinyl&per_page=6');
+    expect(url).toBe('https://api.discogs.com/database/search?q=sade%20diamond%20life&format=Vinyl&type=release&per_page=6');
     expect(init.headers).toEqual({ Authorization: `Discogs token=${TOKEN}`, 'User-Agent': 'TheShelf/1.0 +https://the-shelf-sigma.vercel.app' });
+  });
+
+  it('searchDiscogsWith sends the given params with type=release and per_page=6', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ results: [entry] }), { status: 200 }));
+    const answer = await searchDiscogsWith({ barcode: '0123' }, TOKEN, fetchMock);
+    expect(answer.status).toBe(200);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://api.discogs.com/database/search?barcode=0123&type=release&per_page=6');
+    expect(url).not.toContain('q=');
+    expect(init.headers).toEqual({ Authorization: `Discogs token=${TOKEN}`, 'User-Agent': 'TheShelf/1.0 +https://the-shelf-sigma.vercel.app' });
+  });
+
+  it('askDiscogs still searches vinyl by q', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ results: [] }), { status: 200 }));
+    await askDiscogs('sade', TOKEN, fetchMock);
+    expect(fetchMock.mock.calls[0][0]).toContain('q=sade&format=Vinyl');
   });
 
   it('gives Discogs 15 s, so the function answers before the app’s 20 s limit', async () => {

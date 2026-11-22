@@ -3,9 +3,9 @@
 // supabase/config.toml is the first layer, but the gateway also admits the public publishable key,
 // so the function checks for a real signed-in user (auth.ts) before it asks Discogs anything.
 import { createClient } from 'npm:@supabase/supabase-js@2.116.0';
-import { signedInUser } from './auth.ts';
-import { askDiscogs } from './discogs.ts';
-import { cleanQuery } from './shape.ts';
+import { signedInUser } from '../_shared/auth.ts';
+import { askDiscogs } from '../_shared/discogs.ts';
+import { cleanQuery } from '../_shared/shape.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',

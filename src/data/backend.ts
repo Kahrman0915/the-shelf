@@ -1,7 +1,7 @@
-import type { FoundRecord } from '../../supabase/functions/discogs-search/shape';
+import type { FoundRecord } from '../../supabase/functions/_shared/shape';
 import type { NewRecordRow, RecordPatchRow } from './rowMapping';
 
-export type { FoundRecord } from '../../supabase/functions/discogs-search/shape';
+export type { FoundRecord } from '../../supabase/functions/_shared/shape';
 
 /** Everything the app needs from the server. Screens use this, never Supabase directly. */
 export type SignedIn = { userId: string; email: string };
