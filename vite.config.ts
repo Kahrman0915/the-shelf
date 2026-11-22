@@ -4,6 +4,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { onlyJavaScript } from './src/photo/opencvCache';
 
 export default defineConfig({
   plugins: [
@@ -36,7 +37,7 @@ export default defineConfig({
           {
             urlPattern: /\/assets\/opencv[^/]*\.js$/,
             handler: 'CacheFirst',
-            options: { cacheName: 'opencv', expiration: { maxEntries: 2 } },
+            options: { cacheName: 'opencv', expiration: { maxEntries: 2 }, plugins: [onlyJavaScript] },
           },
         ],
       },
