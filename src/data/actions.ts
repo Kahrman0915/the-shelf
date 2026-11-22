@@ -206,8 +206,14 @@ export function changedFields(opened: RecordFields, edited: RecordFields): Parti
 }
 
 /** Send only the fields changed since the form opened, so someone else's change to another field survives. */
-export function editRecord(record: ShelfRecord, opened: RecordFields, edited: RecordFields, ctx: Ctx): ActionResult {
-  const changed = changedFields(opened, edited);
+export function editRecord(
+  record: ShelfRecord,
+  opened: RecordFields,
+  edited: RecordFields,
+  ctx: Ctx,
+  extra: Partial<ShelfRecord> = {},
+): ActionResult {
+  const changed: Partial<ShelfRecord> = { ...changedFields(opened, edited), ...extra };
   if (Object.keys(changed).length === 0) return { postcards: [], undo: null };
   checkRecord({ ...record, ...changed });
   return { postcards: [patchCard(record, ctx, changed)], undo: null };
@@ -219,8 +225,14 @@ export function deleteRecord(record: ShelfRecord, ctx: Ctx): ActionResult {
 }
 
 /** Bring back a record deleted on another phone, with this phone's edits, in one patch. */
-export function restoreWithEdits(record: ShelfRecord, opened: RecordFields, edited: RecordFields, ctx: Ctx): ActionResult {
-  const fields: Partial<ShelfRecord> = { deletedAt: null, ...changedFields(opened, edited) };
+export function restoreWithEdits(
+  record: ShelfRecord,
+  opened: RecordFields,
+  edited: RecordFields,
+  ctx: Ctx,
+  extra: Partial<ShelfRecord> = {},
+): ActionResult {
+  const fields: Partial<ShelfRecord> = { deletedAt: null, ...changedFields(opened, edited), ...extra };
   checkRecord({ ...record, ...fields });
   return { postcards: [patchCard(record, ctx, fields)], undo: null };
 }

@@ -371,6 +371,13 @@ describe('editRecord', () => {
     expect(editRecord(r, formOf(r), formOf(r), ctx)).toEqual({ postcards: [], undo: null });
   });
 
+  it('editRecord with only photo fields still makes one patch', () => {
+    const r = record();
+    const p = `${SHELF}/${A}/front-p1.jpg`;
+    const { postcards } = editRecord(r, formOf(r), formOf(r), ctx, { coverPath: p });
+    expect(postcards).toEqual([{ kind: 'record.patch', shelfId: SHELF, recordId: A, userId: ME, createdAt: NOW, fields: { coverPath: p } }]);
+  });
+
   it('refuses an edit that breaks the record rules', () => {
     const r = record();
     expect(() => editRecord(r, formOf(r), { ...formOf(r), nmEstimateLow: 30, nmEstimateHigh: 10 }, ctx)).toThrow(/nmEstimateLow/);
@@ -396,6 +403,15 @@ describe('restoreWithEdits', () => {
       { kind: 'record.patch', shelfId: SHELF, recordId: A, userId: ME, createdAt: NOW, fields: { deletedAt: null, year: 1967, notes: 'first press' } },
     ]);
     expect(undo).toBeNull();
+  });
+
+  it('restoreWithEdits merges extra after deletedAt', () => {
+    const r = record({ deletedAt: OLD });
+    const p = `${SHELF}/${A}/back-p1.jpg`;
+    const { postcards } = restoreWithEdits(r, formOf(r), formOf(r), ctx, { backPath: p });
+    expect(postcards).toEqual([
+      { kind: 'record.patch', shelfId: SHELF, recordId: A, userId: ME, createdAt: NOW, fields: { deletedAt: null, backPath: p } },
+    ]);
   });
 
   it('refuses edits that break the record rules', () => {
