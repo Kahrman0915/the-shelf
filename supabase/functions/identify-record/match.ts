@@ -24,7 +24,8 @@ export async function findMatch(
     const answer = await search(step.params);
     if (answer.status === 429) return { status: 429, body: { error: 'rate-limited' } };
     if (answer.status !== 200) return { status: 502, body: { error: 'down' } };
-    const results = (answer.body as { results: FoundRecord[] }).results;
+    const results = (answer.body as { results?: FoundRecord[] } | null)?.results;
+    if (!Array.isArray(results)) return { status: 502, body: { error: 'down' } };
     if (results.length > 0) {
       const match = step.canBeExact && results.length === 1 ? 'exact' : 'several';
       return { status: 200, body: { read, match, results } };

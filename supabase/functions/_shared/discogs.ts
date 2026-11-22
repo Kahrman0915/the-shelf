@@ -1,5 +1,5 @@
-// The Discogs request behind the discogs-search Edge Function. Web-standard fetch only, no Deno
-// APIs, so the same file runs under Deno and under Vitest.
+// The Discogs request shared by the discogs-search and identify-record Edge Functions. Web-standard
+// fetch only, no Deno APIs, so the same file runs under Deno and under Vitest.
 import { shapeResults } from './shape.ts';
 
 const USER_AGENT = 'TheShelf/1.0 +https://the-shelf-sigma.vercel.app';
@@ -20,7 +20,7 @@ export async function searchDiscogsWith(
   fetchFn: typeof fetch = fetch,
 ): Promise<Answer> {
   if (!token) {
-    console.error('discogs-search: DISCOGS_TOKEN is not set');
+    console.error('discogs: DISCOGS_TOKEN is not set');
     return DOWN;
   }
   try {
@@ -32,14 +32,14 @@ export async function searchDiscogsWith(
     });
     if (res.status === 429) return { status: 429, body: { error: 'rate-limited' } };
     if (!res.ok) {
-      console.error(`discogs-search: Discogs answered ${res.status}`);
+      console.error(`discogs: Discogs answered ${res.status}`);
       return DOWN;
     }
     return { status: 200, body: { results: shapeResults(await res.json()) } };
   } catch (e) {
     // By name, not instanceof Error: a DOMException (a timeout) isn't an Error everywhere.
     const name = (e as { name?: unknown } | null)?.name;
-    console.error(`discogs-search: ${typeof name === 'string' ? name : 'unknown error'}`);
+    console.error(`discogs: ${typeof name === 'string' ? name : 'unknown error'}`);
     return DOWN;
   }
 }

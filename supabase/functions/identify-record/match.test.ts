@@ -73,4 +73,11 @@ describe('findMatch', () => {
     }));
     expect(out).toEqual({ status: 502, body: { error: 'down' } });
   });
+
+  it('turns a 200 without a results array into 502 down', async () => {
+    const search = vi.fn(async (): Promise<Answer> => ({ status: 200, body: { error: 'odd' } }));
+    const out = await findMatch({ ...NONE, barcode: '025218843123', artist: 'A', title: 'T' }, search);
+    expect(out).toEqual({ status: 502, body: { error: 'down' } });
+    expect(search).toHaveBeenCalledTimes(1);
+  });
 });

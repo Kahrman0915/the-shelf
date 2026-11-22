@@ -1,5 +1,6 @@
-// Pure helpers for the discogs-search Edge Function. No Deno APIs and no imports from src/,
-// so the same file runs under Deno and under Vitest.
+// Pure helpers that check a Discogs query and shape Discogs results, shared by the discogs-search
+// and identify-record Edge Functions. No Deno APIs and no imports from src/, so the same file runs
+// under Deno and under Vitest.
 
 export type FoundRecord = {
   releaseId: number;
