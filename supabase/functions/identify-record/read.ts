@@ -9,6 +9,19 @@ export type Read = {
   label: string | null;
 };
 
+/** Each photo, once decoded. */
+export const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
+const MAX_PHOTO_CHARS = Math.ceil(MAX_PHOTO_BYTES / 3) * 4;
+const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+
+/** A non-empty, padded base64 string whose decoded size is at most 2 MB. Never logs the photo. */
+export function isPhoto(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > MAX_PHOTO_CHARS) return false;
+  if (value.length % 4 !== 0 || !BASE64.test(value)) return false;
+  const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+  return (value.length / 4) * 3 - padding <= MAX_PHOTO_BYTES;
+}
+
 const nullableString = { type: ['string', 'null'] } as const;
 
 export const READ_SCHEMA = {

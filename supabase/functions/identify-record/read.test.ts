@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanRead, readFromMessage, readRequest, type Read } from './read.ts';
+import { cleanRead, isPhoto, MAX_PHOTO_BYTES, readFromMessage, readRequest, type Read } from './read.ts';
 
 const NONE: Read = { artist: null, title: null, barcode: null, catalog: null, label: null };
 
@@ -90,5 +90,31 @@ describe('readRequest', () => {
     expect([...req.output_config.format.schema.required].sort()).toEqual(
       ['artist', 'barcode', 'catalog', 'label', 'title'],
     );
+  });
+});
+
+describe('isPhoto', () => {
+  // n decoded bytes as base64: every 3 bytes become 4 characters, padded with '=' to a multiple of 4.
+  const ofBytes = (n: number) => btoa('\0'.repeat(n));
+
+  it('takes a base64 string of exactly 2 MB decoded', () => {
+    expect(MAX_PHOTO_BYTES).toBe(2 * 1024 * 1024);
+    expect(isPhoto(ofBytes(MAX_PHOTO_BYTES))).toBe(true);
+  });
+
+  it('refuses one byte over 2 MB', () => {
+    expect(isPhoto(ofBytes(MAX_PHOTO_BYTES + 1))).toBe(false);
+  });
+
+  it('counts padding, so short strings with one or two = pass', () => {
+    expect(isPhoto(btoa('a'))).toBe(true);
+    expect(isPhoto(btoa('ab'))).toBe(true);
+    expect(isPhoto(btoa('abc'))).toBe(true);
+  });
+
+  it('refuses anything that is not a non-empty base64 string', () => {
+    for (const bad of ['', 'abc', 'ab=c', 'a===', '!!!!', 'data:image/jpeg;base64,AAAA', 'AA AA', null, undefined, 42, {}, []]) {
+      expect(isPhoto(bad)).toBe(false);
+    }
   });
 });

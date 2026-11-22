@@ -416,3 +416,9 @@ enabled = true
 
 [functions.discogs-search]
 verify_jwt = true
+
+[functions.identify-record]
+verify_jwt = true
+
+[functions.fun-fact]
+verify_jwt = true
