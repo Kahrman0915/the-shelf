@@ -7,7 +7,7 @@ const record: ShelfRecord = {
   id: '00000000-0000-4000-8000-000000000001', shelfId: '00000000-0000-4000-8000-0000000000aa', status: 'owned',
   wantsUpgrade: false, upgradeNote: null, artist: 'Ahmad Jamal Trio', title: 'At the Pershing', label: 'Argo',
   catalog: 'LP-628', year: 1958, format: 'Mono', genre: 'jazz', discGrade: 'G', sleeveGrade: null, pricePaid: null,
-  nmEstimateLow: 12, nmEstimateHigh: 32, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null,
+  nmEstimateLow: 12, nmEstimateHigh: 32, valueNote: null, notes: null, discogsReleaseId: null, coverPath: null, backPath: null,
   funFact: null, funFactSource: null, coverImageUrl: null, boughtAt: null, addedBy: '00000000-0000-4000-8000-0000000000bb', createdAt: '2025-09-17T00:00:00.000Z',
   updatedAt: '2025-09-17T00:00:00.000Z', deletedAt: null, importKey: 'ahmad-jamal-pershing',
 };
@@ -28,6 +28,18 @@ describe('record rows', () => {
     const row = { ...recordToRow(record), genre: 'polka' };
     expect(() => recordFromRow(row)).toThrow(RowError);
     expect(() => recordFromRow(row)).toThrow(/00000000-0000-4000-8000-000000000001: genre/);
+  });
+});
+
+describe('back photo', () => {
+  it('back_path round-trips', () => {
+    const withBack = { ...record, backPath: 'S/R/back-1.jpg' };
+    expect(recordToRow(withBack)).toMatchObject({ back_path: 'S/R/back-1.jpg' });
+    expect(recordFromRow(recordToRow(withBack))).toEqual(withBack);
+  });
+
+  it('patches by column name', () => {
+    expect(patchToRow({ backPath: 'S/R/back-1.jpg' })).toEqual({ back_path: 'S/R/back-1.jpg' });
   });
 });
 

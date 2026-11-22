@@ -41,6 +41,7 @@ function savedBeforeDetails(id: string): Omit<ShelfRecord, 'funFact' | 'funFactS
     notes: null,
     discogsReleaseId: null,
     coverPath: null,
+    backPath: null,
     boughtAt: null,
     addedBy: ME,
     createdAt: OLD,
@@ -118,6 +119,57 @@ describe('ShelfDB version 4', () => {
     expect(await pushOutbox(db, fake)).toEqual({ sent: 3, rejected: 0, noSignal: false });
     expect(fake.recordRow(OLD_A)).toMatchObject({ year: 1960, deleted_at: NOW });
     expect(fake.recordRow(QUEUED_B)).toMatchObject({ title: 'Kind of Blue', fun_fact: null });
+    db.close();
+  });
+});
+
+/** A version-4 notebook: details exist, backPath does not. */
+async function version4Phone(): Promise<void> {
+  const v4 = new Dexie(name);
+  v4.version(4).stores({
+    records: 'id, shelfId, status, genre, importKey',
+    ratings: '[recordId+userId], recordId, userId',
+    members: '[shelfId+userId], shelfId',
+    meta: 'key',
+    outbox: '++seq, recordId, state',
+  });
+  const { backPath: _omit, ...saved } = savedBeforeDetails(OLD_A);
+  const stored = { ...saved, funFact: null, funFactSource: null, coverImageUrl: null };
+  await v4.table('records').put(stored);
+  await v4.table('outbox').add({
+    kind: 'record.create',
+    shelfId: SHELF,
+    recordId: QUEUED_B,
+    userId: ME,
+    createdAt: OLD,
+    state: 'waiting',
+    reason: null,
+    fields: { ...stored, id: QUEUED_B },
+  });
+  v4.close();
+}
+
+describe('version 5', () => {
+  it('fills backPath with null on stored records and queued creates', async () => {
+    await version4Phone();
+    const db = new ShelfDB(name);
+    const [record] = await db.records.toArray();
+    expect(record.backPath).toBeNull();
+    expect(RecordSchema.safeParse(record).success).toBe(true);
+    const [queued] = await db.outbox.toArray();
+    expect((queued.fields as Record<string, unknown>).backPath).toBeNull();
+    expect(RecordSchema.safeParse(queued.fields).success).toBe(true);
+    db.close();
+  });
+
+  it('adds the photos and photoDrafts tables', async () => {
+    await version4Phone();
+    const db = new ShelfDB(name);
+    await db.photos.put({ path: 'p', bytes: new Uint8Array([1, 2]).buffer });
+    const back = await db.photos.get('p');
+    expect(Array.from(new Uint8Array(back!.bytes))).toEqual([1, 2]);
+    await db.photoDrafts.put({ side: 'back', bytes: new Uint8Array([3]).buffer, foundEdges: false });
+    expect((await db.photoDrafts.get('back'))?.foundEdges).toBe(false);
     db.close();
   });
 });

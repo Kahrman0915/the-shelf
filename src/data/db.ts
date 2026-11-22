@@ -1,6 +1,7 @@
 import Dexie, { type EntityTable, type Table } from 'dexie';
 import { BackendError, type Member } from './backend';
 import type { Postcard } from './outbox';
+import type { DraftPhoto, StoredPhoto } from './photos';
 import type { Rating, ShelfRecord } from './schema';
 
 export type Meta = { key: string; value: string };
@@ -12,6 +13,8 @@ export class ShelfDB extends Dexie {
   members!: Table<Member, [string, string]>;
   meta!: EntityTable<Meta, 'key'>;
   outbox!: EntityTable<Postcard, 'seq'>;
+  photos!: EntityTable<StoredPhoto, 'path'>;
+  photoDrafts!: EntityTable<DraftPhoto, 'side'>;
 
   constructor(name = 'the-shelf') {
     super(name);
@@ -49,12 +52,32 @@ export class ShelfDB extends Dexie {
       .upgrade(async (tx) => {
         // Records saved before the fun fact and cover link existed lack those keys, and the record rules need them
         // (null when empty). The incremental pull won't fetch unchanged rows again, so fill them in here.
-        await tx.table('records').toCollection().modify(fillDetails);
+        await tx.table('records').toCollection().modify(fill(DETAIL_KEYS));
         await tx
           .table('outbox')
           .toCollection()
           .modify((p: { kind: string; fields: Record<string, unknown> }) => {
-            if (p.kind === 'record.create') fillDetails(p.fields);
+            if (p.kind === 'record.create') fill(DETAIL_KEYS)(p.fields);
+          });
+      });
+    this.version(5)
+      .stores({
+        records: 'id, shelfId, status, genre, importKey',
+        ratings: '[recordId+userId], recordId, userId',
+        members: '[shelfId+userId], shelfId',
+        meta: 'key',
+        outbox: '++seq, recordId, state',
+        photos: 'path',
+        photoDrafts: 'side',
+      })
+      .upgrade(async (tx) => {
+        // Records saved before the back photo existed lack backPath. Fill it on stored records and queued creates.
+        await tx.table('records').toCollection().modify(fill(PHOTO_KEYS));
+        await tx
+          .table('outbox')
+          .toCollection()
+          .modify((p: { kind: string; fields: Record<string, unknown> }) => {
+            if (p.kind === 'record.create') fill(PHOTO_KEYS)(p.fields);
           });
       });
   }
@@ -62,9 +85,14 @@ export class ShelfDB extends Dexie {
 
 const DETAIL_KEYS = ['funFact', 'funFactSource', 'coverImageUrl'] as const;
 
-function fillDetails(r: Record<string, unknown>): void {
-  for (const key of DETAIL_KEYS) if (r[key] === undefined) r[key] = null;
-}
+const PHOTO_KEYS = ['backPath'] as const;
+
+/** An upgrade step: give a record (or a queued create's fields) null for each of these keys it lacks. */
+const fill =
+  (keys: readonly string[]) =>
+  (r: Record<string, unknown>): void => {
+    for (const key of keys) if (r[key] === undefined) r[key] = null;
+  };
 
 export const db = new ShelfDB();
 
@@ -86,7 +114,7 @@ export async function writeSession(database: ShelfDB, session: RememberedSession
   await database.meta.put({ key: SESSION_KEY, value: JSON.stringify(session) });
 }
 
-const everything = (d: ShelfDB) => [d.records, d.ratings, d.members, d.meta, d.outbox];
+const everything = (d: ShelfDB) => [d.records, d.ratings, d.members, d.meta, d.outbox, d.photos, d.photoDrafts];
 
 /** Call inside a rw transaction over everything(). */
 async function clearAll(d: ShelfDB): Promise<void> {

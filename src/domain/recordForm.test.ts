@@ -28,7 +28,7 @@ function record(p: Partial<ShelfRecord> = {}): ShelfRecord {
     valueNote: 'Original pressing',
     notes: 'Gatefold',
     discogsReleaseId: null,
-    coverPath: null,
+    coverPath: null, backPath: null,
     funFact: 'Named after a strip club.',
     funFactSource: 'https://example.com/fact',
     coverImageUrl: null,

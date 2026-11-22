@@ -31,7 +31,7 @@ function record(over: Partial<ShelfRecord> = {}): ShelfRecord {
     valueNote: null,
     notes: null,
     discogsReleaseId: null,
-    coverPath: null,
+    coverPath: null, backPath: null,
     funFact: null,
     funFactSource: null,
     coverImageUrl: null,

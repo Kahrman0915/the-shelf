@@ -97,6 +97,7 @@ export function importCollection(
       notes: blank(s.notes),
       discogsReleaseId: null,
       coverPath: null,
+      backPath: null,
       funFact: null,
       funFactSource: null,
       coverImageUrl: null,

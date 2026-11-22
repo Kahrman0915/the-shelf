@@ -32,6 +32,7 @@ export const RecordSchema = z
     notes: optionalText,
     discogsReleaseId: z.number().int().positive().nullable(),
     coverPath: optionalText,
+    backPath: optionalText,
     funFact: z.string().trim().min(1).max(500).nullable(),
     funFactSource: httpsLink,
     coverImageUrl: httpsLink,

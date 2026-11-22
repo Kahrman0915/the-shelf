@@ -22,6 +22,7 @@ export type RecordRow = {
   notes: string | null;
   discogs_release_id: number | null;
   cover_path: string | null;
+  back_path: string | null;
   fun_fact: string | null;
   fun_fact_source: string | null;
   cover_image_url: string | null;
@@ -73,6 +74,7 @@ export function recordToRow(r: ShelfRecord): RecordRow {
     notes: r.notes,
     discogs_release_id: r.discogsReleaseId,
     cover_path: r.coverPath,
+    back_path: r.backPath,
     fun_fact: r.funFact,
     fun_fact_source: r.funFactSource,
     cover_image_url: r.coverImageUrl,
@@ -89,7 +91,7 @@ export function recordToRow(r: ShelfRecord): RecordRow {
 export const EDITABLE_FIELDS = [
   'status', 'wantsUpgrade', 'upgradeNote', 'artist', 'title', 'label', 'catalog', 'year', 'format', 'genre',
   'discGrade', 'sleeveGrade', 'pricePaid', 'nmEstimateLow', 'nmEstimateHigh', 'valueNote', 'notes',
-  'discogsReleaseId', 'coverPath', 'funFact', 'funFactSource', 'coverImageUrl', 'boughtAt', 'deletedAt',
+  'discogsReleaseId', 'coverPath', 'backPath', 'funFact', 'funFactSource', 'coverImageUrl', 'boughtAt', 'deletedAt',
 ] as const satisfies readonly (keyof ShelfRecord)[];
 
 /** A record as the server should receive it on insert: created_at and updated_at are the server's to stamp. */
@@ -131,6 +133,7 @@ export function recordFromRow(row: Record<string, unknown>): ShelfRecord {
     notes: row.notes,
     discogsReleaseId: num(row.discogs_release_id),
     coverPath: row.cover_path,
+    backPath: row.back_path,
     funFact: row.fun_fact,
     funFactSource: row.fun_fact_source,
     coverImageUrl: row.cover_image_url,

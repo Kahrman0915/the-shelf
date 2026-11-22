@@ -52,6 +52,16 @@ describe('clearPhone', () => {
     expect(await db.outbox.count()).toBe(0);
     await db.delete();
   });
+
+  it('empties photos and photo drafts too', async () => {
+    const db = new ShelfDB(`clear-${crypto.randomUUID()}`);
+    await db.photos.put({ path: 'p', bytes: new Uint8Array([1]).buffer });
+    await db.photoDrafts.put({ side: 'front', bytes: new Uint8Array([2]).buffer, foundEdges: true });
+    await clearPhone(db);
+    expect(await db.photos.count()).toBe(0);
+    expect(await db.photoDrafts.count()).toBe(0);
+    await db.delete();
+  });
 });
 
 const K = { userId: '11111111-1111-4111-8111-111111111111', email: 'kahrman@example.com', shelfId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' };
