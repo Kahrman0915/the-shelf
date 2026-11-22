@@ -1,7 +1,7 @@
 # Plan 5: Your shelf sections (design)
 
 Date: 2026-11-23
-Status: draft; awaiting builder check and Kahrman's approval
+Status: builder-checked; awaiting Kahrman's approval
 Builds on: `docs/ideas.md` → "Your shelf sections (2026-11-12)"; the genre mapping in `2026-11-12-plan-4a-build-2a-discogs-lookup-design.md` §5; Plan 4c (recognition saves through the same Discogs mapping).
 
 ## 1. Intent
@@ -12,7 +12,7 @@ Friends now have their own shelves (2026-11-22), and they're sorted into Kahrman
 
 **Success:**
 - A friend renames, merges or deletes sections until the app matches their dividers, and from then on new records sort themselves into the right one.
-- Kahrman's shelf looks and behaves exactly as it does today.
+- Kahrman's shelf looks and behaves exactly as it does today, with the same nine in the same order.
 
 **Anti-goals:**
 - Losing or orphaning a record when a section is merged or deleted.
@@ -30,7 +30,7 @@ Friends now have their own shelves (2026-11-22), and they're sorted into Kahrman
 | 4 | Where sections are edited | *Proposed:* a **Sections** screen in Settings: add, rename, colour, choose Discogs genres, reorder, merge, delete |
 | 5 | Combining genres | *Proposed:* each section lists the **Discogs genres** that land in it; one Discogs genre belongs to at most one section |
 | 6 | Delete / merge | *Proposed:* a section with records is never deleted with records in it. **Merge into…** moves its records, then removes it |
-| 7 | Catch-all | *Proposed:* **Everything else** always exists and is always last. It can be renamed, not deleted. Anything no section claims lands there |
+| 7 | Catch-all | *Proposed:* every shelf has one catch-all section (**Everything else** in the starter set, **Miscellaneous** on Kahrman's). It can be renamed and moved like any other, but not deleted. Anything no section claims lands there |
 | 8 | Colours | *Proposed:* each section picks from about 12 swatches that read well in both themes. The spine bar and the poster use the section's colour |
 | 9 | Label colours | *Proposed:* filtering to any section that takes Discogs' **Jazz** colours its spines by label (Impulse!, Blue Note, Argo), as Jazz does today |
 | 10 | Christmas | *Proposed:* a section can take **holiday records**: anything Discogs tags with a Holiday or Christmas style goes there first, whatever its genre |
@@ -50,7 +50,7 @@ Sections                              + Add
 ━━━━ Rock                         ⋮
 ━━━━ Pop / soul / contemporary    ⋮
 …
-━━━━ Everything else  (always last)
+━━━━ Everything else  (can't be deleted)
 ```
 - **Tap a section** to open its sheet:
   - **Name:** 1–40 characters, unique on the shelf, ignoring case.
@@ -64,7 +64,7 @@ Sections                              + Add
   - **Delete** shows only for an empty section, with a confirm.
   - A section with records shows **Merge into…** in place of Delete.
   - **Everything else** has neither.
-- **+ Add** makes a new section with a fresh name, the next free colour and no Discogs genres. It's placed just above Everything else, with its sheet opened.
+- **+ Add** makes a new section with a fresh name, the next free colour and no Discogs genres. It's placed at the end of the list, with its sheet opened.
 - **Reorder:** *our call* is up / down buttons in the sheet (reliable on an iPhone and accessible). A drag handle is the builder's call, if it's cheap to make robust.
 - Changes save through the outbox like any edit, so they work offline and appear on the other phone after sync.
 
@@ -95,7 +95,7 @@ Sections                              + Add
 | Soundtracks | soundtracks | Stage & Screen | |
 | Christmas | christmas | | ✓ |
 
-Miscellaneous is his catch-all. *Our call:* the catch-all moves to the end of the list for every shelf, so his Miscellaneous moves from fifth to last, the only visible change. This keeps "always last" simple. He can move other sections around it.
+Miscellaneous is his catch-all, and it stays fifth. *Our call (builder check):* the catch-all can sit anywhere in the list, so his shelf doesn't change at all.
 
 **The starter set:** the same colours, new names, in this order.
 
@@ -133,26 +133,33 @@ Miscellaneous is his catch-all. *Our call:* the catch-all moves to the end of th
   Constraints:
   - exactly one catch-all per shelf (a unique partial index);
   - at most one holiday section per shelf;
-  - names unique per shelf, ignoring case.
 
   The rule that a Discogs genre is claimed only once per shelf is enforced in the app and in the merge function; on conflict, the first in position order wins.
 - **Rules (RLS):** members of the shelf can see, add and change its sections. Delete works only for an empty, non-catch-all section; anything else is refused.
 - **`records.section_id uuid not null`**, referencing `sections`, restricted on delete. It must belong to the same shelf, which a check trigger enforces.
+- **Ids the phone can work out itself** (*our call, builder check*): the sections the migration and `bootstrap()` create get ids derived from the shelf and the old genre, `md5(shelf_id || ':' || legacy_genre)::uuid`. The phone computes the same id, so it can fill `sectionId` without the server (§6.2).
 - **`merge_section(p_from uuid, p_into uuid)`:**
   - security invoker, so the RLS rules apply;
   - in one transaction, moves every record (including soft-deleted ones) from `p_from` to `p_into`, deletes `p_from`, and hands its Discogs genres and holiday flag to `p_into`;
-  - both sections must be on the same shelf, and `p_from` mustn't be the catch-all.
+  - both sections must be on the same shelf, and `p_from` mustn't be the catch-all;
+  - it records `p_from → p_into` in **`section_redirects`** (shelf-scoped, readable by members).
+- **Delete is a merge into the catch-all** (*our call, builder check*). Deleted records still count, because another phone can restore them. So "Delete" on a section with no live records runs `merge_section(section, catch_all)`, which also moves any deleted records quietly. If one is restored later, it appears in the catch-all.
+- **Late changes from another phone** (*our call, builder check*). A trigger on `records` insert and update follows `section_redirects` when `section_id` points at a merged or deleted section, landing on the survivor. If the id is unknown, it uses the shelf's catch-all. A late write is therefore rerouted rather than refused, and no record is held up in the outbox.
+- **Name clashes** (*our call, builder check*): names are unique per shelf only as a warning in the app, not a database rule. Two phones adding "Blues" offline then both succeed, and the person can merge them.
 - **`bootstrap()`** creates the starter set when it creates a shelf.
 - **The changeover:**
   - `records.genre` stays for now, kept filled so older app versions keep working: each section carries a hidden `legacy_genre` (one of the nine; new sections get `misc`), and a trigger keeps `records.genre` equal to the section's `legacy_genre`.
-  - If an old app inserts a record without `section_id`, a trigger fills it from `genre`.
+  - If an old app inserts a record without `section_id`, or changes only `genre`, a trigger moves the record to the first section (by position) whose `legacy_genre` matches. If none matches, it goes to the catch-all. *Our call (builder check):* an old-app genre edit moves the record; it's never quietly undone.
   - The column and triggers are removed in a later plan, once every phone has updated.
 
 ### 6.2 App
 - **Schema:**
   - `Section` gets its own Zod schema and row mapping.
   - `ShelfRecord.genre` is replaced by `sectionId`. `genre` stays readable during the changeover but is never written by the new app.
-  - Dexie version bump: a `sections` table. The upgrade fills `sectionId` on stored records and queued creates by asking the server on first sync: *our call* is a full pull after the upgrade, as in 4b's v5.
+  - Dexie version bump: a `sections` table. *Our call (builder check):* the app works offline the first time it opens after updating.
+    - The upgrade fills `sectionId` on stored records, queued creates and queued patches that carry `genre`, using the derived ids (§6.1). It drops `genre` from queued patches.
+    - It seeds the phone's `sections` table for its shelf with the matching set: Kahrman's nine if any stored record has an `importKey`, else the starter set.
+    - It also forgets the last pull time, so the first sync after the update fetches everything, sections included, and corrects anything seeded.
 - **Sync:** sections are pulled with records (every pull, since they're few). A record is applied only after its section exists on the phone.
 - **Outbox postcard kinds:**
   - `section.create`, `section.patch` (the fields changed) and `section.delete` (empty only);
@@ -176,9 +183,13 @@ Miscellaneous is his catch-all. *Our call:* the catch-all moves to the end of th
 - **Database (PGlite):**
   - each set is created correctly (Kahrman's shelf detected by `import_key`);
   - every existing record gets its section;
-  - the one-catch-all, one-holiday and unique-name rules;
+  - the one-catch-all and one-holiday rules;
+  - derived ids match the phone's calculation;
+  - late writes are rerouted through `section_redirects` or to the catch-all;
+  - an old-app genre change moves the record;
+  - delete moves deleted records to the catch-all;
   - RLS (strangers can't see or change sections; members can);
-  - delete refused with records in it; merge moves everything atomically;
+  - merge moves everything atomically;
   - old-app inserts without `section_id` are filled;
   - `genre` is kept in step.
 - **Pure:** `sectionFor` on each set, including holiday-first, release genre order, an unclaimed genre going to the catch-all, and two sections claiming one genre (first by position wins).
@@ -186,8 +197,9 @@ Miscellaneous is his catch-all. *Our call:* the catch-all moves to the end of th
   - the Sections screen: add, rename, colour, genres, reorder, merge, delete-only-when-empty, and the catch-all can't be deleted;
   - the filter, pickers and spines use sections;
   - Find and recognition saves land in the mapped section.
+- **The Dexie upgrade:** offline, a notebook from the old version opens with every record in the right section, and its unsent changes still send.
 - **Live:**
-  - Kahrman's shelf looks unchanged apart from Miscellaneous moving to last;
+  - Kahrman's shelf looks unchanged;
   - a friend renames and merges sections, and a Discogs add lands right;
   - Megan's phone on the old version still syncs during the changeover.
 
