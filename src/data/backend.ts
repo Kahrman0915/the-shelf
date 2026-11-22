@@ -78,6 +78,7 @@ export const CLAUDE_DOWN = 'Couldn’t read the sleeve. Try again, or search bel
 
 export const REJECTED = {
   missing: 'That record is no longer on your shelf.',
+  sectionMissing: 'That section is no longer on your shelf.',
   permission: 'You don’t have permission to change this record.',
   range: 'The shelf refused a value that’s out of range.',
   unknownValue: 'The shelf refused a value it doesn’t recognise.',

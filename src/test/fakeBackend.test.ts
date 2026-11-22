@@ -268,7 +268,7 @@ describe('FakeBackend sections', () => {
     expect(b.sectionRow(id(2))).toMatchObject({ takes_holiday: true, discogs_genres: ['Blues', 'Jazz', 'Rock'] });
     await b.mergeSection(id(1), id(2));
     await expect(b.mergeSection(id(3), id(2))).rejects.toBeInstanceOf(BackendError);
-    await expect(b.mergeSection(id(2), id(9))).rejects.toBeInstanceOf(BackendError);
+    await expect(b.mergeSection(id(2), id(9))).rejects.toThrow(REJECTED.sectionMissing);
   });
 
   it('honours rejectNext and loseNextReply on section writes', async () => {

@@ -2,7 +2,7 @@ import { SWATCH_KEYS } from '@/domain/sections';
 import { BackendError } from './backend';
 import type { Ctx } from './actions';
 import type { NewPostcard } from './outbox';
-import { SectionSchema, type Section } from './schema';
+import { checkSection, type Section } from './schema';
 
 export type SectionResult = { postcards: NewPostcard[] };
 
@@ -14,15 +14,6 @@ function card(s: Section, ctx: Ctx, kind: 'section.create', fields: Section): Ne
 function card(s: Section, ctx: Ctx, kind: 'section.merge', fields: { into: string }): NewPostcard;
 function card(s: Section, ctx: Ctx, kind: NewPostcard['kind'], fields: unknown): NewPostcard {
   return { kind, shelfId: s.shelfId, recordId: s.id, userId: ctx.me, createdAt: ctx.now, fields } as NewPostcard;
-}
-
-function checkSection(candidate: Section): Section {
-  const parsed = SectionSchema.safeParse(candidate);
-  if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    throw new BackendError(`Section rules broken: ${issue.path.join('.') || 'section'} ${issue.message}`);
-  }
-  return parsed.data;
 }
 
 function newName(sections: Section[]): string {
@@ -51,10 +42,10 @@ export function createSection(shelfId: string, sections: Section[], ctx: Ctx & {
 }
 
 /**
- * Change a section. Taking holiday or claiming genres also clears them from the other sections, as the
- * server's trigger does, so the phone is right while offline.
+ * Change a section: one postcard. Taking holiday or claiming genres clears them from the others on the
+ * server (its claim trigger) and on the phone (applyPostcard does the same), so nothing else is sent.
  */
-export function editSection(section: Section, changes: SectionChanges, sections: Section[], ctx: Ctx): SectionResult {
+export function editSection(section: Section, changes: SectionChanges, ctx: Ctx): SectionResult {
   const next = checkSection({ ...section, ...changes });
   const fields: Partial<Section> = {};
   if (next.name !== section.name) fields.name = next.name;
@@ -65,28 +56,22 @@ export function editSection(section: Section, changes: SectionChanges, sections:
   const postcards: NewPostcard[] = [];
   if (Object.keys(fields).length > 0) postcards.push(card(section, ctx, 'section.patch', fields));
 
-  for (const other of sections) {
-    if (other.id === section.id) continue;
-    const clear: Partial<Section> = {};
-    if (fields.takesHoliday === true && other.takesHoliday) clear.takesHoliday = false;
-    if (fields.discogsGenres && other.discogsGenres.some((g) => next.discogsGenres.includes(g))) {
-      clear.discogsGenres = other.discogsGenres.filter((g) => !next.discogsGenres.includes(g));
-    }
-    if (Object.keys(clear).length > 0) postcards.push(card(other, ctx, 'section.patch', clear));
-  }
   return { postcards };
 }
 
 /** Swap places with the neighbour above or below; at either end there is nothing to do. */
 export function moveSection(section: Section, direction: 'up' | 'down', sections: Section[], ctx: Ctx): SectionResult {
-  const ordered = [...sections].sort((a, b) => a.position - b.position);
+  const ordered = [...sections].sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
   const at = ordered.findIndex((s) => s.id === section.id);
-  const neighbour = ordered[direction === 'up' ? at - 1 : at + 1];
+  const to = direction === 'up' ? at - 1 : at + 1;
+  const neighbour = ordered[to];
   if (at < 0 || !neighbour) return { postcards: [] };
+  // Two sections sharing a position can't trade it, so they take their places in the list instead.
+  const tied = neighbour.position === section.position;
   return {
     postcards: [
-      card(section, ctx, 'section.patch', { position: neighbour.position }),
-      card(neighbour, ctx, 'section.patch', { position: section.position }),
+      card(section, ctx, 'section.patch', { position: tied ? to : neighbour.position }),
+      card(neighbour, ctx, 'section.patch', { position: tied ? at : section.position }),
     ],
   };
 }

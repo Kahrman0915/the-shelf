@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ShelfRecord } from './schema';
 import { RecordSchema } from './schema';
-import { RowError, newRecordToRow, patchToRow, ratingFromRow, ratingToRow, recordFromRow, recordToRow } from './rowMapping';
+import { RowError, newRecordToRow, patchToRow, ratingFromRow, ratingToRow, recordFromRow, recordToRow, sectionPatchToRow } from './rowMapping';
 
 const record: ShelfRecord = {
   id: '00000000-0000-4000-8000-000000000001', shelfId: '00000000-0000-4000-8000-0000000000aa', status: 'owned',
@@ -86,5 +86,19 @@ describe('write rows', () => {
     expect(row).not.toHaveProperty('created_at');
     expect(row).not.toHaveProperty('updated_at');
     expect(row.id).toBe(record.id);
+  });
+});
+
+describe('section patch rows', () => {
+  it('writes the editable fields as snake_case columns', () => {
+    expect(sectionPatchToRow({ takesHoliday: true, discogsGenres: ['Jazz'], name: 'x', position: 2, color: 'teal' })).toEqual({
+      takes_holiday: true, discogs_genres: ['Jazz'], name: 'x', position: 2, color: 'teal',
+    });
+  });
+
+  it('refuses fields the shelf fixes', () => {
+    expect(() => sectionPatchToRow({ isCatchAll: true })).toThrow();
+    expect(() => sectionPatchToRow({ legacyGenre: 'rock' })).toThrow();
+    expect(() => sectionPatchToRow({ shelfId: '00000000-0000-4000-8000-0000000000aa' })).toThrow();
   });
 });

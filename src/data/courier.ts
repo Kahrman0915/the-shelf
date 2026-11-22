@@ -18,7 +18,8 @@ async function send(db: ShelfDB, writer: ShelfWriter, p: Postcard): Promise<'sen
       await writer.insertSection(newSectionToRow(p.fields));
       return 'sent';
     case 'section.patch':
-      return (await writer.patchSection(p.recordId, sectionPatchToRow(p.fields))) === 'missing' ? 'missing' : 'sent';
+      if ((await writer.patchSection(p.recordId, sectionPatchToRow(p.fields))) === 'missing') throw new BackendError(REJECTED.sectionMissing);
+      return 'sent';
     case 'section.merge':
       await writer.mergeSection(p.recordId, p.fields.into);
       return 'sent';

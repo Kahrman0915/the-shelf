@@ -69,42 +69,36 @@ describe('createSection', () => {
 
 describe('editSection', () => {
   it('patches only what changed, with the name trimmed', () => {
-    const { postcards } = editSection(rock, { name: '  Hard rock ', color: 'rock' }, all, ctx);
+    const { postcards } = editSection(rock, { name: '  Hard rock ', color: 'rock' }, ctx);
     expect(postcards).toEqual([{ kind: 'section.patch', shelfId: SHELF, recordId: rock.id, userId: ME, createdAt: WHEN, fields: { name: 'Hard rock' } }]);
   });
 
   it('does nothing when nothing changed', () => {
-    expect(editSection(rock, { name: 'Rock', discogsGenres: ['Rock'] }, all, ctx).postcards).toEqual([]);
+    expect(editSection(rock, { name: 'Rock', discogsGenres: ['Rock'] }, ctx).postcards).toEqual([]);
   });
 
   it('refuses a name that is empty or over 40 characters', () => {
-    expect(() => editSection(rock, { name: '   ' }, all, ctx)).toThrow(BackendError);
-    expect(() => editSection(rock, { name: 'x'.repeat(41) }, all, ctx)).toThrow(BackendError);
+    expect(() => editSection(rock, { name: '   ' }, ctx)).toThrow(BackendError);
+    expect(() => editSection(rock, { name: 'x'.repeat(41) }, ctx)).toThrow(BackendError);
   });
 
-  it('taking holiday also clears it from the section that had it', () => {
-    const { postcards } = editSection(rock, { takesHoliday: true }, all, ctx);
-    expect(postcards.map((p) => [p.recordId, p.fields])).toEqual([
-      [rock.id, { takesHoliday: true }],
-      [xmas.id, { takesHoliday: false }],
-    ]);
+  it('taking holiday is one postcard; the phone clears the others when it applies it', () => {
+    const { postcards } = editSection(rock, { takesHoliday: true }, ctx);
+    expect(postcards.map((p) => [p.recordId, p.fields])).toEqual([[rock.id, { takesHoliday: true }]]);
   });
 
   it('letting go of holiday clears nothing else', () => {
-    const { postcards } = editSection(xmas, { takesHoliday: false }, all, ctx);
+    const { postcards } = editSection(xmas, { takesHoliday: false }, ctx);
     expect(postcards.map((p) => p.recordId)).toEqual([xmas.id]);
   });
 
-  it('claiming a genre takes it off the other sections, keeping their other genres', () => {
-    const { postcards } = editSection(rock, { discogsGenres: ['Rock', 'Blues'] }, all, ctx);
-    expect(postcards.map((p) => [p.recordId, p.fields])).toEqual([
-      [rock.id, { discogsGenres: ['Rock', 'Blues'] }],
-      [jazz.id, { discogsGenres: ['Jazz'] }],
-    ]);
+  it('claiming a genre is one postcard; the others are left to the apply and the server', () => {
+    const { postcards } = editSection(rock, { discogsGenres: ['Rock', 'Blues'] }, ctx);
+    expect(postcards.map((p) => [p.recordId, p.fields])).toEqual([[rock.id, { discogsGenres: ['Rock', 'Blues'] }]]);
   });
 
   it('giving a genre up clears nothing from the others', () => {
-    const { postcards } = editSection(jazz, { discogsGenres: ['Jazz'] }, all, ctx);
+    const { postcards } = editSection(jazz, { discogsGenres: ['Jazz'] }, ctx);
     expect(postcards.map((p) => p.recordId)).toEqual([jazz.id]);
   });
 });
@@ -119,6 +113,16 @@ describe('moveSection', () => {
     expect(moveSection(rock, 'down', all, ctx).postcards.map((p) => [p.recordId, p.fields])).toEqual([
       [rock.id, { position: 2 }],
       [xmas.id, { position: 1 }],
+    ]);
+  });
+
+  it('can still swap two sections that share a position', () => {
+    const a = section(5, { position: 1 });
+    const b = section(6, { position: 1 });
+    const { postcards } = moveSection(b, 'up', [a, b], ctx);
+    expect(postcards.map((p) => [p.recordId, p.fields])).toEqual([
+      [b.id, { position: 0 }],
+      [a.id, { position: 1 }],
     ]);
   });
 

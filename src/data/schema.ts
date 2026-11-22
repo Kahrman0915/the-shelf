@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BackendError } from './backend';
 import { GENRE_KEYS } from '@/domain/genres';
 import { GRADE_KEYS } from '@/domain/grades';
 import { DISCOGS_GENRES, LEGACY_GENRES, SWATCH_KEYS } from '@/domain/sections';
@@ -76,3 +77,13 @@ export const SectionSchema = z.object({
 });
 
 export type Section = z.infer<typeof SectionSchema>;
+
+/** Check a whole section against the section rules; throw naming the first broken field. */
+export function checkSection(section: unknown): Section {
+  const parsed = SectionSchema.safeParse(section);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new BackendError(`Section rules broken: ${issue.path.join('.') || 'section'} ${issue.message}`);
+  }
+  return parsed.data;
+}

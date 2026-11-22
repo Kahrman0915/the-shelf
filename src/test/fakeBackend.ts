@@ -259,7 +259,7 @@ export class FakeBackend implements Backend {
     const from = this.sectionRows.find((s) => s.id === fromId);
     if (from) {
       const into = this.sectionRows.find((s) => s.id === intoId);
-      if (!into || into.shelf_id !== from.shelf_id) throw new BackendError(REJECTED.missing);
+      if (!into || into.shelf_id !== from.shelf_id) throw new BackendError(REJECTED.sectionMissing);
       if (from.is_catch_all || from.id === into.id) throw new BackendError(REJECTED.other('P0001'));
       // Records carry a section_id from Plan 5 Task 4 on; until then there is nothing to move.
       into.discogs_genres = [...into.discogs_genres, ...from.discogs_genres.filter((g) => !into.discogs_genres.includes(g))];

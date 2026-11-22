@@ -43,7 +43,7 @@ export function useMembers(shelfId: string): Member[] | undefined {
 
 /** The shelf's sections in shelf order; undefined while loading. */
 export function useSections(shelfId: string): Section[] | undefined {
-  return useLiveQuery(async () => (await db.sections.where('shelfId').equals(shelfId).toArray()).sort((a, b) => a.position - b.position), [shelfId]);
+  return useLiveQuery(async () => (await db.sections.where('shelfId').equals(shelfId).toArray()).sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)), [shelfId]);
 }
 
 /** Whether the browser agreed to keep this phone's data; null until it has been asked. */

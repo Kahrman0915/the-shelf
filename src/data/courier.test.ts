@@ -426,7 +426,7 @@ describe('section postcards', () => {
   it('a patch for a section the shelf no longer has is rejected in plain words', async () => {
     await savePostcards(db, [sPatch(S1, { name: 'Ghost' })]);
     expect(await pushOutbox(db, backend)).toEqual({ sent: 0, rejected: 1, noSignal: false });
-    expect((await db.outbox.toArray()).map((p) => p.reason)).toEqual([REJECTED.missing]);
+    expect((await db.outbox.toArray()).map((p) => p.reason)).toEqual([REJECTED.sectionMissing]);
   });
 
   it('holds a section’s later postcards while an earlier one for it is rejected', async () => {

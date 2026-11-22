@@ -1,7 +1,7 @@
 import { BackendError } from './backend';
 import type { ShelfDB } from './db';
 import type { StoredPhoto } from './photos';
-import { RatingSchema, RecordSchema, SectionSchema, type Section, type ShelfRecord } from './schema';
+import { RatingSchema, RecordSchema, checkSection, type Section, type ShelfRecord } from './schema';
 
 type Base = {
   seq: number;
@@ -36,13 +36,18 @@ function checkRecord(record: unknown): ShelfRecord {
   return parsed.data;
 }
 
-function checkSection(section: unknown): Section {
-  const parsed = SectionSchema.safeParse(section);
-  if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    throw new BackendError(`Section rules broken: ${issue.path.join('.') || 'section'} ${issue.message}`);
+/** What the server's claim trigger does after `claimer` is written: its holiday and its Discogs genres leave the shelf's other sections. */
+async function claim(db: ShelfDB, claimer: Section, fields: Partial<Section>): Promise<void> {
+  const takesHoliday = fields.takesHoliday === true;
+  const genres = fields.discogsGenres ?? [];
+  if (!takesHoliday && genres.length === 0) return;
+  for (const other of await db.sections.where('shelfId').equals(claimer.shelfId).toArray()) {
+    if (other.id === claimer.id) continue;
+    const change: Partial<Section> = {};
+    if (takesHoliday && other.takesHoliday) change.takesHoliday = false;
+    if (other.discogsGenres.some((g) => genres.includes(g))) change.discogsGenres = other.discogsGenres.filter((g) => !genres.includes(g));
+    if (Object.keys(change).length > 0) await db.sections.put(checkSection({ ...other, ...change }));
   }
-  return parsed.data;
 }
 
 /**
@@ -68,14 +73,18 @@ export async function applyPostcard(db: ShelfDB, p: NewPostcard | Postcard): Pro
     case 'section.create': {
       if (p.fields.id !== p.recordId) throw new BackendError('Section rules broken: id doesn’t match the change’s section');
       if (await db.sections.get(p.recordId)) return;
-      await db.sections.put(checkSection(p.fields));
+      const created = checkSection(p.fields);
+      await db.sections.put(created);
+      await claim(db, created, created);
       return;
     }
     case 'section.patch': {
       if ('id' in p.fields && p.fields.id !== p.recordId) throw new BackendError('Section rules broken: a change can’t move a section to a new id');
       const existing = await db.sections.get(p.recordId);
       if (!existing) return;
-      await db.sections.put(checkSection({ ...existing, ...p.fields }));
+      const patched = checkSection({ ...existing, ...p.fields });
+      await db.sections.put(patched);
+      await claim(db, patched, p.fields);
       return;
     }
     case 'section.merge': {

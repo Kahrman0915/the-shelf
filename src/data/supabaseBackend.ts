@@ -228,12 +228,13 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
       const { error } = await client.rpc('merge_section', { p_from: fromId, p_into: intoId });
       if (!error) return;
       // A resend after the merge went through: the function can't find `from` any more, which is the
-      // outcome we wanted. If `from` is still there, something else was missing and that's a real refusal.
+      // outcome we wanted (a `from` hidden by row-level security, e.g. after the person left the shelf, reads
+      // the same way and also counts as done). If `from` is still there, something else was missing and that's a real refusal.
       if (/section not found/i.test(error.message)) {
         const { data, error: lookup } = await client.from('sections').select('id').eq('id', fromId).maybeSingle();
         if (lookup) writeFailure(lookup);
         if (data === null) return;
-        throw new BackendError(REJECTED.missing);
+        throw new BackendError(REJECTED.sectionMissing);
       }
       writeFailure(error);
     },

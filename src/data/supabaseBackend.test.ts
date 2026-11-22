@@ -668,7 +668,7 @@ describe('supabaseBackend() sections', () => {
 
   it('mergeSection rejects when from is still there but into is missing', async () => {
     const { client } = mergeClient({ error: { code: 'P0001', message: 'section not found' } }, { id: 'from-1' });
-    await expect(supabaseBackend(client).mergeSection('from-1', 'into-1')).rejects.toThrow(new BackendError(REJECTED.missing));
+    await expect(supabaseBackend(client).mergeSection('from-1', 'into-1')).rejects.toThrow(new BackendError(REJECTED.sectionMissing));
   });
 
   it('mergeSection maps other failures like records do', async () => {

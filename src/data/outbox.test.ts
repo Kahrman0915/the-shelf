@@ -222,6 +222,7 @@ describe('ensureStorageKept', () => {
 describe('applyPostcard: sections', () => {
   const S1 = '00000000-0000-4000-8000-000000000001';
   const S2 = '00000000-0000-4000-8000-000000000002';
+  const S3 = '00000000-0000-4000-8000-000000000003';
   const section = (id: string, over: Partial<Section> = {}): Section => ({
     id, shelfId: SHELF, name: 'Rock', color: 'rock', position: 1, discogsGenres: [], takesHoliday: false, isCatchAll: false, legacyGenre: 'misc', updatedAt: WHEN, ...over,
   });
@@ -261,6 +262,42 @@ describe('applyPostcard: sections', () => {
     await sApply(sMerge(S1, S2));
     expect(await db.sections.get(S1)).toBeUndefined();
     expect(await db.sections.get(S2)).toMatchObject({ discogsGenres: ['Jazz', 'Blues', 'Rock'], takesHoliday: true });
+  });
+
+  it('section.merge does nothing while the section it goes into is not on the phone', async () => {
+    await db.sections.put(section(S1, { discogsGenres: ['Rock'] }));
+    await sApply(sMerge(S1, S2));
+    expect(await db.sections.get(S1)).toBeDefined();
+  });
+
+  it('a section that takes holiday takes it off the shelf’s others, and repeating is harmless', async () => {
+    await db.sections.bulkPut([section(S1, { takesHoliday: true }), section(S2, { name: 'Jazz' }), section(S3, { name: 'Other', shelfId: '99999999-9999-4999-8999-999999999999', takesHoliday: true })]);
+    await sApply(sPatch(S2, { takesHoliday: true }));
+    await sApply(sPatch(S2, { takesHoliday: true }));
+    expect((await db.sections.get(S1))?.takesHoliday).toBe(false);
+    expect((await db.sections.get(S2))?.takesHoliday).toBe(true);
+    expect((await db.sections.get(S3))?.takesHoliday).toBe(true);
+  });
+
+  it('a created section claims holiday and genres too', async () => {
+    await db.sections.put(section(S1, { takesHoliday: true, discogsGenres: ['Rock', 'Blues'] }));
+    await sApply(sCreate(section(S2, { name: 'Jazz', takesHoliday: true, discogsGenres: ['Blues'] })));
+    expect(await db.sections.get(S1)).toMatchObject({ takesHoliday: false, discogsGenres: ['Rock'] });
+  });
+
+  it('claiming genres removes exactly those from the others; a genre added to them elsewhere survives', async () => {
+    await db.sections.bulkPut([section(S1, { discogsGenres: ['Rock', 'Blues'] }), section(S2, { name: 'Jazz', discogsGenres: ['Jazz'] })]);
+    await sApply(sPatch(S2, { discogsGenres: ['Jazz', 'Blues'] }));
+    expect((await db.sections.get(S1))?.discogsGenres).toEqual(['Rock']);
+    await db.sections.update(S1, { discogsGenres: ['Rock', 'Latin'] }); // another phone gave it Latin
+    await sApply(sPatch(S2, { discogsGenres: ['Jazz', 'Blues'] }));
+    expect((await db.sections.get(S1))?.discogsGenres).toEqual(['Rock', 'Latin']);
+  });
+
+  it('a patch that doesn’t mention holiday or genres leaves the others alone', async () => {
+    await db.sections.bulkPut([section(S1, { takesHoliday: true, discogsGenres: ['Rock'] }), section(S2, { name: 'Jazz', takesHoliday: false })]);
+    await sApply(sPatch(S2, { name: 'Jazz!' }));
+    expect(await db.sections.get(S1)).toMatchObject({ takesHoliday: true, discogsGenres: ['Rock'] });
   });
 
   it('section.merge refuses to merge the catch-all away', async () => {
