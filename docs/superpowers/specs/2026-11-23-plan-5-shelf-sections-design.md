@@ -149,7 +149,7 @@ Miscellaneous is his catch-all, and it stays fifth. *Our call (builder check):* 
 - **`bootstrap()`** creates the starter set when it creates a shelf.
 - **The changeover:**
   - `records.genre` stays for now, kept filled so older app versions keep working: each section carries a hidden `legacy_genre` (one of the nine; new sections get `misc`), and a trigger keeps `records.genre` equal to the section's `legacy_genre`.
-  - If an old app inserts a record without `section_id`, or changes only `genre`, a trigger moves the record to the first section (by position) whose `legacy_genre` matches. If none matches, it goes to the catch-all. *Our call (builder check):* an old-app genre edit moves the record; it's never quietly undone.
+  - If an old app inserts a record without `section_id`, or changes only `genre`, a trigger moves the record to the first section (by position) whose `legacy_genre` matches. If none matches (that section was merged away), it follows the redirect from the section's derived id to the survivor, and failing that goes to the catch-all. *Our call (builder check):* an old-app genre edit moves the record; it's never quietly undone.
   - The column and triggers are removed in a later plan, once every phone has updated.
 
 ### 6.2 App
