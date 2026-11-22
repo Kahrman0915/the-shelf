@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ChevronRight } from 'lucide-react';
 import { useBackend } from '@/app/BackendContext';
 import { useCurrentShelf } from '@/app/CurrentShelf';
 import { SignOutButton } from '@/app/SignOutButton';
@@ -80,6 +80,11 @@ export function SettingsScreen() {
           ))}
         </ul>
       </section>
+
+      <Link to="/settings/sections" className="flex h-12 items-center justify-between border-y border-line text-[17px] font-bold">
+        Sections
+        <ChevronRight className="size-5 text-ink-muted" aria-hidden />
+      </Link>
 
       <section className="flex flex-col gap-3">
         <h2 className={SECTION}>Invite someone</h2>

@@ -7,6 +7,7 @@ import { ArrivalsScreen } from '@/screens/ArrivalsScreen';
 import { EditScreen } from '@/screens/EditScreen';
 import { NameScreen } from '@/screens/NameScreen';
 import { PriceCheckScreen } from '@/screens/PriceCheckScreen';
+import { SectionsScreen } from '@/screens/SectionsScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { ShelfScreen } from '@/screens/ShelfScreen';
 import { ShowScreen } from '@/screens/ShowScreen';
@@ -35,7 +36,7 @@ function readMode(): string | null {
 /** Home is midnight; show mode (search and price check) is paper. The last mode is remembered on this phone. */
 function useModeTheme() {
   const { pathname } = useLocation();
-  const show = pathname === '/settings' || isShowPath(pathname);
+  const show = pathname === '/settings' || pathname.startsWith('/settings/') || isShowPath(pathname);
   useEffect(() => {
     if (show) delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = 'midnight';
@@ -124,6 +125,7 @@ export default function App() {
             <Route path="/record/:id/edit" element={<EditScreen />} />
             <Route path="/price/:id" element={<PriceCheckScreen />} />
             <Route path="/settings" element={<SettingsScreen />} />
+            <Route path="/settings/sections" element={<SectionsScreen />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <UndoBar />

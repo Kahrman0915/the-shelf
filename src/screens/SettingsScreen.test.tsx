@@ -44,6 +44,15 @@ beforeEach(async () => {
 });
 
 describe('Shelf settings', () => {
+  it('links to the Sections screen, which keeps the paper theme', async () => {
+    renderSettings(backendFor(K));
+    const link = await screen.findByRole('link', { name: /^Sections/ });
+    expect(link.className).toContain('h-12');
+    await userEvent.click(link);
+    expect(await screen.findByRole('heading', { name: 'Sections' })).toBeInTheDocument();
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+  });
+
   it('lists who is on the shelf', async () => {
     renderSettings(backendFor(K));
     expect(await screen.findByText('Kahrman')).toBeInTheDocument();

@@ -1,0 +1,90 @@
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+import { sectionsFromSet } from '@/data/db';
+import { KAHRMANS_NINE, sectionIdFor } from '@/domain/sections';
+import { SectionSheet } from './SectionSheet';
+
+const SHELF = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const sections = sectionsFromSet(SHELF, KAHRMANS_NINE, '2026-01-01T00:00:00.000Z');
+const rock = sections.find((s) => s.id === sectionIdFor(SHELF, 'rock'))!;
+const jazz = sections[0];
+const christmas = sections[sections.length - 1];
+
+function setup(section = rock, onSave = vi.fn(), onCancel = vi.fn()) {
+  render(<SectionSheet open section={section} sections={sections} onSave={onSave} onCancel={onCancel} />);
+  return { onSave, onCancel };
+}
+
+describe('SectionSheet', () => {
+  it('shows the name, 12 colours, 15 genres and the holiday switch', () => {
+    setup();
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Rock');
+    expect(screen.getAllByRole('radio')).toHaveLength(12);
+    expect(screen.getByRole('radio', { name: 'rock' })).toBeChecked();
+    expect(screen.getByText('Discogs genres that go here')).toBeInTheDocument();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(15);
+    expect(screen.getByRole('checkbox', { name: 'Rock' })).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Holiday records go here' })).not.toBeChecked();
+  });
+
+  it('says where a claimed genre lives now', () => {
+    setup();
+    expect(screen.getByRole('checkbox', { name: 'Jazz (in Jazz / big band)' })).toBeInTheDocument();
+  });
+
+  it('will not save an empty or over-40 name', async () => {
+    const { onSave } = setup();
+    const name = screen.getByRole('textbox', { name: 'Name' });
+    await userEvent.clear(name);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    await userEvent.type(name, 'x'.repeat(41));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('only notes a name another section has, and still saves', async () => {
+    const { onSave } = setup();
+    const name = screen.getByRole('textbox', { name: 'Name' });
+    await userEvent.clear(name);
+    await userEvent.type(name, 'jazz / BIG band');
+    expect(screen.getByText(/another section/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves the changes and the moves; Cancel saves nothing', async () => {
+    const { onSave, onCancel } = setup();
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), ' hard');
+    await userEvent.click(screen.getByRole('radio', { name: 'teal' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Blues' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Move up' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onSave).toHaveBeenCalledWith({ name: 'Rock hard', color: 'teal', discogsGenres: ['Rock', 'Blues'], takesHoliday: false }, ['up']);
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it('disables Move up on the first section and Move down on the last', () => {
+    setup(jazz);
+    expect(screen.getByRole('button', { name: 'Move up' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Move down' })).toBeEnabled();
+  });
+
+  it('disables Move down on the last section', () => {
+    setup(christmas);
+    expect(screen.getByRole('button', { name: 'Move down' })).toBeDisabled();
+  });
+
+  it('every control is at least 48px tall', () => {
+    setup();
+    const tall = (el: HTMLElement) => /(^|\s)(min-)?h-12(\s|$)/.test(el.className) || /(^|\s)(min-)?h-12(\s|$)/.test(el.closest('label')?.className ?? '');
+    const controls = [
+      ...screen.getAllByRole('radio'), ...screen.getAllByRole('checkbox'), screen.getByRole('switch'), screen.getByRole('textbox'),
+      ...screen.getAllByRole('button'),
+    ];
+    for (const c of controls) expect(tall(c), c.outerHTML).toBe(true);
+  });
+});

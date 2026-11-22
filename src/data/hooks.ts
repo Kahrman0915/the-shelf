@@ -47,6 +47,15 @@ export function useSections(shelfId: string): Section[] | undefined {
   return useLiveQuery(async () => (await db.sections.where('shelfId').equals(shelfId).toArray()).sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)), [shelfId]);
 }
 
+/** How many live records each section holds, by section id (a section with none has no entry); undefined while loading. */
+export function useSectionCounts(shelfId: string): ReadonlyMap<string, number> | undefined {
+  return useLiveQuery(async () => {
+    const counts = new Map<string, number>();
+    await db.records.where('shelfId').equals(shelfId).filter((r) => r.deletedAt === null).each((r) => counts.set(r.sectionId, (counts.get(r.sectionId) ?? 0) + 1));
+    return counts;
+  }, [shelfId]);
+}
+
 /** The shelf's sections by id, for colouring and naming records; undefined while loading, so nothing is drawn in the wrong colour first. */
 export function useSectionsById(shelfId: string): ReadonlyMap<string, Section> | undefined {
   const sections = useSections(shelfId);
