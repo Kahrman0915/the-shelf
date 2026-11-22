@@ -99,3 +99,44 @@ From build 2a's go-live (2026-11-22). Build 2a shipped "Find a record": a Discog
 - "Your shelf sections" (`docs/ideas.md`): the genre table in `src/domain/discogsGenre.ts` becomes per-shelf data.
 - Minor UX: an auth-server outage reads as "Sign in again to search."; the result-card status line could be an always-mounted live region; `parseInt` accepts years like "1978-05".
 - The ten-record accuracy check on the phone (Task 6 Step 6) is still to do.
+
+# Plan 4b build 1 → next handoff
+
+From build 4b-1's go-live (2026-11-22). Build 4b-1 shipped record photos: front and back, taken on the phone, automatically cropped to the sleeve and squared up, stored privately for the shelf, Flip on the Record screen, photos on Add and Edit.
+
+## Must know
+- **Storage layout:**
+  - private bucket `covers` (2 MB, JPEG only);
+  - path = `{shelfId}/{recordId}/{side}-{photoId}.jpg`, which is also the value of `records.cover_path` / `back_path`;
+  - check constraints tie a path to its own shelf, record and side;
+  - `storage.objects` policies use `public.can_use_cover(name)` (first folder = a shelf you're a member of);
+  - every photo gets a fresh `photoId`, so paths are never reused.
+- **Phone side:**
+  - Dexie v5 holds `photos` (bytes as ArrayBuffer, never Blob: Blobs don't survive fake-indexeddb) and `photoDrafts`;
+  - the v5 upgrade forgets `lastPulledAt:*` so the first pull refetches `back_path`;
+  - any future column needs the same treatment if old apps could have pulled rows that have it.
+- **Outbox:**
+  - `photo.upload` / `photo.delete` postcards, in the order create → uploads → patch → deletes;
+  - a refused delete counts as sent (spec: not the person's problem);
+  - uploads get a 120 s timeout (`timeoutFor` in `src/data/supabase.ts`), and everything else gets 15 s.
+- **OpenCV.js** (`@techstark/opencv-js` 4.12.0-release.1, about 10.8 MB):
+  - **Loading:** loaded lazily through the `src/photo/opencv.ts` wrapper. The package's Module is a thenable that froze the production build and Vitest, so keep the wrapper and `test.deps.interopDefault: false`.
+  - **Caching:** kept out of the precache, and runtime-cached CacheFirst by a plugin that only keeps real JavaScript responses (a Vercel rewrite could otherwise cache index.html as OpenCV).
+  - **Fallback:** if it fails or doesn't load within 20 s, photos fall back to the centre square.
+- **iPhone camera:** `input.click()` must run synchronously inside the tap. That's why the back needs its own "Take the back" tap and why the tips-seen flag is read before any tap.
+- **Unsaved mark:** `useUnsavedMark` is reference-counted, because Edit has two marks (form and photos).
+- **Test links:** branch previews have Vercel SSO protection, so you sign in to Vercel first. The stable link is `the-shelf-git-<branch>-kahrman0915s-projects.vercel.app`. Previews use the production Supabase.
+
+## Carry-overs
+- **Build 4b-2 (recognition):** Claude Haiku reads both photos → Discogs by barcode, then catalog number, then name.
+  - It needs an Anthropic Console account with a spending cap. `ANTHROPIC_API_KEY` is set in the Supabase dashboard, never in Terminal.
+  - The Add screen's "Now find it below…" line is the placeholder that recognition replaces.
+- **Deferred, rare or cost-only:**
+  - Undo still uploads, then deletes, photos not yet sent.
+  - Undo can overwrite drafts taken during the undo window.
+  - Sign-out silently clears unsaved drafts.
+  - A late download can land in a cleared notebook.
+  - Photo downloads still time out at 15 s.
+  - Orphaned files can stay in the bucket (no cleanup job).
+- **Watch on the phone:** memory when decoding full-resolution photos (24 MP), and how often squaring misses. If it misses often, add the corner check (approach A from the design).
+- The flaky `App.test.tsx` sign-in / sign-out tests under full parallel load.
