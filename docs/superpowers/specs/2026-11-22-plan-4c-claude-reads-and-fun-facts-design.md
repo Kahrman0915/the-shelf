@@ -1,7 +1,7 @@
 # Plan 4c: Claude reads the sleeve, and writes the fun fact (design)
 
 Date: 2026-11-22
-Status: draft, written while Kahrman was out; awaiting builder check and his approval
+Status: builder-checked; awaiting Kahrman's approval
 Builds on:
 - `2026-11-22-plan-4b-photo-add-design.md`: photos are live, and §4 there outlined recognition.
 - `2026-11-12-plan-4a-build-2a-discogs-lookup-design.md`: Find a record, `discogs-search`, and the Discogs terms.
@@ -51,7 +51,8 @@ He tested build 4b-1 today and the crops came out clean and squared. But it "did
 Looking it up…                       ← replaces "Now find it below…"
 ```
 Then one of four things happens:
-- **Exact match:** saved, as when you tap a card: `✓ On the shelf: A Charlie Brown Christmas · Undo`. The photos clear for the next sleeve. Undo brings them back, as now.
+- **Exact match:** saved, as when you tap a card. *Our call (builder check):* the line also names the pressing, because in the catch-up loop it's the only chance to notice a wrong one: `✓ On the shelf: A Charlie Brown Christmas` with `1988 · Fantasy · F-8431` under it, then `Undo`. The photos clear for the next sleeve.
+- **Undo after an automatic save** (*our call, builder check*): the photos come back as now, but the sleeve is **not read again**, which would only save the same pressing. The Find box fills with what Claude read and its name search runs, so the other pressings appear as cards to tap.
 - **Already on the shelf:** the existing question, **Add these photos to the one on your shelf?**
 - **Several pressings:** `Which pressing is yours?` above the usual cards, tagged **Already on the shelf** where that applies, with the Discogs credit. Tap one and it saves with the photos.
 - **No match:** `Couldn’t pin it down. Check the search below.` The Find box is filled with what Claude read (for example `vince guaraldi trio a charlie brown christmas`) and its search runs straight away.
@@ -63,7 +64,7 @@ Other states:
 - **Retake:** retaking a photo after a reading starts a new reading.
 
 ### 3.2 Record screen: the fun fact
-- **When there's a fact:** it shows as today, with `Source: {host}`, plus a quiet `Found by Claude` line. *Our call*, so you can tell it from one you typed.
+- **When there's a fact:** it shows as today, with `Source: {host}`. *Our call (builder check):* there's no "Found by Claude" label. A shared label would need a new database column for little gain, and the source link already shows where the fact came from.
 - **While it's being found:** `Finding a fun fact…` in the fun-fact spot.
 - **No fact:** a **Find a fun fact** button (`h-12`). If nothing is found: `Claude couldn’t find one with a source.` The button stays for another try another day.
 - **Edit:** the fun fact and its source stay editable, as now. A fact you typed is never replaced.
