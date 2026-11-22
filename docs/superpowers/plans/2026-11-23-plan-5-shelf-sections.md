@@ -21,21 +21,37 @@
 
 ## Global Constraints
 
-- **The two sets** (spec §5), in this order:
+- **The two sets** (spec §5), each in this order (position 0 first):
 
-  | Kahrman's nine | Starter set | Colour | Discogs genres | Holiday | Catch-all |
+  Kahrman's nine:
+
+  | Name | Legacy genre | Colour | Discogs genres | Holiday | Catch-all |
   |---|---|---|---|---|---|
-  | Jazz / big band | Jazz | jazz | Jazz | | |
-  | Rock | Rock | rock | Rock | | |
-  | Pop / soul / contemporary | Soul & Funk | popsoul | Funk / Soul | | |
-  | Popular pop | Pop | popularpop | Pop | | |
-  | Miscellaneous | Country & Folk | misc / country | (catch-all) / Folk, World, & Country | | Kahrman's 5th / starter's 9th |
-  | Country | Reggae | country / reggae | Folk, World, & Country / Reggae | | |
-  | Reggae | Soundtracks | reggae / soundtracks | Reggae / Stage & Screen | | |
-  | Soundtracks | Christmas | soundtracks / christmas | Stage & Screen / — | / ✓ | |
-  | Christmas | Everything else | christmas / misc | — / (catch-all) | ✓ / | / ✓ |
+  | Jazz / big band | jazz | jazz | Jazz | | |
+  | Rock | rock | rock | Rock | | |
+  | Pop / soul / contemporary | popsoul | popsoul | Funk / Soul | | |
+  | Popular pop | popularpop | popularpop | Pop | | |
+  | Miscellaneous | misc | misc | | | ✓ |
+  | Country | country | country | Folk, World, & Country | | |
+  | Reggae | reggae | reggae | Reggae | | |
+  | Soundtracks | soundtracks | soundtracks | Stage & Screen | | |
+  | Christmas | christmas | christmas | | ✓ | |
 
-- **Legacy genres:** each section in either set carries the old genre key it replaces (`jazz`, `rock`, `popsoul`, `popularpop`, `misc`, `country`, `reggae`, `soundtracks`, `christmas`). The catch-all is `misc`. Sections made later carry `misc`.
+  The starter set:
+
+  | Name | Legacy genre | Colour | Discogs genres | Holiday | Catch-all |
+  |---|---|---|---|---|---|
+  | Jazz | jazz | jazz | Jazz | | |
+  | Rock | rock | rock | Rock | | |
+  | Soul & Funk | popsoul | popsoul | Funk / Soul | | |
+  | Pop | popularpop | popularpop | Pop | | |
+  | Country & Folk | country | country | Folk, World, & Country | | |
+  | Reggae | reggae | reggae | Reggae | | |
+  | Soundtracks | soundtracks | soundtracks | Stage & Screen | | |
+  | Christmas | christmas | christmas | | ✓ | |
+  | Everything else | misc | misc | | | ✓ |
+
+- **Legacy genres:** each section in either set carries the old genre key it replaces (the column above). Sections made later carry `misc`.
 - **Derived ids:** the sets the migration and `bootstrap()` create use `md5(shelf_id::text || ':' || legacy_genre)::uuid`. The app's `sectionIdFor(shelfId, legacyGenre)` must give the identical string (lower-case, hyphenated 8-4-4-4-12). These are not RFC v4 uuids: validate section ids with Zod `z.guid()`, not `z.uuid()`.
 - **Swatch keys** (12): `jazz rock popsoul popularpop misc country reggae soundtracks christmas teal slate sand`, as CSS variables `--section-{key}` in both themes. The nine reuse today's `--genre-*` values. Pick teal, slate and sand to pass contrast in both themes.
 - **Discogs' 15 genres:** `Blues`, `Brass & Military`, `Children's`, `Classical`, `Electronic`, `Folk, World, & Country`, `Funk / Soul`, `Hip Hop`, `Jazz`, `Latin`, `Non-Music`, `Pop`, `Reggae`, `Rock`, `Stage & Screen`.
