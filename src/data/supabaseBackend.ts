@@ -1,5 +1,5 @@
 import { isAuthRetryableFetchError, type SupabaseClient } from '@supabase/supabase-js';
-import { BackendError, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED, type Backend, type FoundRecord, type Invite, type Member, type SignedIn } from './backend';
+import { BackendError, COVERS_BUCKET, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED, type Backend, type FoundRecord, type Invite, type Member, type SignedIn } from './backend';
 import { AUTH_STORAGE_KEY, fetchWithTimeout, readConfig, supabase } from './supabase';
 
 const PAGE = 1000;
@@ -39,6 +39,14 @@ export function rejectionReason(e: { code?: string; message: string }): string {
 
 function writeFailure(error: { code?: string; message: string }): never {
   throw new BackendError(offlineLooking(error) ? NO_SIGNAL : rejectionReason(error));
+}
+
+/** Plain words for why Storage turned a photo request down. */
+function photoFailure(error: { message: string; statusCode?: string }): never {
+  if (offlineLooking(error)) throw new BackendError(NO_SIGNAL);
+  if (error.statusCode === '403' || /row-level security|unauthorized/i.test(error.message)) throw new BackendError(REJECTED.permission);
+  if (error.statusCode === '413' || /too large|maximum allowed size/i.test(error.message)) throw new BackendError(REJECTED.photoTooBig);
+  throw new BackendError(REJECTED.other(`photo ${error.statusCode ?? 'unknown'}`));
 }
 
 export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
@@ -161,6 +169,26 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
       if (!error) return;
       if (error.code !== '23505') writeFailure(error);
       if (!(await update())) throw new BackendError(REJECTED.missing);
+    },
+
+    async uploadPhoto(path, bytes) {
+      const { error } = await client.storage.from(COVERS_BUCKET).upload(path, bytes, { contentType: 'image/jpeg', upsert: true });
+      if (error) photoFailure(error as { message: string; statusCode?: string });
+    },
+
+    async downloadPhoto(path) {
+      const { data, error } = await client.storage.from(COVERS_BUCKET).download(path);
+      if (error) {
+        const e = error as { message: string; statusCode?: string };
+        if (e.statusCode === '404' || (e.statusCode === '400' && /not found/i.test(e.message))) return null;
+        photoFailure(e);
+      }
+      return await data.arrayBuffer();
+    },
+
+    async deletePhoto(path) {
+      const { error } = await client.storage.from(COVERS_BUCKET).remove([path]);
+      if (error) photoFailure(error as { message: string; statusCode?: string });
     },
 
     async searchDiscogs(query): Promise<FoundRecord[]> {

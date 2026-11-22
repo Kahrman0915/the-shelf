@@ -161,4 +161,41 @@ describe('FakeBackend', () => {
       await expect(b.setRating(REC, K, 3)).rejects.toThrow(NO_SIGNAL);
     });
   });
+  describe('photos', () => {
+    const P = 'shelf/rec/front-1.jpg';
+    const bytes = () => new Uint8Array([9, 8, 7]).buffer;
+
+    it('uploads, then downloads the same bytes', async () => {
+      const b = new FakeBackend({});
+      await b.uploadPhoto(P, bytes());
+      expect([...new Uint8Array((await b.downloadPhoto(P))!)]).toEqual([9, 8, 7]);
+      expect(b.photos.has(P)).toBe(true);
+    });
+
+    it('deletes, then downloads null; deleting a missing photo is fine', async () => {
+      const b = new FakeBackend({});
+      await b.uploadPhoto(P, bytes());
+      await b.deletePhoto(P);
+      expect(await b.downloadPhoto(P)).toBeNull();
+      await expect(b.deletePhoto(P)).resolves.toBeUndefined();
+    });
+
+    it('throws NO_SIGNAL offline', async () => {
+      const b = new FakeBackend({});
+      b.online = false;
+      await expect(b.downloadPhoto(P)).rejects.toThrow(NO_SIGNAL);
+      await expect(b.uploadPhoto(P, bytes())).rejects.toThrow(NO_SIGNAL);
+      await expect(b.deletePhoto(P)).rejects.toThrow(NO_SIGNAL);
+    });
+
+    it('honours rejectNext and loseNextReply on upload', async () => {
+      const b = new FakeBackend({});
+      b.rejectNext = REJECTED.photoTooBig;
+      await expect(b.uploadPhoto(P, bytes())).rejects.toThrow(REJECTED.photoTooBig);
+      expect(b.photos.size).toBe(0);
+      b.loseNextReply = true;
+      await expect(b.uploadPhoto(P, bytes())).rejects.toThrow(NO_SIGNAL);
+      expect(b.photos.has(P)).toBe(true);
+    });
+  });
 });

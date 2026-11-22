@@ -362,3 +362,83 @@ describe('supabaseBackend().searchDiscogs', () => {
     expect(await backend.searchDiscogs(`  ${'x'.repeat(200)}  `)).toEqual([found]);
   });
 });
+
+describe('supabaseBackend() photos', () => {
+  const PATH = 'shelf-1/rec-1/front-abc.jpg';
+  function storageClient() {
+    const bucket = { upload: vi.fn(), download: vi.fn(), remove: vi.fn() };
+    const from = vi.fn(() => bucket);
+    return { bucket, from, backend: supabaseBackend({ storage: { from } } as never) };
+  }
+
+  it('uploadPhoto sends a JPEG to the covers bucket, overwriting', async () => {
+    const { bucket, from, backend } = storageClient();
+    bucket.upload.mockResolvedValue({ data: {}, error: null });
+    const bytes = new Uint8Array([1, 2, 3]).buffer;
+    await backend.uploadPhoto(PATH, bytes);
+    expect(from).toHaveBeenCalledWith('covers');
+    expect(bucket.upload).toHaveBeenCalledWith(PATH, bytes, { contentType: 'image/jpeg', upsert: true });
+  });
+
+  it('uploadPhoto: offline → NO_SIGNAL', async () => {
+    const { bucket, backend } = storageClient();
+    bucket.upload.mockResolvedValue({ data: null, error: { message: 'Failed to fetch' } });
+    await expect(backend.uploadPhoto(PATH, new ArrayBuffer(1))).rejects.toThrow(new BackendError(NO_SIGNAL));
+  });
+
+  it('uploadPhoto: refused by the rules → REJECTED.permission', async () => {
+    const { bucket, backend } = storageClient();
+    bucket.upload.mockResolvedValue({ data: null, error: { message: 'new row violates row-level security policy', statusCode: '403' } });
+    await expect(backend.uploadPhoto(PATH, new ArrayBuffer(1))).rejects.toThrow(new BackendError(REJECTED.permission));
+  });
+
+  it('uploadPhoto: too large → REJECTED.photoTooBig', async () => {
+    const { bucket, backend } = storageClient();
+    bucket.upload.mockResolvedValue({ data: null, error: { statusCode: '413', message: 'Payload too large' } });
+    await expect(backend.uploadPhoto(PATH, new ArrayBuffer(1))).rejects.toThrow(new BackendError(REJECTED.photoTooBig));
+  });
+
+  it('uploadPhoto: anything else → REJECTED.other with the status', async () => {
+    const { bucket, backend } = storageClient();
+    bucket.upload.mockResolvedValue({ data: null, error: { statusCode: '500', message: 'Boom' } });
+    await expect(backend.uploadPhoto(PATH, new ArrayBuffer(1))).rejects.toThrow(new BackendError(REJECTED.other('photo 500')));
+  });
+
+  it('downloadPhoto returns the bytes', async () => {
+    const { bucket, from, backend } = storageClient();
+    bucket.download.mockResolvedValue({ data: new Blob([new Uint8Array([1, 2])]), error: null });
+    const got = await backend.downloadPhoto(PATH);
+    expect(from).toHaveBeenCalledWith('covers');
+    expect(bucket.download).toHaveBeenCalledWith(PATH);
+    expect(got).toBeInstanceOf(ArrayBuffer);
+    expect([...new Uint8Array(got!)]).toEqual([1, 2]);
+  });
+
+  it('downloadPhoto: not there yet → null', async () => {
+    const { bucket, backend } = storageClient();
+    bucket.download.mockResolvedValue({ data: null, error: { message: 'Object not found', statusCode: '404' } });
+    expect(await backend.downloadPhoto(PATH)).toBeNull();
+    bucket.download.mockResolvedValue({ data: null, error: { message: 'Object not found', statusCode: '400' } });
+    expect(await backend.downloadPhoto(PATH)).toBeNull();
+  });
+
+  it('downloadPhoto: offline → NO_SIGNAL', async () => {
+    const { bucket, backend } = storageClient();
+    bucket.download.mockResolvedValue({ data: null, error: { message: 'Failed to fetch' } });
+    await expect(backend.downloadPhoto(PATH)).rejects.toThrow(new BackendError(NO_SIGNAL));
+  });
+
+  it('deletePhoto removes that one path', async () => {
+    const { bucket, from, backend } = storageClient();
+    bucket.remove.mockResolvedValue({ data: [], error: null });
+    await backend.deletePhoto(PATH);
+    expect(from).toHaveBeenCalledWith('covers');
+    expect(bucket.remove).toHaveBeenCalledWith([PATH]);
+  });
+
+  it('deletePhoto: offline → NO_SIGNAL', async () => {
+    const { bucket, backend } = storageClient();
+    bucket.remove.mockResolvedValue({ data: null, error: { message: 'Failed to fetch' } });
+    await expect(backend.deletePhoto(PATH)).rejects.toThrow(new BackendError(NO_SIGNAL));
+  });
+});

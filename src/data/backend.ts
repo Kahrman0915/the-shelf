@@ -21,6 +21,10 @@ export interface ShelfWriter {
   insertRecord(row: NewRecordRow): Promise<'inserted' | 'already-there'>;
   patchRecord(id: string, fields: RecordPatchRow): Promise<'patched' | 'missing'>;
   setRating(recordId: string, userId: string, value: number): Promise<void>;
+  /** Stores a JPEG in the covers bucket at `path`. Overwrites, so it's safe to repeat. */
+  uploadPhoto(path: string, bytes: ArrayBuffer): Promise<void>;
+  /** Removes the photo at `path`. Deleting a missing file is not an error. */
+  deletePhoto(path: string): Promise<void>;
 }
 
 export interface Backend extends ShelfSource, ShelfWriter {
@@ -35,6 +39,8 @@ export interface Backend extends ShelfSource, ShelfWriter {
   signOut(): Promise<void>;
   /** Looks a record up on Discogs. Resolves [] for a query under 2 characters without calling the server. Results are never stored. */
   searchDiscogs(query: string): Promise<FoundRecord[]>;
+  /** The photo's bytes, or null when it isn't there (yet). Throws BackendError(NO_SIGNAL) offline. */
+  downloadPhoto(path: string): Promise<ArrayBuffer | null>;
 }
 
 /** A failure worth showing to the person holding the phone; the message says what to do. */
@@ -44,6 +50,9 @@ export class BackendError extends Error {
     this.name = 'BackendError';
   }
 }
+
+/** The private Storage bucket holding record photos. Not part of a photo's path. */
+export const COVERS_BUCKET = 'covers';
 
 export const NO_SIGNAL = 'No signal. Try again when you’re back online.';
 
@@ -61,4 +70,6 @@ export const REJECTED = {
   other: (code: string) => `The shelf refused this change. (${code})`,
   /** Set on the phone, not by the shelf: a waiting change no longer fits the record after a pull. */
   noLongerFits: 'This change doesn’t fit the record any more.',
+  photoGone: 'That photo is no longer on this phone.',
+  photoTooBig: 'That photo is too big for the shelf.',
 };

@@ -81,6 +81,8 @@ describe('pushOutbox', () => {
     const held: ShelfWriter = {
       insertRecord: (row) => backend.insertRecord(row),
       setRating: (recordId, userId, value) => backend.setRating(recordId, userId, value),
+      uploadPhoto: (path, bytes) => backend.uploadPhoto(path, bytes),
+      deletePhoto: (path) => backend.deletePhoto(path),
       patchRecord: async (id, fields) => {
         calls++;
         if (calls === 1) await gate;
@@ -183,6 +185,8 @@ describe('pushOutbox', () => {
     const writer: ShelfWriter = {
       insertRecord: (row) => backend.insertRecord(row),
       setRating: (recordId, userId, value) => backend.setRating(recordId, userId, value),
+      uploadPhoto: (path, bytes) => backend.uploadPhoto(path, bytes),
+      deletePhoto: (path) => backend.deletePhoto(path),
       patchRecord: async () => {
         throw bug;
       },

@@ -30,6 +30,8 @@ export class FakeBackend implements Backend {
   discogsFails: 'rate-limited' | 'down' | null = null;
   /** Every query that reached the "server" (under-2-character ones never do). */
   discogsCalls: string[] = [];
+  /** The photos on the "server", by storage path. */
+  photos = new Map<string, ArrayBuffer>();
   private lastStamp = 0;
   private users: Record<string, string>;
   private profiles: Record<string, string>;
@@ -197,6 +199,23 @@ export class FakeBackend implements Backend {
       if (row?.status === 'new_arrival') Object.assign(row, { status: 'owned', updated_at: this.stamp() });
     }
     this.endWrite();
+  }
+
+  async uploadPhoto(path: string, bytes: ArrayBuffer) {
+    this.beginWrite();
+    this.photos.set(path, bytes.slice(0));
+    this.endWrite();
+  }
+
+  async deletePhoto(path: string) {
+    this.beginWrite();
+    this.photos.delete(path);
+    this.endWrite();
+  }
+
+  async downloadPhoto(path: string) {
+    this.guard();
+    return this.photos.get(path)?.slice(0) ?? null;
   }
 
   /** Test helper: a record as the "server" holds it. */
