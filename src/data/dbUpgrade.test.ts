@@ -162,6 +162,22 @@ describe('version 5', () => {
     db.close();
   });
 
+  it('forgets when each shelf was last pulled, so the first pull after updating fetches back photos again', async () => {
+    await version4Phone();
+    const v4 = new Dexie(name);
+    v4.version(4).stores({ meta: 'key' });
+    await v4.table('meta').bulkPut([
+      { key: `lastPulledAt:${SHELF}`, value: OLD },
+      { key: 'lastPulledAt:other-shelf', value: OLD },
+      { key: 'session', value: JSON.stringify({ userId: ME, email: 'me@example.com', shelfId: SHELF }) },
+    ]);
+    v4.close();
+
+    const db = new ShelfDB(name);
+    expect((await db.meta.toArray()).map((m) => m.key)).toEqual(['session']);
+    db.close();
+  });
+
   it('adds the photos and photoDrafts tables', async () => {
     await version4Phone();
     const db = new ShelfDB(name);

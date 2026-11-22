@@ -79,6 +79,9 @@ export class ShelfDB extends Dexie {
           .modify((p: { kind: string; fields: Record<string, unknown> }) => {
             if (p.kind === 'record.create') fill(PHOTO_KEYS)(p.fields);
           });
+        // An older app dropped back_path when it pulled, and incremental pulls never fetch unchanged rows again.
+        // Forget when each shelf was last pulled, so the first pull after updating is a full one.
+        await tx.table('meta').where('key').startsWith(LAST_PULLED_PREFIX).delete();
       });
   }
 }
@@ -86,6 +89,9 @@ export class ShelfDB extends Dexie {
 const DETAIL_KEYS = ['funFact', 'funFactSource', 'coverImageUrl'] as const;
 
 const PHOTO_KEYS = ['backPath'] as const;
+
+/** The meta keys sync.ts keeps per shelf: `lastPulledAt:{shelfId}`. */
+export const LAST_PULLED_PREFIX = 'lastPulledAt:';
 
 /** An upgrade step: give a record (or a queued create's fields) null for each of these keys it lacks. */
 const fill =

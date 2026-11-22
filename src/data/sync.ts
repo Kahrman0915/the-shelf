@@ -1,12 +1,12 @@
 import { BackendError, REJECTED, type ShelfSource } from './backend';
-import { readSession, type ShelfDB } from './db';
+import { LAST_PULLED_PREFIX, readSession, type ShelfDB } from './db';
 import { applyPostcard } from './outbox';
 import { ratingFromRow, recordFromRow } from './rowMapping';
 
 /** Re-ask for the last five minutes each time, so a change committed a moment late isn't missed. */
 const OVERLAP_MS = 5 * 60 * 1000;
 
-const lastPulledKey = (shelfId: string) => `lastPulledAt:${shelfId}`;
+const lastPulledKey = (shelfId: string) => `${LAST_PULLED_PREFIX}${shelfId}`;
 
 /**
  * The courier's pickup run: fetch what changed on the shelf since last time, plus every rating and member,
