@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
 import { db } from '@/data/db';
+import { FUN_FACT_NONE_PREFIX, wantFunFact } from '@/data/funFacts';
 import type { ShelfRecord } from '@/data/schema';
 import { RecordScreen } from './RecordScreen';
 
@@ -188,5 +189,41 @@ describe('RecordScreen', () => {
     renderRecord();
     await screen.findByRole('heading', { name: 'John Coltrane' });
     expect(screen.queryByRole('button', { name: 'Didn’t buy it' })).not.toBeInTheDocument();
+  });
+  describe('fun fact', () => {
+    it('shows Finding a fun fact… and no button while queued', async () => {
+      await db.records.put(record());
+      await wantFunFact(db, ID);
+      renderRecord();
+      expect(await screen.findByRole('status')).toHaveTextContent('Finding a fun fact…');
+      expect(screen.queryByRole('button', { name: 'Find a fun fact' })).not.toBeInTheDocument();
+    });
+
+    it('offers a button when idle, and tapping it queues the record', async () => {
+      await db.records.put(record());
+      renderRecord();
+      const button = await screen.findByRole('button', { name: 'Find a fun fact' });
+      expect(button).toHaveClass('h-12');
+      await userEvent.click(button);
+      expect(await screen.findByText('Finding a fun fact…')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Find a fun fact' })).not.toBeInTheDocument();
+      expect(JSON.parse((await db.meta.get('funFactQueue'))!.value)).toEqual([{ recordId: ID, tries: 0 }]);
+    });
+
+    it('says none was found, with the button to try again', async () => {
+      await db.records.put(record());
+      await db.meta.put({ key: `${FUN_FACT_NONE_PREFIX}${ID}`, value: 'true' });
+      renderRecord();
+      expect(await screen.findByText('Claude couldn’t find one with a source.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Find a fun fact' })).toBeInTheDocument();
+    });
+
+    it('shows a stored fact as before, with no button', async () => {
+      await db.records.put(record({ funFact: 'Recorded in one session.', funFactSource: 'https://example.com/a' }));
+      renderRecord();
+      expect(await screen.findByText('Recorded in one session.')).toBeInTheDocument();
+      expect(screen.getByText('Source: example.com')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Find a fun fact' })).not.toBeInTheDocument();
+    });
   });
 });

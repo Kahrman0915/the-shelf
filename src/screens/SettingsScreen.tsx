@@ -129,6 +129,10 @@ export function SettingsScreen() {
       </section>
 
       <p className="text-[13px] leading-5 text-ink-muted">
+        Photos you take to add a record are sent to Anthropic’s Claude to read the sleeve. They aren’t stored there.
+      </p>
+
+      <p className="text-[13px] leading-5 text-ink-muted">
         This application uses Discogs’ API but is not affiliated with, sponsored or endorsed by Discogs. ‘Discogs’ is a trademark of Zink Media, LLC.
       </p>
     </main>

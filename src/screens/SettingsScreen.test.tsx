@@ -60,6 +60,15 @@ describe('Shelf settings', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows the photo privacy notice', async () => {
+    renderSettings(backendFor(K));
+    expect(
+      await screen.findByText(
+        'Photos you take to add a record are sent to Anthropic’s Claude to read the sleeve. They aren’t stored there.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('lets the owner invite someone by email, and shows them as waiting', async () => {
     renderSettings(backendFor(K));
     await userEvent.type(await screen.findByLabelText('Their email'), 'Friend@Example.com');

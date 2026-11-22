@@ -6,6 +6,8 @@ import { useCurrentShelf } from '@/app/CurrentShelf';
 import { SyncNotice, useSyncStatus } from '@/app/SyncContext';
 import { didntBuyIt, perform, rate } from '@/data/actions';
 import { db } from '@/data/db';
+import { wantFunFact } from '@/data/funFacts';
+import { useFunFactStatus } from '@/app/useFunFacts';
 import { useMembers, useRatings, useRecord } from '@/data/hooks';
 import { formatMoney } from '@/domain/price';
 import { GENRE_LABELS } from '@/domain/genres';
@@ -50,6 +52,8 @@ export function RecordScreen() {
   const [error, setError] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
 
+  const funFactStatus = useFunFactStatus(id ?? '');
+
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
 
   async function onRate(value: number) {
@@ -65,6 +69,16 @@ export function RecordScreen() {
       fail(e);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onFindFunFact() {
+    if (!record) return;
+    setError(null);
+    try {
+      await wantFunFact(db, record.id);
+    } catch (e) {
+      fail(e);
     }
   }
 
@@ -180,6 +194,21 @@ export function RecordScreen() {
                     {`Source: ${sourceHost(record.funFactSource)}`}
                   </a>
                 )}
+              </div>
+            )}
+            {!record.funFact && funFactStatus === 'queued' && (
+              <p role="status" className="text-[15px] text-ink-muted">Finding a fun fact…</p>
+            )}
+            {!record.funFact && (funFactStatus === 'idle' || funFactStatus === 'none') && (
+              <div className="flex flex-col gap-2">
+                {funFactStatus === 'none' && <p className="text-[15px] text-ink-muted">Claude couldn’t find one with a source.</p>}
+                <Button
+                  variant="outline"
+                  className="h-12 w-fit rounded-lg border-[1.5px] border-line-strong bg-transparent px-5 text-[15px] font-semibold"
+                  onClick={onFindFunFact}
+                >
+                  Find a fun fact
+                </Button>
               </div>
             )}
             {record.pricePaid !== null && <p className="text-[13px] text-ink-muted">{`Paid ${formatMoney(record.pricePaid)}`}</p>}
