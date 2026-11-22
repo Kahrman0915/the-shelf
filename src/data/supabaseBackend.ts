@@ -42,8 +42,12 @@ function writeFailure(error: { code?: string; message: string }): never {
 }
 
 /** Plain words for why Storage turned a photo request down. */
-function photoFailure(error: { message: string; statusCode?: string }): never {
-  if (offlineLooking(error)) throw new BackendError(NO_SIGNAL);
+type PhotoError = { message: string; name?: string; statusCode?: string };
+
+function photoFailure(error: PhotoError): never {
+  // storage-js gives every real server answer a statusCode; one without is a transport failure
+  // (a timeout or "Load failed" arrive as a nameless StorageUnknownError), so try again later.
+  if (!error.statusCode || offlineLooking(error)) throw new BackendError(NO_SIGNAL);
   if (error.statusCode === '403' || /row-level security|unauthorized/i.test(error.message)) throw new BackendError(REJECTED.permission);
   if (error.statusCode === '413' || /too large|maximum allowed size/i.test(error.message)) throw new BackendError(REJECTED.photoTooBig);
   throw new BackendError(REJECTED.other(`photo ${error.statusCode ?? 'unknown'}`));
@@ -173,13 +177,13 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
 
     async uploadPhoto(path, bytes) {
       const { error } = await client.storage.from(COVERS_BUCKET).upload(path, bytes, { contentType: 'image/jpeg', upsert: true });
-      if (error) photoFailure(error as { message: string; statusCode?: string });
+      if (error) photoFailure(error as PhotoError);
     },
 
     async downloadPhoto(path) {
       const { data, error } = await client.storage.from(COVERS_BUCKET).download(path);
       if (error) {
-        const e = error as { message: string; statusCode?: string };
+        const e = error as PhotoError;
         if (e.statusCode === '404' || (e.statusCode === '400' && /not found/i.test(e.message))) return null;
         photoFailure(e);
       }
@@ -188,7 +192,7 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
 
     async deletePhoto(path) {
       const { error } = await client.storage.from(COVERS_BUCKET).remove([path]);
-      if (error) photoFailure(error as { message: string; statusCode?: string });
+      if (error) photoFailure(error as PhotoError);
     },
 
     async searchDiscogs(query): Promise<FoundRecord[]> {

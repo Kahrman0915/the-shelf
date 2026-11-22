@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendError, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED } from './backend';
+import { StorageClient } from '@supabase/storage-js';
 import { AUTH_STORAGE_KEY } from './supabase';
 import { DISCOGS_TIMEOUT_MS, offlineLooking, rejectionReason, supabaseBackend } from './supabaseBackend';
 
@@ -440,5 +441,28 @@ describe('supabaseBackend() photos', () => {
     const { bucket, backend } = storageClient();
     bucket.remove.mockResolvedValue({ data: null, error: { message: 'Failed to fetch' } });
     await expect(backend.deletePhoto(PATH)).rejects.toThrow(new BackendError(NO_SIGNAL));
+  });
+  it.each([
+    ['a timeout', 'The request timed out.'],
+    ['a Safari network failure', 'Load failed'],
+  ])('%s from storage-js is NO_SIGNAL for upload, download and delete', async (_label, message) => {
+    const { bucket, backend } = storageClient();
+    const error = { name: 'StorageUnknownError', message };
+    bucket.upload.mockResolvedValue({ data: null, error });
+    bucket.download.mockResolvedValue({ data: null, error });
+    bucket.remove.mockResolvedValue({ data: null, error });
+    await expect(backend.uploadPhoto(PATH, new ArrayBuffer(1))).rejects.toThrow(new BackendError(NO_SIGNAL));
+    await expect(backend.downloadPhoto(PATH)).rejects.toThrow(new BackendError(NO_SIGNAL));
+    await expect(backend.deletePhoto(PATH)).rejects.toThrow(new BackendError(NO_SIGNAL));
+  });
+
+  it('a real StorageClient whose fetch rejects gives NO_SIGNAL', async () => {
+    for (const reason of [new TypeError('Load failed'), new DOMException('The request timed out.', 'AbortError')]) {
+      const storage = new StorageClient('http://localhost/storage/v1', {}, (() => Promise.reject(reason)) as typeof fetch);
+      const backend = supabaseBackend({ storage } as never);
+      await expect(backend.uploadPhoto(PATH, new ArrayBuffer(1))).rejects.toThrow(new BackendError(NO_SIGNAL));
+      await expect(backend.downloadPhoto(PATH)).rejects.toThrow(new BackendError(NO_SIGNAL));
+      await expect(backend.deletePhoto(PATH)).rejects.toThrow(new BackendError(NO_SIGNAL));
+    }
   });
 });
