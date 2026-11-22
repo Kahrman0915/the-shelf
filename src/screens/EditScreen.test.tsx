@@ -260,4 +260,31 @@ describe('EditScreen', () => {
     expect(sent.map((p) => p.kind)).toEqual(['photo.upload', 'record.patch']);
     expect(sent[1].fields).toEqual({ deletedAt: null, coverPath: uploadedPath(sent[0]) });
   });
+
+  it('keeps the unsaved mark while a field change remains after a photo change is undone', async () => {
+    await db.records.put(record());
+    renderEdit();
+    await screen.findByRole('heading', { name: 'Edit' });
+    await userEvent.type(box('Label'), ' Records');
+    fireEvent.change(photoInput('Front'), { target: { files: [shot()] } });
+    await screen.findByRole('img', { name: 'Front photo' });
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(screen.queryByRole('img', { name: 'Front photo' })).not.toBeInTheDocument();
+    expect(document.body.dataset.unsaved).toBe('true');
+  });
+
+  it('removing a stored front sends a patch clearing coverPath, then deletes the old file', async () => {
+    const OLD = `${SHELF}/${ID}/front-old.jpg`;
+    await db.photos.put({ path: OLD, bytes: new Uint8Array([1]).buffer });
+    await db.records.put(record({ coverPath: OLD }));
+    renderEdit();
+    await screen.findByRole('heading', { name: 'Edit' });
+    await userEvent.click(await screen.findByRole('button', { name: 'Remove' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await poster()).toBeInTheDocument();
+    const sent = await db.outbox.toArray();
+    expect(sent.map((p) => p.kind)).toEqual(['record.patch', 'photo.delete']);
+    expect(sent[0].fields).toEqual({ coverPath: null });
+    expect(sent[1].fields).toEqual({ path: OLD });
+  });
 });

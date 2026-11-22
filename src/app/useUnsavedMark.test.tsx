@@ -35,4 +35,19 @@ describe('useUnsavedMark', () => {
     expect(heard).toHaveBeenCalledTimes(2);
     window.removeEventListener(SAVED_OR_DISCARDED, heard);
   });
+
+  it('keeps the mark until every dirty form is clean', () => {
+    const heard = vi.fn();
+    window.addEventListener(SAVED_OR_DISCARDED, heard);
+    const a = render(<Probe dirty />);
+    const b = render(<Probe dirty />);
+    a.rerender(<Probe dirty={false} />);
+    expect(document.body.dataset.unsaved).toBe('true');
+    expect(heard).not.toHaveBeenCalled();
+    b.unmount();
+    expect(document.body.dataset.unsaved).toBeUndefined();
+    expect(heard).toHaveBeenCalledTimes(1);
+    a.unmount();
+    window.removeEventListener(SAVED_OR_DISCARDED, heard);
+  });
 });

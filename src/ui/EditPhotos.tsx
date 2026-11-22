@@ -125,7 +125,7 @@ export function EditPhotos({
   function remove(side: PhotoSide) {
     taking.current[side]++;
     setSquaring((s) => ({ ...s, [side]: false }));
-    const next = { ...changes };
+    const next = { ...latest.current };
     // A photo taken here and not yet saved just goes; a stored one is marked for removal.
     if (record[PATH_FIELD[side]]) next[side] = { kind: 'remove' };
     else delete next[side];
