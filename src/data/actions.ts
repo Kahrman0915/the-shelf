@@ -4,6 +4,7 @@ import { sectionFor } from '@/domain/discogsGenre';
 import { BackendError, type FoundRecord } from './backend';
 import type { ShelfDB } from './db';
 import { savePostcards, type NewPostcard } from './outbox';
+import type { StoredPhoto } from './photos';
 import { RecordSchema, type ShelfRecord } from './schema';
 
 /** What an action needs from outside: who is acting and when. Actions never read a clock or make ids. */
@@ -239,7 +240,7 @@ export function rate(r: ShelfRecord, value: number, ctx: Ctx): ActionResult {
 }
 
 /** Save the postcards to the notebook and the outbox, then run `after` (e.g. start the courier). */
-export async function perform(db: ShelfDB, postcards: NewPostcard[], after?: () => void): Promise<void> {
-  await savePostcards(db, postcards);
+export async function perform(db: ShelfDB, postcards: NewPostcard[], after?: () => void, photos: StoredPhoto[] = []): Promise<void> {
+  await savePostcards(db, postcards, photos);
   after?.();
 }

@@ -7,7 +7,7 @@ import { forgetLastPull, pullShelf } from './sync';
 export type PushResult = { sent: number; rejected: number; noSignal: boolean };
 
 /** Sends one postcard. Every send is safe to repeat. Returns 'missing' when a patch found no record. */
-async function send(writer: ShelfWriter, p: Postcard): Promise<'sent' | 'missing'> {
+async function send(db: ShelfDB, writer: ShelfWriter, p: Postcard): Promise<'sent' | 'missing'> {
   switch (p.kind) {
     case 'record.create':
       await writer.insertRecord(newRecordToRow(p.fields));
@@ -16,6 +16,16 @@ async function send(writer: ShelfWriter, p: Postcard): Promise<'sent' | 'missing
       return (await writer.patchRecord(p.recordId, patchToRow(p.fields))) === 'missing' ? 'missing' : 'sent';
     case 'rating.set':
       await writer.setRating(p.recordId, p.userId, p.fields.value);
+      return 'sent';
+    case 'photo.upload': {
+      const photo = await db.photos.get(p.fields.path);
+      if (!photo) throw new BackendError(REJECTED.photoGone);
+      await writer.uploadPhoto(p.fields.path, photo.bytes);
+      return 'sent';
+    }
+    case 'photo.delete':
+      await writer.deletePhoto(p.fields.path);
+      await db.photos.delete(p.fields.path);
       return 'sent';
   }
 }
@@ -56,7 +66,7 @@ async function pushRun(db: ShelfDB, writer: ShelfWriter): Promise<PushResult> {
     // still waiting, is sent again (safely) next run.
     let reason: string | null; // null: sent
     try {
-      reason = (await send(writer, p)) === 'missing' ? REJECTED.missing : null;
+      reason = (await send(db, writer, p)) === 'missing' ? REJECTED.missing : null;
     } catch (e) {
       if (e instanceof BackendError && e.message === NO_SIGNAL) return { ...result, noSignal: true };
       if (e instanceof BackendError) reason = e.message;
@@ -90,7 +100,7 @@ export async function retryPostcard(db: ShelfDB, seq: number): Promise<void> {
 
 /** Delete this postcard and every later one for the same record, forget the last pull, pull everything. */
 export async function discardPostcard(db: ShelfDB, source: ShelfSource, shelfId: string, seq: number): Promise<void> {
-  await db.transaction('rw', [db.records, db.ratings, db.meta, db.outbox], async () => {
+  await db.transaction('rw', [db.records, db.ratings, db.meta, db.outbox, db.photos], async () => {
     const p = await db.outbox.get(seq);
     if (!p) return;
     const dropped = await db.outbox
@@ -99,6 +109,7 @@ export async function discardPostcard(db: ShelfDB, source: ShelfSource, shelfId:
       .filter((q) => q.seq >= seq)
       .toArray();
     await db.outbox.bulkDelete(dropped.map((q) => q.seq));
+    await db.photos.bulkDelete(dropped.flatMap((q) => (q.kind === 'photo.upload' ? [q.fields.path] : [])));
     // A record made only on this phone has nothing on the server to restore it; the pull below
     // brings it back if the server does have it after all.
     if (dropped.some((q) => q.kind === 'record.create')) {

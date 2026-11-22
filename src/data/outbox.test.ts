@@ -175,6 +175,33 @@ describe('savePostcards', () => {
   });
 });
 
+describe('photo postcards', () => {
+  const PATH = `${SHELF}/${REC}/front-aaaa.jpg`;
+  const bytes = () => new Uint8Array([1, 2, 3]).buffer;
+  const upload = (): NewPostcard => ({ ...base, kind: 'photo.upload', fields: { path: PATH } });
+
+  it('savePostcards keeps the photo bytes with the postcards, in one go', async () => {
+    await savePostcards(db, [create(), upload()], [{ path: PATH, bytes: bytes() }]);
+    expect(new Uint8Array((await db.photos.get(PATH))!.bytes)).toEqual(new Uint8Array([1, 2, 3]));
+    expect((await db.outbox.toArray()).map((p) => p.kind)).toEqual(['record.create', 'photo.upload']);
+  });
+
+  it('saves neither the photo nor the postcard when one in the batch breaks the record rules', async () => {
+    await expect(
+      savePostcards(db, [upload(), create(record({ artist: '' }))], [{ path: PATH, bytes: bytes() }]),
+    ).rejects.toThrow(BackendError);
+    expect(await db.photos.get(PATH)).toBeUndefined();
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('photo postcards don’t change the record', async () => {
+    await db.records.put(record());
+    await apply(upload());
+    await apply({ ...base, kind: 'photo.delete', fields: { path: PATH } });
+    expect(await db.records.toArray()).toEqual([record()]);
+  });
+});
+
 describe('ensureStorageKept', () => {
   it('asks once and remembers', async () => {
     let calls = 0;

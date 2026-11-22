@@ -1,5 +1,6 @@
 import { BackendError } from './backend';
 import type { ShelfDB } from './db';
+import type { StoredPhoto } from './photos';
 import { RatingSchema, RecordSchema, type ShelfRecord } from './schema';
 
 type Base = {
@@ -16,7 +17,9 @@ type Base = {
 export type Postcard =
   | (Base & { kind: 'record.create'; fields: ShelfRecord })
   | (Base & { kind: 'record.patch'; fields: Partial<ShelfRecord> })
-  | (Base & { kind: 'rating.set'; fields: { value: number } });
+  | (Base & { kind: 'rating.set'; fields: { value: number } })
+  | (Base & { kind: 'photo.upload'; fields: { path: string } })
+  | (Base & { kind: 'photo.delete'; fields: { path: string } });
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 export type NewPostcard = DistributiveOmit<Postcard, 'seq' | 'state' | 'reason'>;
@@ -62,12 +65,17 @@ export async function applyPostcard(db: ShelfDB, p: NewPostcard | Postcard): Pro
       }
       return;
     }
+    case 'photo.upload':
+    case 'photo.delete':
+      // Photos never change the notebook's records; the record's own patch points at them.
+      return;
   }
 }
 
-/** Apply each postcard to the notebook and queue it, all in one transaction. */
-export async function savePostcards(db: ShelfDB, postcards: NewPostcard[]): Promise<void> {
-  await db.transaction('rw', [db.records, db.ratings, db.outbox], async () => {
+/** Apply each postcard to the notebook and queue it, all in one transaction. Photo bytes are kept in the same go. */
+export async function savePostcards(db: ShelfDB, postcards: NewPostcard[], photos: StoredPhoto[] = []): Promise<void> {
+  await db.transaction('rw', [db.records, db.ratings, db.outbox, db.photos], async () => {
+    await db.photos.bulkPut(photos);
     for (const p of postcards) await applyPostcard(db, p);
     for (const p of postcards) await db.outbox.add({ ...p, state: 'waiting', reason: null } as Postcard);
   });

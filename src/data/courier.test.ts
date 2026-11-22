@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeBackend } from '@/test/fakeBackend';
 import { REJECTED, type ShelfWriter } from './backend';
 import { discardPostcard, pushOutbox, retryPostcard, syncOnce } from './courier';
-import { ShelfDB, writeSession } from './db';
+import { clearPhoneIfNothingWaiting, ShelfDB, writeSession } from './db';
 import { savePostcards, type NewPostcard } from './outbox';
 import { recordToRow } from './rowMapping';
 import type { ShelfRecord } from './schema';
@@ -275,5 +275,83 @@ describe('syncOnce', () => {
     const recordsSince = vi.spyOn(backend, 'recordsSince');
     expect(await syncOnce(db, backend, SHELF)).toEqual({ sent: 0, rejected: 0, noSignal: true });
     expect(recordsSince).not.toHaveBeenCalled();
+  });
+});
+
+describe('photo postcards', () => {
+  const PATH = `${SHELF}/${A}/front-aaaa.jpg`;
+  const bytes = () => new Uint8Array([1, 2, 3]).buffer;
+  const upload: NewPostcard = { ...card, recordId: A, kind: 'photo.upload', fields: { path: PATH } };
+  const pointer = patch(A, { coverPath: PATH });
+  const saveBatch = () => savePostcards(db, [create(A), upload, pointer], [{ path: PATH, bytes: bytes() }]);
+  const states = async () => (await outbox()).map((p) => [p.kind, p.state]);
+
+  it('sends the create, then the photo, then the pointer', async () => {
+    const order: string[] = [];
+    for (const name of ['uploadPhoto', 'insertRecord', 'patchRecord'] as const) {
+      const real = backend[name].bind(backend) as (...a: unknown[]) => Promise<unknown>;
+      vi.spyOn(backend, name).mockImplementation(((...a: unknown[]) => (order.push(name), real(...a))) as never);
+    }
+    await saveBatch();
+    expect(await pushOutbox(db, backend)).toEqual({ sent: 3, rejected: 0, noSignal: false });
+    expect(order).toEqual(['insertRecord', 'uploadPhoto', 'patchRecord']);
+    expect(new Uint8Array(backend.photos.get(PATH)!)).toEqual(new Uint8Array([1, 2, 3]));
+    expect(backend.recordRow(A)?.cover_path).toBe(PATH);
+  });
+
+  it('no signal keeps the photo for next time', async () => {
+    await saveBatch();
+    backend.online = false;
+    expect((await pushOutbox(db, backend)).noSignal).toBe(true);
+    expect(await db.photos.get(PATH)).toBeDefined();
+    expect(await db.outbox.count()).toBe(3);
+    expect(await clearPhoneIfNothingWaiting(db)).toBe(3);
+    expect(await db.photos.get(PATH)).toBeDefined();
+  });
+
+  it('a rejected create holds that record’s photos', async () => {
+    await saveBatch();
+    const uploadPhoto = vi.spyOn(backend, 'uploadPhoto');
+    backend.rejectNext = REJECTED.range;
+    await pushOutbox(db, backend);
+    expect(uploadPhoto).not.toHaveBeenCalled();
+    expect(await states()).toEqual([['record.create', 'rejected'], ['photo.upload', 'waiting'], ['record.patch', 'waiting']]);
+  });
+
+  it('a photo missing from the phone is rejected, not skipped', async () => {
+    await saveBatch();
+    await db.photos.delete(PATH);
+    await pushOutbox(db, backend);
+    const [up, patched] = await outbox();
+    expect([up.state, up.reason, patched.state]).toEqual(['rejected', REJECTED.photoGone, 'waiting']);
+  });
+
+  it('photo.delete removes the file on the shelf and on this phone', async () => {
+    backend.photos.set(PATH, bytes());
+    await savePostcards(db, [{ ...card, recordId: B, kind: 'photo.delete', fields: { path: PATH } }], []);
+    await db.photos.put({ path: PATH, bytes: bytes() });
+    await pushOutbox(db, backend);
+    expect(backend.photos.has(PATH)).toBe(false);
+    expect(await db.photos.get(PATH)).toBeUndefined();
+  });
+
+  it('a lost reply on upload is safe to send again', async () => {
+    const path = `${SHELF}/${B}/front-bbbb.jpg`;
+    await savePostcards(db, [{ ...card, recordId: B, kind: 'photo.upload', fields: { path } }], [{ path, bytes: bytes() }]);
+    backend.loseNextReply = true;
+    expect((await pushOutbox(db, backend)).noSignal).toBe(true);
+    expect(await db.outbox.count()).toBe(1);
+    expect(await pushOutbox(db, backend)).toEqual({ sent: 1, rejected: 0, noSignal: false });
+    expect(backend.photos.size).toBe(1);
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('discarding a create drops its photo bytes from the phone', async () => {
+    await saveBatch();
+    backend.rejectNext = REJECTED.range;
+    await pushOutbox(db, backend);
+    const [first] = await outbox();
+    await discardPostcard(db, backend, SHELF, first.seq);
+    expect(await db.photos.get(PATH)).toBeUndefined();
   });
 });
