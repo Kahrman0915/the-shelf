@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendProvider } from '@/app/BackendContext';
@@ -7,6 +7,7 @@ import { UNDO_WINDOW_MS, UndoBar, UndoProvider } from '@/app/UndoContext';
 import * as actions from '@/data/actions';
 import type { FoundRecord } from '@/data/backend';
 import { db } from '@/data/db';
+import type { Drafts } from '@/data/photos';
 import type { ShelfRecord } from '@/data/schema';
 import { FakeBackend } from '@/test/fakeBackend';
 import { FindRecord } from './FindRecord';
@@ -52,7 +53,9 @@ function onShelf(p: Partial<ShelfRecord> = {}): ShelfRecord {
   };
 }
 
-function setup({ records = [] as ShelfRecord[], onAdded = () => {} } = {}) {
+type PhotosProp = { drafts: Drafts; onUsed: () => void; onBack: (drafts: Drafts | null) => void };
+
+function setup({ records = [] as ShelfRecord[], onAdded = () => {}, photos = undefined as PhotosProp | undefined } = {}) {
   const backend = new FakeBackend({});
   backend.discogsResults = [FORCES, SPARSE];
   const shelf = { shelfId: SHELF, userId: ME, email: 'k@example.com', signOut: async () => null, signOutAndDelete: async () => {} };
@@ -60,7 +63,7 @@ function setup({ records = [] as ShelfRecord[], onAdded = () => {} } = {}) {
     <BackendProvider backend={backend}>
       <CurrentShelfProvider value={shelf}>
         <UndoProvider>
-          <FindRecord records={records} onAdded={onAdded} />
+          <FindRecord records={records} onAdded={onAdded} photos={photos} />
           <UndoBar />
         </UndoProvider>
       </CurrentShelfProvider>
@@ -521,5 +524,198 @@ describe('FindRecord', () => {
     await userEvent.click(await card(/Forces Of Nature/));
     await screen.findByText(/On the shelf:/);
     expect(setItem).not.toHaveBeenCalled();
+  });
+
+  describe('with photos waiting', () => {
+    const SAHARA_ID = '00000000-0000-4000-8000-000000000009';
+    const drafts = (): Drafts => ({
+      front: { side: 'front', bytes: new Uint8Array([1]).buffer, foundEdges: true },
+      back: { side: 'back', bytes: new Uint8Array([2]).buffer, foundEdges: true },
+    });
+    const kinds = async () => (await db.outbox.toArray()).map((p) => p.kind);
+    const deletes = async () => (await db.outbox.toArray()).filter((p) => p.kind === 'photo.delete').map((p) => (p.fields as { path: string }).path);
+
+    function withPhotos(records: ShelfRecord[] = []) {
+      const photos = { drafts: drafts(), onUsed: vi.fn(), onBack: vi.fn() };
+      setup({ records, photos });
+      return photos;
+    }
+
+    async function pickSahara() {
+      await search('sahara');
+      await userEvent.click(await card(/Sahara/));
+    }
+
+    it('saving puts the photos on the new record', async () => {
+      const photos = withPhotos();
+      await search('mccoy tyner forces of nature');
+      await userEvent.click(await card(/Forces Of Nature/));
+      expect(await screen.findByText('On the shelf: Forces Of Nature (Live At Slugs’)')).toBeInTheDocument();
+      const [record] = await db.records.toArray();
+      const paths = (await db.photos.toArray()).map((p) => p.path).sort();
+      expect(paths).toHaveLength(2);
+      for (const path of paths) expect(path.startsWith(`${SHELF}/${record.id}/`)).toBe(true);
+      expect(record.coverPath).toMatch(new RegExp(`^${SHELF}/${record.id}/front-.+\\.jpg$`));
+      expect(record.backPath).toMatch(new RegExp(`^${SHELF}/${record.id}/back-.+\\.jpg$`));
+      expect([record.coverPath, record.backPath].sort()).toEqual(paths);
+      expect(await kinds()).toEqual(['record.create', 'photo.upload', 'photo.upload', 'record.patch']);
+      expect(photos.onUsed).toHaveBeenCalledOnce();
+    });
+
+    it('Undo takes the record off, hands the photos back and deletes the new files', async () => {
+      const photos = withPhotos();
+      await search('mccoy tyner forces of nature');
+      await userEvent.click(await card(/Forces Of Nature/));
+      await screen.findByText(/On the shelf:/);
+      const [saved] = await db.records.toArray();
+      await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+      await waitFor(() => expect(photos.onBack).toHaveBeenCalledOnce());
+      expect(photos.onBack).toHaveBeenCalledWith(photos.drafts);
+      expect((await db.records.toArray())[0].deletedAt).not.toBeNull();
+      expect((await deletes()).sort()).toEqual([saved.coverPath, saved.backPath].sort());
+      expect(searchBox()).toHaveFocus();
+    });
+
+    it('a double tap saves one record with its two photos', async () => {
+      withPhotos();
+      await search('mccoy tyner forces of nature');
+      await userEvent.dblClick(await card(/Forces Of Nature/));
+      await screen.findByText(/On the shelf:/);
+      expect(await db.records.count()).toBe(1);
+      expect((await kinds()).filter((k) => k === 'photo.upload')).toHaveLength(2);
+    });
+
+    describe('a record already on the shelf', () => {
+      async function shelved(p: Partial<ShelfRecord> = {}) {
+        const record = onShelf(p);
+        await db.records.put(record);
+        return record;
+      }
+
+      it('asks whether to add the photos to it', async () => {
+        withPhotos([await shelved()]);
+        await pickSahara();
+        expect(await screen.findByRole('dialog', { name: 'Add these photos to the one on your shelf?' })).toBeInTheDocument();
+        expect(await db.outbox.count()).toBe(0);
+      });
+
+      it('Add to that one puts the photos on it, with no new record', async () => {
+        const photos = withPhotos([await shelved()]);
+        await pickSahara();
+        await userEvent.click(await screen.findByRole('button', { name: 'Add to that one' }));
+        expect(await screen.findByText('Photos added: Sahara')).toBeInTheDocument();
+        const records = await db.records.toArray();
+        expect(records).toHaveLength(1);
+        expect(records[0].coverPath).toMatch(new RegExp(`^${SHELF}/${SAHARA_ID}/front-`));
+        expect(records[0].backPath).toMatch(new RegExp(`^${SHELF}/${SAHARA_ID}/back-`));
+        expect(await kinds()).toEqual(['photo.upload', 'photo.upload', 'record.patch']);
+        expect(photos.onUsed).toHaveBeenCalledOnce();
+      });
+
+      it('Undo after Add to that one puts its old paths back and hands the photos back', async () => {
+        const photos = withPhotos([await shelved()]);
+        await pickSahara();
+        await userEvent.click(await screen.findByRole('button', { name: 'Add to that one' }));
+        await screen.findByText('Photos added: Sahara');
+        await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+        await waitFor(() => expect(photos.onBack).toHaveBeenCalledWith(photos.drafts));
+        expect(await db.records.get(SAHARA_ID)).toMatchObject({ coverPath: null, backPath: null, deletedAt: null });
+        expect(await deletes()).toHaveLength(2);
+      });
+
+      it('Save a second copy saves a new record with the photos', async () => {
+        const photos = withPhotos([await shelved()]);
+        await pickSahara();
+        await userEvent.click(await screen.findByRole('button', { name: 'Save a second copy' }));
+        expect(await screen.findByText('On the shelf: Sahara')).toBeInTheDocument();
+        const records = await db.records.toArray();
+        expect(records).toHaveLength(2);
+        const copy = records.find((r) => r.id !== SAHARA_ID) as ShelfRecord;
+        expect(copy.coverPath).toMatch(new RegExp(`^${SHELF}/${copy.id}/front-`));
+        expect(copy.backPath).toMatch(new RegExp(`^${SHELF}/${copy.id}/back-`));
+        expect(await db.records.get(SAHARA_ID)).toMatchObject({ coverPath: null, backPath: null });
+        expect(photos.onUsed).toHaveBeenCalledOnce();
+      });
+
+      it('Escape saves nothing and keeps the photos', async () => {
+        const photos = withPhotos([await shelved()]);
+        await pickSahara();
+        await screen.findByRole('dialog');
+        await userEvent.keyboard('{Escape}');
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        expect(await db.records.count()).toBe(1);
+        expect(await db.outbox.count()).toBe(0);
+        expect(await db.photos.count()).toBe(0);
+        expect(photos.onUsed).not.toHaveBeenCalled();
+        // The card can still be tapped.
+        await userEvent.click(screen.getByRole('button', { name: /Sahara/ }));
+        expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      });
+
+      it('with no photos waiting, a duplicate saves a second copy straight away', async () => {
+        setup({ records: [await shelved()] });
+        await pickSahara();
+        expect(await screen.findByText('On the shelf: Sahara')).toBeInTheDocument();
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        expect(await db.records.count()).toBe(2);
+      });
+
+      describe('that already has a front photo', () => {
+        const OLD = `${SHELF}/${SAHARA_ID}/front-old.jpg`;
+
+        async function replace() {
+          await pickSahara();
+          expect(await screen.findByRole('dialog', { name: 'Replace the photos on the one on your shelf?' })).toBeInTheDocument();
+          await userEvent.click(screen.getByRole('button', { name: 'Replace them' }));
+          await screen.findByText('Photos added: Sahara');
+        }
+
+        it('deletes the old front only once Undo has gone', async () => {
+          vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+          try {
+            withPhotos([await shelved({ coverPath: OLD })]);
+            await replace();
+            expect((await db.records.get(SAHARA_ID))?.coverPath).not.toBe(OLD);
+            act(() => void vi.advanceTimersByTime(UNDO_WINDOW_MS - 100));
+            expect(await deletes()).toEqual([]);
+            act(() => void vi.advanceTimersByTime(1000));
+            await waitFor(async () => expect(await deletes()).toEqual([OLD]));
+          } finally {
+            vi.useRealTimers();
+          }
+        });
+
+        it('never deletes the old front after Undo', async () => {
+          vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+          try {
+            withPhotos([await shelved({ coverPath: OLD })]);
+            await replace();
+            await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+            await waitFor(async () => expect((await db.records.get(SAHARA_ID))?.coverPath).toBe(OLD));
+            act(() => void vi.advanceTimersByTime(UNDO_WINDOW_MS * 2));
+            await new Promise((r) => setTimeout(r, 50));
+            expect(await deletes()).not.toContain(OLD);
+          } finally {
+            vi.useRealTimers();
+          }
+        });
+
+        it('deletes the old front at once when a newer save replaces the offer', async () => {
+          withPhotos([await shelved({ coverPath: OLD })]);
+          await replace();
+          await search('mccoy tyner forces of nature');
+          await userEvent.click(await card(/Forces Of Nature/));
+          await screen.findByText('On the shelf: Forces Of Nature (Live At Slugs’)');
+          await waitFor(async () => expect(await deletes()).toContain(OLD));
+        });
+
+        it('deletes the old front when the screen goes before Undo', async () => {
+          withPhotos([await shelved({ coverPath: OLD })]);
+          await replace();
+          cleanup();
+          await waitFor(async () => expect(await deletes()).toEqual([OLD]));
+        });
+      });
+    });
   });
 });

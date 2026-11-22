@@ -5,14 +5,15 @@ import { Input } from '@/components/ui/input';
 import { useBackend } from '@/app/BackendContext';
 import { useCurrentShelf } from '@/app/CurrentShelf';
 import { useSyncStatus } from '@/app/SyncContext';
-import { UNDO_WINDOW_MS } from '@/app/UndoContext';
 import { addFound, perform } from '@/data/actions';
-import { BackendError, NO_SIGNAL, type FoundRecord } from '@/data/backend';
+import type { FoundRecord } from '@/data/backend';
 import { db } from '@/data/db';
-import type { NewPostcard } from '@/data/outbox';
+import { addPhotosTo, PATH_FIELD, PHOTO_SIDES, type Drafts, type PhotoCtx } from '@/data/photos';
 import type { ShelfRecord } from '@/data/schema';
 import { findDuplicate } from '@/domain/recordForm';
 import { cn } from '@/lib/utils';
+import { PhotoDuplicateDialog } from './PhotoDuplicateDialog';
+import { messageFor, NEEDS_SIGNAL, useSavedOffer, type SavedOffer } from './useSavedOffer';
 
 const MAX_CARDS = 6;
 /** The longest query the discogs-search function accepts. */
@@ -20,20 +21,23 @@ const MAX_QUERY = 200;
 /** Discogs asks that its data be no more than 6 hours old; results older than this are dropped
  *  when the app comes back to the front. */
 const STALE_MS = 60 * 60 * 1000;
-const NEEDS_SIGNAL = 'Needs signal';
 const NO_RESULTS = 'Discogs didn’t find that. Try fewer words, or fill it in by hand.';
 const LABEL = 'text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted';
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const joined = (parts: (string | number | null)[]) => parts.filter((p) => p !== null && p !== '').join(' · ');
 
-function messageFor(err: unknown): string {
-  if (err instanceof BackendError && err.message === NO_SIGNAL) return NEEDS_SIGNAL;
-  return err instanceof Error ? err.message : String(err);
+/** Photos waiting for the next record saved: `onUsed` once a save took them, `onBack` with them after that save is undone. */
+type Photos = { drafts: Drafts; onUsed: () => void; onBack: (drafts: Drafts | null) => void };
+
+/** The record on the shelf already has a photo on a side these drafts would fill. */
+function replaces(record: ShelfRecord, drafts: Drafts): boolean {
+  return PHOTO_SIDES.some((side) => drafts[side] !== undefined && record[PATH_FIELD[side]] !== null);
 }
 
-/** Search Discogs and put a record on the shelf with one tap. Results live only in this component's state. */
-export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdded?: () => void }) {
+/** Search Discogs and put a record on the shelf with one tap. Results live only in this component's state.
+ *  With photos waiting, the record saved takes them; if it's already on the shelf, it asks where they go first. */
+export function FindRecord({ records, onAdded, photos }: { records: ShelfRecord[]; onAdded?: () => void; photos?: Photos }) {
   const backend = useBackend();
   const { shelfId, userId } = useCurrentShelf();
   const { runNow } = useSyncStatus();
@@ -42,12 +46,18 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
   const [found, setFound] = useState<{ query: string; results: FoundRecord[]; at: number } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
+  // Where an undone save hands its photos back. Kept from the save itself: once the drafts are used, `photos` goes.
+  const handBack = useRef<Photos['onBack'] | null>(null);
   // The save that can still be undone. Shown inline under the box: the app-wide bottom bar is hidden
   // by the iPhone keyboard, which stays open here on purpose.
-  const [saved, setSaved] = useState<{ title: string; undo: NewPostcard[] } | null>(null);
-  const [undoError, setUndoError] = useState<string | null>(null);
-  const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const undoing = useRef(false);
+  const { saved, error: undoError, offer, undo: undoSaved } = useSavedOffer({
+    onUndone: (drafts) => {
+      box.current?.focus();
+      if (drafts) handBack.current?.(drafts);
+    },
+  });
+  // A card that's already on the shelf, picked with photos waiting: the question of where the photos go.
+  const [asking, setAsking] = useState<{ record: FoundRecord; existing: ShelfRecord; photos: Photos; searchBefore: number } | null>(null);
   const [online, setOnline] = useState(isOnline);
   const box = useRef<HTMLInputElement>(null);
   // Only the latest search may show its answer: an older one that returns late is ignored.
@@ -59,8 +69,6 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
   useEffect(() => {
     if (saving.current === 'held') saving.current = 'idle';
   }, [found]);
-
-  useEffect(() => () => clearTimeout(savedTimer.current), []);
 
   useEffect(() => {
     const update = () => setOnline(isOnline());
@@ -112,22 +120,49 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
     }
   }
 
-  async function pick(record: FoundRecord) {
+  function pick(record: FoundRecord) {
     // Inside the tap itself: iOS only opens the keyboard for a focus() made before any await.
     box.current?.focus();
     if (saving.current !== 'idle') return;
     saving.current = 'running';
     const searchBefore = latest.current;
+    const existing = photos ? findDuplicate(records, record.artist, record.title) : null;
+    if (photos && existing) {
+      // Stays 'running' while the question is up, so another tap can't start a save meanwhile.
+      setAsking({ record, existing, photos, searchBefore });
+      return;
+    }
+    void save(record, { kind: 'new', photos: photos ?? null }, searchBefore);
+  }
+
+  /** Save a new record (with the photos, if any) or put the photos on one already on the shelf. Called with saving 'running'. */
+  async function save(record: FoundRecord, to: { kind: 'new'; photos: Photos | null } | { kind: 'existing'; photos: Photos; existing: ShelfRecord }, searchBefore: number) {
     try {
-      const ctx = { me: userId, now: new Date().toISOString(), shelfId, newId: crypto.randomUUID() };
-      const { postcards, undo } = addFound(record, ctx);
-      await perform(db, postcards, runNow);
-      if (undo) {
-        clearTimeout(savedTimer.current);
-        setUndoError(null);
-        setSaved({ title: record.title, undo });
-        savedTimer.current = setTimeout(() => setSaved(null), UNDO_WINDOW_MS);
+      const ctx: PhotoCtx & { shelfId: string; newId: string } = {
+        me: userId,
+        now: new Date().toISOString(),
+        shelfId,
+        newId: crypto.randomUUID(),
+        photoId: () => crypto.randomUUID(),
+      };
+      const drafts = to.photos?.drafts ?? null;
+      let made: SavedOffer;
+      if (to.kind === 'existing') {
+        const plan = addPhotosTo(to.existing, to.photos.drafts, ctx);
+        await perform(db, plan.postcards, runNow, plan.photos);
+        made = { text: `Photos added: ${to.existing.title}`, undo: plan.undo, drafts, later: plan.later };
+      } else {
+        const found = addFound(record, ctx);
+        const create = found.postcards[0];
+        const plan = drafts && create.kind === 'record.create' ? addPhotosTo(create.fields, drafts, ctx) : null;
+        await perform(db, [...found.postcards, ...(plan?.postcards ?? [])], runNow, plan?.photos ?? []);
+        made = { text: `On the shelf: ${record.title}`, undo: [...(found.undo ?? []), ...(plan?.undo ?? [])], drafts, later: [] };
       }
+      if (to.photos) {
+        handBack.current = to.photos.onBack;
+        to.photos.onUsed();
+      }
+      offer(made);
       if (latest.current === searchBefore) {
         saving.current = 'held';
         latest.current++;
@@ -146,20 +181,16 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
     }
   }
 
-  async function undoSave() {
-    if (!saved || undoing.current) return;
-    undoing.current = true;
-    clearTimeout(savedTimer.current);
-    try {
-      await perform(db, saved.undo, runNow);
-      setSaved(null);
-      setUndoError(null);
-      box.current?.focus();
-    } catch (err) {
-      setUndoError(messageFor(err));
-    } finally {
-      undoing.current = false;
+  function answer(choice: 'existing' | 'copy' | null) {
+    const question = asking;
+    setAsking(null);
+    if (!question) return;
+    if (choice === null) {
+      saving.current = 'idle';
+      return;
     }
+    const { record, existing, photos: waiting, searchBefore } = question;
+    void save(record, choice === 'existing' ? { kind: 'existing', photos: waiting, existing } : { kind: 'new', photos: waiting }, searchBefore);
   }
 
   const shown = online ? message : NEEDS_SIGNAL;
@@ -197,9 +228,9 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
           <div className="flex items-center justify-between gap-3 rounded-lg border-[1.5px] border-line-strong bg-surface-raised py-1 pr-1 pl-4">
             <span className="flex min-w-0 items-center gap-2 text-[15px] font-semibold text-ink">
               <Check aria-hidden="true" className="size-4 flex-none" />
-              <span>{`On the shelf: ${saved.title}`}</span>
+              <span>{saved.text}</span>
             </span>
-            <Button type="button" variant="outline" className="h-12 shrink-0 rounded-lg px-4 text-[15px] font-semibold" onClick={() => void undoSave()}>
+            <Button type="button" variant="outline" className="h-12 shrink-0 rounded-lg px-4 text-[15px] font-semibold" onClick={() => void undoSaved()}>
               Undo
             </Button>
           </div>
@@ -210,7 +241,7 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
           <span role="alert" className="text-[15px] font-semibold text-ink">
             {undoError}
           </span>
-          <Button type="button" variant="outline" className="h-12 shrink-0 rounded-lg px-4 text-[15px] font-semibold" onClick={() => void undoSave()}>
+          <Button type="button" variant="outline" className="h-12 shrink-0 rounded-lg px-4 text-[15px] font-semibold" onClick={() => void undoSaved()}>
             Undo
           </Button>
         </div>
@@ -234,7 +265,7 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
                   <button
                     type="button"
                     disabled={searching}
-                    onClick={() => void pick(r)}
+                    onClick={() => pick(r)}
                     className="flex min-h-12 w-full items-center gap-3 rounded-lg border-[1.5px] border-line-strong bg-surface-raised p-3 text-left text-ink"
                   >
                     {r.thumb && <img src={r.thumb} alt="" className="size-14 flex-none rounded object-cover" />}
@@ -259,6 +290,14 @@ export function FindRecord({ records, onAdded }: { records: ShelfRecord[]; onAdd
           </a>
         </>
       )}
+
+      <PhotoDuplicateDialog
+        open={asking !== null}
+        replacing={asking !== null && replaces(asking.existing, asking.photos.drafts)}
+        onAdd={() => answer('existing')}
+        onCopy={() => answer('copy')}
+        onClose={() => answer(null)}
+      />
     </section>
   );
 }

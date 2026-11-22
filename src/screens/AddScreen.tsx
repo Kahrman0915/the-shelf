@@ -7,9 +7,12 @@ import { useLeaveGuard } from '@/app/useLeaveGuard';
 import { addRecord, perform, type RecordFields } from '@/data/actions';
 import { db } from '@/data/db';
 import { useShelfItems } from '@/data/hooks';
+import { clearDrafts, restoreDrafts, useDrafts } from '@/data/photoDrafts';
+import { addPhotosTo, hasDrafts } from '@/data/photos';
 import { emptyForm } from '@/domain/recordForm';
 import { cn } from '@/lib/utils';
 import { FindRecord } from '@/ui/FindRecord';
+import { PhotoCapture } from '@/ui/PhotoCapture';
 import { RecordForm } from '@/ui/RecordForm';
 
 export function AddScreen() {
@@ -17,6 +20,8 @@ export function AddScreen() {
   const items = useShelfItems(shelfId, userId);
   const records = useMemo(() => (items ?? []).map((i) => i.record), [items]);
   const { runNow } = useSyncStatus();
+  const drafts = useDrafts();
+  const waiting = drafts && hasDrafts(drafts) ? drafts : null;
   const navigate = useNavigate();
   const location = useLocation();
   const initial = useMemo(() => emptyForm(), []);
@@ -26,8 +31,14 @@ export function AddScreen() {
   const back = () => leave(() => (location.key !== 'default' ? navigate(-1) : navigate('/')));
 
   async function onSave(fields: RecordFields, { rating, another }: { rating: number | null; another: boolean }) {
-    const ctx = { me: userId, now: new Date().toISOString(), shelfId, newId: crypto.randomUUID() };
-    await perform(db, addRecord(fields, rating, ctx).postcards, runNow);
+    const ctx = { me: userId, now: new Date().toISOString(), shelfId, newId: crypto.randomUUID(), photoId: () => crypto.randomUUID() };
+    const { postcards } = addRecord(fields, rating, ctx);
+    // Our call: the hand form's own duplicate warning stays as it is, with no photo question. Photos saved
+    // through the hand form go on the record being saved there.
+    const create = postcards[0];
+    const plan = waiting && create.kind === 'record.create' ? addPhotosTo(create.fields, waiting, ctx) : null;
+    await perform(db, [...postcards, ...(plan?.postcards ?? [])], runNow, plan?.photos ?? []);
+    if (plan) await clearDrafts();
     if (!another) navigate('/');
   }
 
@@ -40,7 +51,11 @@ export function AddScreen() {
       </div>
       <SyncNotice />
       <h1 className="px-4 font-display text-[44px] leading-[44px] tracking-[0.01em]">Add a record</h1>
-      <FindRecord records={records} />
+      <PhotoCapture />
+      <FindRecord
+        records={records}
+        photos={waiting ? { drafts: waiting, onUsed: () => void clearDrafts(), onBack: (d) => void (d && restoreDrafts(d)) } : undefined}
+      />
       <div className="px-4">
         <button
           type="button"

@@ -1,22 +1,26 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendProvider } from '@/app/BackendContext';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
+import type { FoundRecord } from '@/data/backend';
 import { db } from '@/data/db';
+import { saveDraft } from '@/data/photoDrafts';
 import { FakeBackend } from '@/test/fakeBackend';
 import { AddScreen } from './AddScreen';
 import { RecordScreen } from './RecordScreen';
 import { ShelfScreen } from './ShelfScreen';
 
+vi.mock('@/photo/squareUp');
+
 const SHELF = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ME = '11111111-1111-4111-8111-111111111111';
 
-function renderAdd(path = '/') {
+function renderAdd(path = '/', backend = new FakeBackend({})) {
   const shelf = { shelfId: SHELF, userId: ME, email: 'k@example.com', signOut: async () => null, signOutAndDelete: async () => {} };
   return render(
-    <BackendProvider backend={new FakeBackend({})}>
+    <BackendProvider backend={backend}>
       <CurrentShelfProvider value={shelf}>
         <MemoryRouter initialEntries={[path]}>
           <Routes>
@@ -31,6 +35,11 @@ function renderAdd(path = '/') {
 }
 
 const HAND = 'Not here? Fill it in by hand';
+
+const FOUND: FoundRecord = {
+  releaseId: 1, artist: 'John Coltrane', title: 'Ascension', label: 'Impulse!', catalog: 'A-95', year: 1966,
+  format: 'Vinyl, LP', country: 'US', genres: ['Jazz'], styles: [], thumb: null,
+};
 
 async function openHandForm() {
   await userEvent.click(screen.getByRole('button', { name: HAND }));
@@ -52,9 +61,53 @@ async function fillRequired(artist = 'John Coltrane', title = 'Ascension') {
 beforeEach(async () => {
   await db.delete();
   await db.open();
+  URL.createObjectURL = vi.fn(() => `blob:${crypto.randomUUID()}`);
+  URL.revokeObjectURL = vi.fn();
 });
 
 describe('AddScreen', () => {
+  it('Take photos comes before Find a record', () => {
+    renderAdd('/add');
+    const take = screen.getByRole('button', { name: 'Take photos' });
+    const find = screen.getByRole('searchbox', { name: 'Find a record' });
+    expect(take.compareDocumentPosition(find) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Add a record' }).compareDocumentPosition(take) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('saving by hand puts the waiting photos on the new record and clears them', async () => {
+    await saveDraft({ side: 'front', bytes: new Uint8Array([1]).buffer, foundEdges: true });
+    await saveDraft({ side: 'back', bytes: new Uint8Array([2]).buffer, foundEdges: true });
+    renderAdd('/add');
+    expect(await screen.findByAltText('Front photo')).toBeInTheDocument();
+    await openHandForm();
+    await fillRequired();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByRole('heading', { name: 'The Shelf' });
+    await waitFor(async () => expect(await db.photoDrafts.count()).toBe(0));
+    const [record] = await db.records.toArray();
+    expect(record.coverPath).toMatch(new RegExp(`^${SHELF}/${record.id}/front-.+\\.jpg$`));
+    expect(record.backPath).toMatch(new RegExp(`^${SHELF}/${record.id}/back-.+\\.jpg$`));
+    expect((await db.photos.toArray()).map((p) => p.path).sort()).toEqual([record.coverPath, record.backPath].sort());
+    expect((await db.outbox.toArray()).map((p) => p.kind)).toEqual(['record.create', 'photo.upload', 'photo.upload', 'record.patch']);
+  });
+
+  it('a found record takes the waiting photos, and Undo brings them back', async () => {
+    await saveDraft({ side: 'front', bytes: new Uint8Array([1]).buffer, foundEdges: true });
+    const backend = new FakeBackend({});
+    backend.discogsResults = [FOUND];
+    renderAdd('/add', backend);
+    expect(await screen.findByAltText('Front photo')).toBeInTheDocument();
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Find a record' }), 'coltrane ascension{Enter}');
+    await userEvent.click(await screen.findByRole('button', { name: /Ascension/ }));
+    expect(await screen.findByText('On the shelf: Ascension')).toBeInTheDocument();
+    await waitFor(async () => expect(await db.photoDrafts.count()).toBe(0));
+    expect((await db.records.toArray())[0].coverPath).not.toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(async () => expect(await db.photoDrafts.count()).toBe(1));
+    expect(await screen.findByAltText('Front photo')).toBeInTheDocument();
+    expect((await db.records.toArray())[0].deletedAt).not.toBeNull();
+  });
+
   it('the find box is first and the hand form starts folded', async () => {
     renderAdd('/add');
     const find = screen.getByRole('searchbox', { name: 'Find a record' });
