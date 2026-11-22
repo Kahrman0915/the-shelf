@@ -11,7 +11,7 @@ import { formatMoney } from '@/domain/price';
 import { GENRE_LABELS } from '@/domain/genres';
 import { RATING_WORDS } from '@/domain/rating';
 import { collectionTag } from '@/domain/shelf';
-import { Poster } from '@/ui/Poster';
+import { RecordCover } from '@/ui/RecordCover';
 import { ConfirmDialog } from '@/ui/ConfirmDialog';
 import { RatingRecords } from '@/ui/RatingRecords';
 import { StatusTag } from '@/ui/StatusTag';
@@ -102,7 +102,7 @@ export function RecordScreen() {
         <p className="px-4 text-ink-muted">That record isn’t on this phone.</p>
       ) : (
         <>
-          <Poster artist={record.artist} title={record.title} genre={record.genre} className="w-full" />
+          <RecordCover record={record} />
           <div className="flex flex-col gap-6 px-4">
             <div className="flex flex-col gap-2">
               <div className="w-fit">
