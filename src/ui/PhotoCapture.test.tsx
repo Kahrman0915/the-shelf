@@ -95,6 +95,26 @@ describe('PhotoCapture', () => {
     expect(screen.queryByText('Now the back')).not.toBeInTheDocument();
   });
 
+  it('says to find the record once the photos are done, not while it is still asking for the back', async () => {
+    const user = userEvent.setup();
+    const next = 'Now find it below, and these photos go with it.';
+    render(<PhotoCapture />);
+    expect(screen.queryByText(next)).not.toBeInTheDocument();
+    await user.upload(frontInput(), file());
+    expect(await screen.findByText('Now the back')).toBeInTheDocument();
+    expect(screen.queryByText(next)).not.toBeInTheDocument();
+    await user.upload(backInput(), file());
+    expect(await screen.findByText(next)).toBeInTheDocument();
+  });
+
+  it('says to find the record after skipping the back', async () => {
+    const user = userEvent.setup();
+    render(<PhotoCapture />);
+    await user.upload(frontInput(), file());
+    await user.click(await screen.findByRole('button', { name: 'Skip the back' }));
+    expect(screen.getByText('Now find it below, and these photos go with it.')).toBeInTheDocument();
+  });
+
   it('says when it couldn’t find the edges', async () => {
     vi.mocked(squareUpPhoto).mockResolvedValue({ ...found, foundEdges: false });
     const user = userEvent.setup();

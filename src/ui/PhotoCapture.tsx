@@ -125,6 +125,10 @@ export function PhotoCapture() {
           <Button variant="ghost" onClick={() => setAskBack(false)} className={SMALL}>Skip the back</Button>
         </div>
       )}
+      {/* Until the app can recognise a sleeve itself, say what happens next once the photos are done. */}
+      {shown.length > 0 && !askBack && !squaring.front && !squaring.back && (
+        <p className="text-[15px] leading-[22px] text-ink-muted">Now find it below, and these photos go with it.</p>
+      )}
       {failure && (
         <p role="alert" className="text-[15px] text-brick-ink">
           {failure}
