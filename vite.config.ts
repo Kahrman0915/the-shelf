@@ -30,10 +30,27 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         navigateFallback: '/index.html',
+        // OpenCV (~10 MB) isn't part of the install: it's fetched when the camera is first used, then kept.
+        globIgnores: ['**/opencv*.js'],
+        runtimeCaching: [
+          {
+            urlPattern: /\/assets\/opencv[^/]*\.js$/,
+            handler: 'CacheFirst',
+            options: { cacheName: 'opencv', expiration: { maxEntries: 2 } },
+          },
+        ],
       },
     }),
   ],
   resolve: { alias: { '@': path.resolve(import.meta.dirname, './src') } },
-  // PGlite boots a whole Postgres per test file; under a full parallel run the defaults (5s/10s) can time out.
-  test: { environment: 'jsdom', setupFiles: ['./src/test/setup.ts'], testTimeout: 15_000, hookTimeout: 30_000 },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    // PGlite boots a whole Postgres per test file; under a full parallel run the defaults (5s/10s) can time out.
+    testTimeout: 15_000,
+    hookTimeout: 30_000,
+    // OpenCV.js exports an Emscripten Module with a `then` method. Vitest's default CJS interop exposes
+    // it on the import's namespace, which makes the import itself loop forever (see src/photo/loadCv.ts).
+    deps: { interopDefault: false },
+  },
 });
