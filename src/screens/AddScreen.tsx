@@ -60,6 +60,7 @@ export function AddScreen() {
       <PhotoCapture onReady={setPhotosReady} />
       <FindRecord
         records={records}
+        handFormEdited={dirty}
         photos={
           waiting
             ? {

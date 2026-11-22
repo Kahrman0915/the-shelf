@@ -171,15 +171,62 @@ describe('useReadSleeve', () => {
     expect(onAnswer).not.toHaveBeenCalled();
   });
 
-  it('skipNext(): the next drafts aren’t read, the ones after are', async () => {
+  it('skipNext(): the drafts handed back aren’t read, the ones after are', async () => {
     const { backend, result, rerender } = setup({ drafts: null, ready: false });
-    act(() => result.current.skipNext());
+    act(() => result.current.skipNext(drafts(1)));
+    // What comes back is a new object with the same photos.
     rerender({ drafts: drafts(1), ready: true });
     await new Promise((r) => setTimeout(r, 400));
     expect(backend.identifyCalls).toBe(0);
     expect(result.current.state).toBe('idle');
     rerender({ drafts: drafts(2), ready: true });
     await waitFor(() => expect(backend.identifyCalls).toBe(1));
+  });
+
+  it('skipNext() doesn’t linger: when the drafts never come back, the next sleeve is read', async () => {
+    const { backend, result, rerender } = setup({ drafts: null, ready: false });
+    act(() => result.current.skipNext(drafts(1)));
+    // Putting the drafts back failed; the next sleeve's photos arrive instead.
+    rerender({ drafts: drafts(7), ready: true });
+    await waitFor(() => expect(backend.identifyCalls).toBe(1));
+    // …and the skip is gone, even for photos like the undone ones.
+    rerender({ drafts: null, ready: false });
+    rerender({ drafts: drafts(1), ready: true });
+    await waitFor(() => expect(backend.identifyCalls).toBe(2));
+  });
+
+  it('answered drafts aren’t read again after a moment of not being ready (a retake that failed)', async () => {
+    const d = drafts();
+    const { backend, onAnswer, rerender } = setup({ drafts: d, ready: true });
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledOnce());
+    rerender({ drafts: d, ready: false });
+    rerender({ drafts: d, ready: true });
+    await new Promise((r) => setTimeout(r, 400));
+    expect(backend.identifyCalls).toBe(1);
+  });
+
+  it('skipped drafts aren’t read after a moment of not being ready either', async () => {
+    const { backend, result, rerender } = setup({ drafts: null, ready: false });
+    act(() => result.current.skipNext(drafts(1)));
+    const back = drafts(1);
+    rerender({ drafts: back, ready: true });
+    rerender({ drafts: back, ready: false });
+    rerender({ drafts: back, ready: true });
+    await new Promise((r) => setTimeout(r, 400));
+    expect(backend.identifyCalls).toBe(0);
+  });
+
+  it('a failure is still shown after a moment of not being ready', async () => {
+    const failing = new FakeBackend({});
+    failing.claudeFails = 'down';
+    const d = drafts();
+    const { result, rerender } = setup({ drafts: d, ready: true }, failing);
+    await waitFor(() => expect(result.current.state).toBe('failed'));
+    rerender({ drafts: d, ready: false });
+    expect(result.current.state).toBe('idle');
+    rerender({ drafts: d, ready: true });
+    expect(result.current.state).toBe('failed');
+    expect(failing.identifyCalls).toBe(1);
   });
 
   it('a failure says Claude couldn’t read it, and Try again reads again', async () => {

@@ -963,6 +963,80 @@ describe('FindRecord', () => {
       expect(backend.identifyCalls).toBe(2);
     });
 
+    it('the no-match line goes once a record is saved, and doesn’t come back for the next sleeve', async () => {
+      const { backend, photos } = reading({ read: READ, match: 'none', results: [] });
+      await screen.findByText('Couldn’t pin it down. Check the search below.');
+      await userEvent.click(await card(/1965 · Fantasy · FANTASY 3381/));
+      await screen.findByText('On the shelf: A Charlie Brown Christmas');
+      expect(screen.queryByText('Couldn’t pin it down. Check the search below.')).not.toBeInTheDocument();
+      // The next sleeve, recognised.
+      rerenderPhotos(undefined);
+      backend.identified = { read: READ, match: 'exact', results: [CHARLIE] };
+      rerenderPhotos({ ...photos, drafts: drafts() });
+      await waitFor(async () => expect(await db.records.count()).toBe(2));
+      await screen.findByText('1988 · Fantasy · F-8431');
+      expect(screen.queryByText('Couldn’t pin it down. Check the search below.')).not.toBeInTheDocument();
+    });
+
+    /** Cards from a search made before the photos were done, then the photos ready with the reading held. */
+    async function cardsThenReading(records: ShelfRecord[] = []) {
+      let finish: () => Promise<void> = async () => {};
+      const { backend, photos } = reading({ read: READ, match: 'exact', results: [CHARLIE] }, { records, ready: false, prepare: (b) => void (finish = slowReading(b)) });
+      await search('charlie brown christmas');
+      await card(/1965 · Fantasy · FANTASY 3381/);
+      rerenderPhotos({ ...photos, ready: true });
+      await waitFor(() => expect(backend.identifyRecord).toHaveBeenCalledOnce());
+      return { backend, photos, finish: () => finish() };
+    }
+
+    it('tapping a card while it reads: that card is saved, and the reading’s answer is dropped', async () => {
+      const { finish } = await cardsThenReading();
+      await userEvent.click(screen.getByRole('button', { name: /1965 · Fantasy · FANTASY 3381/ }));
+      await screen.findByText('On the shelf: A Charlie Brown Christmas');
+      await finish();
+      await new Promise((r) => setTimeout(r, 50));
+      const records = await db.records.toArray();
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({ discogsReleaseId: 502 });
+      expect(records[0].coverPath).not.toBeNull();
+    });
+
+    it('tapping a card already on the shelf while it reads: the answer doesn’t replace the cards under the question', async () => {
+      const existing = onShelf({ artist: 'Vince Guaraldi Trio', title: 'A Charlie Brown Christmas' });
+      await db.records.put(existing);
+      const { finish } = await cardsThenReading([existing]);
+      await userEvent.click(screen.getByRole('button', { name: /1965 · Fantasy · FANTASY 3381/ }));
+      await screen.findByRole('dialog', { name: 'Add these photos to the one on your shelf?' });
+      await finish();
+      await new Promise((r) => setTimeout(r, 50));
+      await userEvent.click(screen.getByRole('button', { name: 'Add to that one' }));
+      await screen.findByText('Photos added: A Charlie Brown Christmas');
+      expect(screen.queryByText('Which pressing is yours?')).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(await db.records.count()).toBe(1);
+    });
+
+    it('the photos line doesn’t repeat itself above the pressings question', async () => {
+      reading({ read: READ, match: 'several', results: [CHARLIE, CHARLIE_1965] });
+      await screen.findByText('Which pressing is yours?');
+      expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+    });
+
+    it('offline with photos waiting: only the reading’s line says it needs signal', async () => {
+      setOnline(false);
+      reading({ read: READ, match: 'exact', results: [CHARLIE] });
+      await screen.findByText('Needs signal to look it up. Your photos are kept.');
+      expect(screen.queryByText('Needs signal')).not.toBeInTheDocument();
+    });
+
+    it('Look it up and Try again sit outside the announced line', async () => {
+      setOnline(false);
+      reading({ read: READ, match: 'exact', results: [CHARLIE] });
+      await screen.findByText('Needs signal to look it up. Your photos are kept.');
+      expect(screen.getByRole('button', { name: 'Look it up' }).closest('[role="status"]')).toBeNull();
+      expect(screen.getByText('Needs signal to look it up. Your photos are kept.').closest('[role="status"]')).not.toBeNull();
+    });
+
     describe('the line saying what happens next', () => {
       it('isn’t there without photos', () => {
         setup();

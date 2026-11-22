@@ -176,6 +176,31 @@ describe('AddScreen', () => {
     expect((await db.records.toArray())[0].deletedAt).not.toBeNull();
   });
 
+  it('starting to fill it in by hand while Claude reads: the reading’s answer is ignored', async () => {
+    vi.mocked(squareUpPhoto).mockImplementation(async () => ({ bytes: new Uint8Array([1]).buffer, foundEdges: true }));
+    const backend = new FakeBackend({});
+    backend.identified = { read: { artist: 'John Coltrane', title: 'Ascension', barcode: null, catalog: 'A-95', label: 'Impulse!' }, match: 'exact', results: [FOUND] };
+    let release: () => void = () => {};
+    const real = backend.identifyRecord.bind(backend);
+    const identify = vi.spyOn(backend, 'identifyRecord').mockImplementation(async (front, back) => {
+      await new Promise<void>((r) => (release = r));
+      return real(front, back);
+    });
+    const user = userEvent.setup();
+    renderAdd('/add', backend);
+    await user.upload(screen.getByLabelText('Front photo file'), new File([new Uint8Array([1])], 'shot.jpg', { type: 'image/jpeg' }));
+    await user.click(await screen.findByRole('button', { name: 'Skip the back' }));
+    await waitFor(() => expect(identify).toHaveBeenCalledOnce());
+    await openHandForm();
+    await user.type(box('Artist'), 'John');
+    await waitFor(() => expect(screen.queryByText('Looking it up…')).not.toBeInTheDocument());
+    release();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await db.records.count()).toBe(0);
+    expect(await db.photoDrafts.count()).toBe(1);
+    expect(screen.queryByText(/On the shelf:/)).not.toBeInTheDocument();
+  });
+
   it('the find box is first and the hand form starts folded', async () => {
     renderAdd('/add');
     const find = screen.getByRole('searchbox', { name: 'Find a record' });

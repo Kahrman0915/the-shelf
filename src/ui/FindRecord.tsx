@@ -53,8 +53,9 @@ function replaces(record: ShelfRecord, drafts: Drafts): boolean {
 }
 
 /** Search Discogs and put a record on the shelf with one tap. Results live only in this component's state.
- *  With photos waiting, the record saved takes them; if it's already on the shelf, it asks where they go first. */
-export function FindRecord({ records, onAdded, photos }: { records: ShelfRecord[]; onAdded?: () => void; photos?: Photos }) {
+ *  With photos waiting, the record saved takes them; if it's already on the shelf, it asks where they go first.
+ *  `handFormEdited`: the person has started filling the record in by hand, which takes over from Claude's reading. */
+export function FindRecord({ records, onAdded, photos, handFormEdited = false }: { records: ShelfRecord[]; onAdded?: () => void; photos?: Photos; handFormEdited?: boolean }) {
   const backend = useBackend();
   const { shelfId, userId } = useCurrentShelf();
   const { runNow } = useSyncStatus();
@@ -64,8 +65,9 @@ export function FindRecord({ records, onAdded, photos }: { records: ShelfRecord[
   const [found, setFound] = useState<{ query: string; results: FoundRecord[]; at: number; asked?: boolean } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
-  // Claude read the sleeve but found nothing: the box holds what it read, and that search runs.
-  const [noMatch, setNoMatch] = useState(false);
+  // Claude read the sleeve but found nothing: the drafts it was for, while the box holds what it read.
+  // Tied to those drafts, so it never shows for the next sleeve.
+  const [noMatch, setNoMatch] = useState<Drafts | null>(null);
   // Once the photos are done, Claude reads the sleeve. Only the latest reading answers, and a search of
   // the person's own takes over from it.
   const sleeve = useReadSleeve({ drafts: photos?.drafts ?? null, ready: photos?.ready ?? false, onAnswer: recognised });
@@ -81,7 +83,7 @@ export function FindRecord({ records, onAdded, photos }: { records: ShelfRecord[
       box.current?.focus();
       // Undo of a save Claude recognised: reading the photos again would only save the same pressing, so
       // they aren't read; the search for what it read shows the other pressings instead.
-      if (readWords && drafts) sleeve.skipNext();
+      if (readWords && drafts) sleeve.skipNext(drafts);
       if (drafts) handBack.current?.(drafts);
       if (readWords) searchFor(readWords);
     },
@@ -126,8 +128,13 @@ export function FindRecord({ records, onAdded, photos }: { records: ShelfRecord[
   /** The person is searching for themselves: Claude's reading of the sleeve is set aside. */
   function takeOver() {
     sleeve.cancel();
-    setNoMatch(false);
+    setNoMatch(null);
   }
+
+  useEffect(() => {
+    if (handFormEdited) takeOver();
+    // Only the hand form starting to be filled in takes over; takeOver itself changes nothing it reads.
+  }, [handFormEdited]);
 
   function edit(value: string) {
     setQuery(value);
@@ -170,8 +177,12 @@ export function FindRecord({ records, onAdded, photos }: { records: ShelfRecord[
 
   /** A card tapped, or the one pressing Claude found (`recognisedAs`). False when a save already under way left it unsaved. */
   function pick(record: FoundRecord, recognisedAs?: Recognised): boolean {
-    // Inside the tap itself: iOS only opens the keyboard for a focus() made before any await.
-    if (!recognisedAs) box.current?.focus();
+    if (!recognisedAs) {
+      // Inside the tap itself: iOS only opens the keyboard for a focus() made before any await.
+      box.current?.focus();
+      // The person chose: a reading still on its way would only save a second record, or replace these cards.
+      takeOver();
+    }
     if (saving.current !== 'idle') return false;
     saving.current = 'running';
     const searchBefore = latest.current;
@@ -187,15 +198,21 @@ export function FindRecord({ records, onAdded, photos }: { records: ShelfRecord[
   }
 
   /** Claude's answer for the photos showing. Exact saves as if its card were tapped; several shows those
-   *  cards; none fills the box with what it read and searches that. */
+   *  cards; none fills the box with what it read and searches that. Dropped when the photos have gone,
+   *  were already used by a save, or a save or its question is under way. */
   function recognised({ read, match, results }: Identified) {
+    if (!photos || photos.drafts === usedDrafts.current || asking || saving.current !== 'idle') return;
     const words = wordsFor(read);
     const best = results[0];
     if (best) {
       const readWords = words.length >= 2 ? words : wordsFor(best);
       const detail = joined([best.year, best.label, best.catalog]) || null;
-      if (match === 'exact' && pick(best, { detail, readWords })) return;
-      if (match !== 'none') {
+      setNoMatch(null);
+      if (match === 'exact') {
+        pick(best, { detail, readWords });
+        return;
+      }
+      if (match === 'several') {
         latest.current++;
         setSearching(false);
         setMessage(null);
@@ -203,7 +220,7 @@ export function FindRecord({ records, onAdded, photos }: { records: ShelfRecord[
         return;
       }
     }
-    setNoMatch(true);
+    setNoMatch(photos.drafts);
     searchFor(words);
   }
 
@@ -250,6 +267,7 @@ export function FindRecord({ records, onAdded, photos }: { records: ShelfRecord[
         to.photos.onUsed();
       }
       offer(made);
+      setNoMatch(null);
       if (latest.current === searchBefore) {
         saving.current = 'held';
         latest.current++;
@@ -280,28 +298,29 @@ export function FindRecord({ records, onAdded, photos }: { records: ShelfRecord[
     void save(record, choice === 'existing' ? { kind: 'existing', photos: waiting, existing } : { kind: 'new', photos: waiting }, searchBefore, recognisedAs);
   }
 
-  const shown = online ? message : NEEDS_SIGNAL;
+  // Offline with the reading's own line up, that line says it: no second "Needs signal".
+  const shown = online ? message : sleeve.state === 'offline' ? null : NEEDS_SIGNAL;
   const results = found?.results ?? [];
   const photoLine =
     sleeve.state === 'reading' ? LOOKING
     : sleeve.state === 'offline' ? LOOK_OFFLINE
     : sleeve.state === 'failed' ? sleeve.message
-    : noMatch ? NO_MATCH
-    : photos?.ready ? PHOTOS_GO_WITH_IT
+    : photos && noMatch === photos.drafts ? NO_MATCH
+    : photos?.ready && !found?.asked ? PHOTOS_GO_WITH_IT
     : null;
   const again = sleeve.state === 'offline' ? 'Look it up' : sleeve.state === 'failed' ? 'Try again' : null;
 
   return (
     <section className="flex flex-col gap-3 px-4">
       {/* Always mounted, so a screen reader announces the text when it arrives. */}
-      <div role="status" aria-live="polite" className="flex flex-col gap-2">
+      <div role="status" aria-live="polite">
         {photoLine && <p className="text-[15px] leading-[22px] text-ink-muted">{photoLine}</p>}
-        {again && (
-          <Button type="button" variant="outline" className="h-12 w-full rounded-lg text-[15px] font-semibold" onClick={sleeve.retry}>
-            {again}
-          </Button>
-        )}
       </div>
+      {again && (
+        <Button type="button" variant="outline" className="h-12 w-full rounded-lg text-[15px] font-semibold" onClick={sleeve.retry}>
+          {again}
+        </Button>
+      )}
       <form role="search" onSubmit={(e) => void search(e)} className="flex flex-col gap-2">
         <label htmlFor="find-record" className={LABEL}>
           Find a record
