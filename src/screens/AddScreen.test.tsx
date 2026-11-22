@@ -179,6 +179,28 @@ describe('AddScreen', () => {
     expect((await db.outbox.toArray()).map((p) => p.kind)).toEqual(['record.create']);
   });
 
+  it('a hand save with no fun fact queues the record for one', async () => {
+    renderAdd('/add');
+    await openHandForm();
+    await fillRequired();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByRole('heading', { name: 'The Shelf' });
+    const [record] = await db.records.toArray();
+    await waitFor(async () => expect(JSON.parse((await db.meta.get('funFactQueue'))?.value ?? '[]')).toEqual([{ recordId: record.id, tries: 0 }]));
+  });
+
+  it('a hand save with a typed fun fact queues nothing', async () => {
+    renderAdd('/add');
+    await openHandForm();
+    await fillRequired();
+    await userEvent.click(screen.getByRole('button', { name: 'More details' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Fun fact' }), 'Recorded in one day.');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByRole('heading', { name: 'The Shelf' });
+    expect((await db.records.toArray())[0].funFact).toBe('Recorded in one day.');
+    expect(await db.meta.get('funFactQueue')).toBeUndefined();
+  });
+
   it('rating while adding saves the rating too', async () => {
     renderAdd('/add');
     await openHandForm();

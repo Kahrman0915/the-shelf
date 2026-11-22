@@ -8,6 +8,7 @@ import { useSyncStatus } from '@/app/SyncContext';
 import { addFound, perform } from '@/data/actions';
 import type { FoundRecord } from '@/data/backend';
 import { db } from '@/data/db';
+import { wantFunFact } from '@/data/funFacts';
 import { addPhotosTo, PATH_FIELD, PHOTO_SIDES, type Drafts, type PhotoCtx } from '@/data/photos';
 import type { ShelfRecord } from '@/data/schema';
 import { findDuplicate } from '@/domain/recordForm';
@@ -160,6 +161,8 @@ export function FindRecord({ records, onAdded, photos }: { records: ShelfRecord[
         const create = found.postcards[0];
         const plan = drafts && create.kind === 'record.create' ? addPhotosTo(create.fields, drafts, ctx) : null;
         await perform(db, [...found.postcards, ...(plan?.postcards ?? [])], runNow, plan?.photos ?? []);
+        // The record is saved: a failure to queue its fun fact mustn't make the save look failed.
+        await wantFunFact(db, ctx.newId).catch(console.error);
         made = { text: `On the shelf: ${record.title}`, undo: [...(found.undo ?? []), ...(plan?.undo ?? [])], drafts, later: [] };
       }
       if (to.photos) {

@@ -219,6 +219,13 @@ export function editRecord(
   return { postcards: [patchCard(record, ctx, changed)], undo: null };
 }
 
+/** A fun fact found for a record, saved as the pair in one patch. No undo: it can be edited away like any other. */
+export function addFunFact(r: ShelfRecord, found: { fact: string; sourceUrl: string }, ctx: Ctx): ActionResult {
+  const fields: Partial<ShelfRecord> = { funFact: found.fact, funFactSource: found.sourceUrl };
+  checkRecord({ ...r, ...fields });
+  return { postcards: [patchCard(r, ctx, fields)], undo: null };
+}
+
 /** Delete any record, whatever its status. Undo clears the mark, so it works after the delete reached the server. */
 export function deleteRecord(record: ShelfRecord, ctx: Ctx): ActionResult {
   return { postcards: [patchCard(record, ctx, { deletedAt: ctx.now })], undo: [patchCard(record, ctx, { deletedAt: null })] };

@@ -51,4 +51,17 @@ describe('ShowScreen', () => {
     expect(screen.getByText('In New arrivals')).toBeInTheDocument();
     expect(await db.records.count()).toBe(1);
   });
+
+  it('Bought it new queues the record for a fun fact', async () => {
+    renderShow();
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search your records' }), 'Art Blakey');
+    await userEvent.click(await screen.findByRole('button', { name: 'Bought it' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Title' }), 'Moanin’');
+    await userEvent.click(screen.getByRole('combobox', { name: 'Genre' }));
+    await userEvent.click(await screen.findByRole('option', { name: /Jazz/ }));
+    await userEvent.click(screen.getAllByRole('button', { name: 'Bought it' }).at(-1)!);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const [record] = await db.records.toArray();
+    await waitFor(async () => expect(JSON.parse((await db.meta.get('funFactQueue'))?.value ?? '[]')).toEqual([{ recordId: record.id, tries: 0 }]));
+  });
 });

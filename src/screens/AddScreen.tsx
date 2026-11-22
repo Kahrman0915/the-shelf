@@ -6,6 +6,7 @@ import { SyncNotice, useSyncStatus } from '@/app/SyncContext';
 import { useLeaveGuard } from '@/app/useLeaveGuard';
 import { addRecord, perform, type RecordFields } from '@/data/actions';
 import { db } from '@/data/db';
+import { wantFunFact } from '@/data/funFacts';
 import { useShelfItems } from '@/data/hooks';
 import { clearDrafts, restoreDrafts, useDrafts } from '@/data/photoDrafts';
 import { addPhotosTo, hasDrafts } from '@/data/photos';
@@ -38,6 +39,8 @@ export function AddScreen() {
     const create = postcards[0];
     const plan = waiting && create.kind === 'record.create' ? addPhotosTo(create.fields, waiting, ctx) : null;
     await perform(db, [...postcards, ...(plan?.postcards ?? [])], runNow, plan?.photos ?? []);
+    // The record is saved: failing to queue its fun fact mustn't make Save look failed either.
+    if (fields.funFact === null) await wantFunFact(db, ctx.newId).catch(console.error);
     // The record is saved: a failure to clear the drafts mustn't make Save look failed and tempt a second tap.
     if (plan) await clearDrafts().catch(console.error);
     if (!another) navigate('/');

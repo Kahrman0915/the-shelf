@@ -8,6 +8,7 @@ import { SyncNotice, useSyncStatus } from '@/app/SyncContext';
 import { useUndo } from '@/app/UndoContext';
 import { boughtNew, perform, type NewBuy } from '@/data/actions';
 import { db } from '@/data/db';
+import { wantFunFact } from '@/data/funFacts';
 import { useShelfItems } from '@/data/hooks';
 import { spineColor } from '@/domain/labels';
 import { collectionTag, showResults } from '@/domain/shelf';
@@ -32,8 +33,11 @@ export function ShowScreen() {
   }
 
   async function onSave(buy: NewBuy) {
-    const result = boughtNew(buy, { me: userId, now: new Date().toISOString(), shelfId, newId: crypto.randomUUID() });
+    const newId = crypto.randomUUID();
+    const result = boughtNew(buy, { me: userId, now: new Date().toISOString(), shelfId, newId });
     await perform(db, result.postcards, runNow);
+    // The record is saved: a failure to queue its fun fact mustn't make the save look failed.
+    await wantFunFact(db, newId).catch(console.error);
     const undo = result.undo;
     if (undo) offer('In New arrivals', () => perform(db, undo, runNow));
     setBuying(false);

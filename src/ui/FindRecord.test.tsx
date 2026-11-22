@@ -197,6 +197,15 @@ describe('FindRecord', () => {
     expect(onAdded).toHaveBeenCalledTimes(1);
   });
 
+  it('tapping a card queues the new record for a fun fact', async () => {
+    setup();
+    await search('mccoy tyner forces of nature');
+    await userEvent.click(await card(/Forces Of Nature/));
+    await screen.findByText(/On the shelf:/);
+    const [record] = await db.records.toArray();
+    await waitFor(async () => expect(JSON.parse((await db.meta.get('funFactQueue'))?.value ?? '[]')).toEqual([{ recordId: record.id, tries: 0 }]));
+  });
+
   it('the box clears and has focus after saving', async () => {
     setup();
     await search('mccoy tyner forces of nature');
@@ -255,7 +264,8 @@ describe('FindRecord', () => {
     await finishSave();
     await screen.findByText('On the shelf: Forces Of Nature (Live At Slugs’)');
     expect(await db.records.count()).toBe(1);
-    expect(db.transaction).toHaveBeenCalledTimes(1);
+    // One save's transaction; queueing its fun fact is a transaction over meta alone.
+    expect(vi.mocked(db.transaction).mock.calls.filter((args) => (args as unknown[])[1] !== db.meta)).toHaveLength(1);
     // Once the first save is done, the newer cards can be saved.
     await userEvent.click(screen.getByRole('button', { name: /Sahara/ }));
     await screen.findByText('On the shelf: Sahara');
@@ -645,6 +655,14 @@ describe('FindRecord', () => {
         expect(records[0].backPath).toMatch(new RegExp(`^${SHELF}/${SAHARA_ID}/back-`));
         expect(await kinds()).toEqual(['photo.upload', 'photo.upload', 'record.patch']);
         expect(photos.onUsed).toHaveBeenCalledOnce();
+      });
+
+      it('Add to that one queues no fun fact', async () => {
+        withPhotos([await shelved()]);
+        await pickSahara();
+        await userEvent.click(await screen.findByRole('button', { name: 'Add to that one' }));
+        await screen.findByText('Photos added: Sahara');
+        expect(await db.meta.get('funFactQueue')).toBeUndefined();
       });
 
       it('Undo after Add to that one puts its old paths back and hands the photos back', async () => {

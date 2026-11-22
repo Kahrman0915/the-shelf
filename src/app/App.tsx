@@ -19,6 +19,7 @@ import { SignOutButton } from './SignOutButton';
 import { isShowPath } from './routes';
 import { SyncProvider } from './SyncContext';
 import { UndoBar, UndoProvider } from './UndoContext';
+import { useFunFacts } from './useFunFacts';
 import { useSession } from './useSession';
 
 const MODE_KEY = 'shelf:mode';
@@ -50,6 +51,12 @@ const previousPersonMessage = (n: number) =>
   n === 1
     ? '1 change from the previous person on this phone hasn’t been sent. Continuing deletes it.'
     : `${n} changes from the previous person on this phone haven’t been sent. Continuing deletes them.`;
+
+/** Works the fun-fact queue for as long as someone is signed in. */
+function FunFactRunner() {
+  useFunFacts();
+  return null;
+}
 
 /** Sends the app to show mode once at startup, so tapping Home later isn't bounced back. */
 function RedirectOnce({ to, onDone }: { to: string; onDone: () => void }) {
@@ -103,6 +110,7 @@ export default function App() {
   return (
     <CurrentShelfProvider value={{ shelfId: session.shelfId, userId: session.user.userId, email: session.user.email, signOut, signOutAndDelete }}>
       <SyncProvider backend={backend} shelfId={session.shelfId}>
+        <FunFactRunner />
         <UndoProvider>
           <Routes>
             <Route

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FakeBackend } from '@/test/fakeBackend';
 import {
   addFound,
+  addFunFact,
   addRecord,
   boughtIt,
   boughtNew,
@@ -382,6 +383,27 @@ describe('editRecord', () => {
     const r = record();
     expect(() => editRecord(r, formOf(r), { ...formOf(r), nmEstimateLow: 30, nmEstimateHigh: 10 }, ctx)).toThrow(/nmEstimateLow/);
     expect(() => editRecord(r, formOf(r), { ...formOf(r), year: 1800 }, ctx)).toThrow(BackendError);
+  });
+});
+
+describe('addFunFact', () => {
+  it('makes one patch with the fact and its source, and no undo', () => {
+    const { postcards, undo } = addFunFact(record(), { fact: 'Recorded in two sessions.', sourceUrl: 'https://example.com/kob' }, ctx);
+    expect(postcards).toEqual([
+      {
+        kind: 'record.patch',
+        shelfId: SHELF,
+        recordId: A,
+        userId: ME,
+        createdAt: NOW,
+        fields: { funFact: 'Recorded in two sessions.', funFactSource: 'https://example.com/kob' },
+      },
+    ]);
+    expect(undo).toBeNull();
+  });
+
+  it('refuses a source that isn’t https (record rules)', () => {
+    expect(() => addFunFact(record(), { fact: 'A fact.', sourceUrl: 'http://example.com' }, ctx)).toThrow(/funFactSource/);
   });
 });
 
