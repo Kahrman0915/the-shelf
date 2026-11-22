@@ -31,9 +31,10 @@ export function usePhotoUrl(path: string | null): string | null {
   useEffect(() => {
     if (!path || stored !== null || asked.current === path) return;
     asked.current = path;
-    let job = downloading.get(path);
-    if (!job) {
-      job = (async () => {
+    if (downloading.has(path)) return;
+    downloading.set(
+      path,
+      (async () => {
         try {
           const bytes = await backend.downloadPhoto(path);
           if (bytes) await db.photos.put({ path, bytes });
@@ -42,9 +43,8 @@ export function usePhotoUrl(path: string | null): string | null {
         } finally {
           downloading.delete(path);
         }
-      })();
-      downloading.set(path, job);
-    }
+      })(),
+    );
   }, [backend, path, stored]);
 
   return useBytesUrl(stored?.bytes ?? null);
