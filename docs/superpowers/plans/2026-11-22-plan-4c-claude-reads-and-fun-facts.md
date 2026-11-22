@@ -369,7 +369,11 @@ This task is run by the controller with Kahrman. Each **(OK)** step needs his ex
 
 - [ ] **Step 1: Ready check.** Run `npx vitest run && npx tsc -b && npm run build`.
 - [ ] **Step 2: Kahrman sets up Claude** (spec §10.1): the Console account, the spending cap, the key and the dashboard secret `ANTHROPIC_API_KEY`. Check its name only, with `npx supabase secrets list --project-ref rlhhrzkaosngafcoxaas`.
-- [ ] **Step 3 (OK): Deploy.** `npx supabase functions deploy identify-record fun-fact discogs-search --project-ref rlhhrzkaosngafcoxaas --yes`. Then smoke-test each function: without sign-in → 401.
+- [ ] **Step 3 (OK): Deploy.** `npx supabase functions deploy identify-record fun-fact discogs-search --project-ref rlhhrzkaosngafcoxaas --yes`. Then smoke-test each function. Without sign-in → 401. Then make **one signed-in call to each**, from the test link on Kahrman's phone:
+  - one real sleeve through Add, which calls `identify-record`;
+  - one known album through **Find a fun fact**, which calls `fun-fact`.
+
+  Read both functions' logs. Expect no `stop` lines and no 400s; a 400 here is not billed. This costs under 5¢. If a schema or a parameter is refused, fix it before the ten-sleeve test.
 - [ ] **Step 4 (OK): Phone test.** Push the branch and test on the stable preview link with ten real sleeves (spec §9): exact and right, any wrong pressing, each fact against its source, and the cost from the Console.
 - [ ] **Step 5 (OK): Merge to `main`.**
 - [ ] **Step 6: Handoff.** Add the notes to `docs/superpowers/notes/plan-2-handoff.md` and commit.
