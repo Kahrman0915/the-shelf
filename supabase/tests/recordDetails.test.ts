@@ -29,6 +29,8 @@ beforeEach(async () => {
   }
   kShelf = (await db.query<{ id: string }>(`insert into public.shelves (name, created_by) values ('The Shelf', $1) returning id`, [kahrman.id])).rows[0].id;
   sShelf = (await db.query<{ id: string }>(`insert into public.shelves (name, created_by) values ('Other', $1) returning id`, [stranger.id])).rows[0].id;
+  // As bootstrap() does for a new shelf: records need a section to sit in.
+  await db.query('select public.seed_sections($1, false), public.seed_sections($2, false)', [kShelf, sShelf]);
   await db.query(`insert into public.shelf_members (shelf_id, user_id, role) values ($1, $2, 'owner'), ($1, $3, 'member'), ($4, $5, 'owner')`, [
     kShelf, kahrman.id, megan.id, sShelf, stranger.id,
   ]);

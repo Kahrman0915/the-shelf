@@ -35,15 +35,25 @@ const STORAGE_STANDIN = `
   grant select, insert, update, delete on storage.objects to authenticated;
 `;
 
-export async function freshDb(): Promise<PGlite> {
+const MIGRATIONS = join(import.meta.dirname, '..', 'migrations');
+const migrationFiles = () => readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort();
+
+/** A database with every migration applied, or only those named before `before` (to seed data a later migration converts). */
+export async function freshDb(options: { before?: string } = {}): Promise<PGlite> {
   const db = new PGlite();
   await db.exec(AUTH_STANDIN);
   await db.exec(STORAGE_STANDIN);
-  const dir = join(import.meta.dirname, '..', 'migrations');
-  for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
-    await db.exec(readFileSync(join(dir, file), 'utf8'));
+  for (const file of migrationFiles().filter((f) => !options.before || f < options.before)) {
+    await db.exec(readFileSync(join(MIGRATIONS, file), 'utf8'));
   }
   return db;
+}
+
+/** Applies the migrations named from `from` onwards: the rest of a freshDb({ before: from }). */
+export async function applyMigrations(db: PGlite, from: string): Promise<void> {
+  for (const file of migrationFiles().filter((f) => f >= from)) {
+    await db.exec(readFileSync(join(MIGRATIONS, file), 'utf8'));
+  }
 }
 
 export async function addUser(
