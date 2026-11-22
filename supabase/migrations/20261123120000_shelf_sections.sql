@@ -7,7 +7,8 @@
 create table public.sections (
   id uuid primary key default gen_random_uuid(),
   shelf_id uuid not null references public.shelves (id) on delete cascade,
-  name text not null check (char_length(btrim(name)) between 1 and 40),
+  -- btrim only takes off spaces, so a name of tabs or newlines also needs a visible character.
+  name text not null check (char_length(btrim(name)) between 1 and 40 and name ~ '\S'),
   color text not null check (color in (
     'jazz', 'rock', 'popsoul', 'popularpop', 'misc', 'country', 'reggae', 'soundtracks', 'christmas', 'teal', 'slate', 'sand'
   )),
@@ -72,22 +73,27 @@ language sql set search_path = '' as $$
 $$;
 
 -- The changeover, on every record write. In order:
---   1. an old-app write (no section on insert, or only the genre changed) moves to the genre's section,
---      or, if that was merged away, to the section derived from the genre, which step 2 then follows;
---   2. a section that was merged away is followed to its survivor; an unknown one means the catch-all;
---   3. a section from another shelf is refused;
---   4. genre is set from the section, so old phones keep reading the right one.
+--   1. an old-app write (no section on insert, or only the genre changed) moves to the genre's section:
+--      the one derived from the genre if it's still here (so misc means the catch-all, not a section made
+--      later, which also carries misc), else the first by position with that legacy genre, else the
+--      derived id, which step 2 then follows;
+--   2. a section that was merged away is followed to its survivor, through this shelf's own sections
+--      and redirects only, so an id that turns up on another shelf can't turn this shelf's writes away;
+--   3. a section the writer named that is on another shelf is refused;
+--   4. anything else unknown means the catch-all;
+--   5. genre is set from the section, so old phones keep reading the right one.
 create function public.records_fill_section() returns trigger
 language plpgsql security definer set search_path = '' as $$
 declare
+  v_old_app boolean := new.section_id is null
+    or (tg_op = 'UPDATE' and new.genre is distinct from old.genre and new.section_id is not distinct from old.section_id);
   v_id uuid := new.section_id;
   v_section public.sections%rowtype;
 begin
-  if new.section_id is null
-     or (tg_op = 'UPDATE' and new.genre is distinct from old.genre and new.section_id is not distinct from old.section_id) then
+  if v_old_app then
     select s.id into v_id from public.sections s
     where s.shelf_id = new.shelf_id and s.legacy_genre = new.genre
-    order by s.position, s.id limit 1;
+    order by (s.id = public.section_id_for(new.shelf_id, new.genre)) desc, s.position, s.id limit 1;
     v_id := coalesce(v_id, public.section_id_for(new.shelf_id, new.genre));
   end if;
 
@@ -96,21 +102,20 @@ begin
   -- foreign key check later.
   for hop in 1..10 loop
     exit when v_id is null;
-    perform 1 from public.sections s where s.id = v_id for key share;
+    perform 1 from public.sections s where s.id = v_id and s.shelf_id = new.shelf_id for key share;
     exit when found;
-    select r.into_id into v_id from public.section_redirects r where r.from_id = v_id;
+    select r.into_id into v_id from public.section_redirects r where r.from_id = v_id and r.shelf_id = new.shelf_id;
   end loop;
 
-  select * into v_section from public.sections s where s.id = v_id;
+  select * into v_section from public.sections s where s.id = v_id and s.shelf_id = new.shelf_id;
   if not found then
+    if not v_old_app and exists (select 1 from public.sections s where s.id = new.section_id) then
+      raise exception 'section belongs to another shelf';
+    end if;
     select * into v_section from public.sections s where s.shelf_id = new.shelf_id and s.is_catch_all;
     if not found then
       raise exception 'shelf has no catch-all section';
     end if;
-  end if;
-
-  if v_section.shelf_id <> new.shelf_id then
-    raise exception 'section belongs to another shelf';
   end if;
 
   new.section_id := v_section.id;
@@ -204,6 +209,16 @@ revoke all on function public.merge_section(uuid, uuid) from public, anon;
 grant execute on function public.merge_section(uuid, uuid) to authenticated;
 
 revoke all on function public.section_id_for(uuid, public.genre), public.seed_sections(uuid, boolean) from public, anon, authenticated;
+
+-- Whether a section was merged away, on any shelf. Owner's rights, because redirects on a shelf you're
+-- not on are hidden from you, and a section added with that id would bring the merged one back (a resent
+-- create) or sit on another shelf's id.
+create function public.section_was_merged(p_id uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.section_redirects r where r.from_id = p_id)
+$$;
+revoke all on function public.section_was_merged(uuid) from public, anon;
+grant execute on function public.section_was_merged(uuid) to authenticated;
 
 -- Existing shelves: Kahrman's (the one with imported records) keeps his nine, every other gets the starter set.
 select public.seed_sections(s.id, exists (select 1 from public.records r where r.shelf_id = s.id and r.import_key is not null))
@@ -305,7 +320,7 @@ grant select, insert, delete on public.sections to authenticated;
 grant update (name, color, position, discogs_genres, takes_holiday) on public.sections to authenticated;
 create policy "members see sections" on public.sections for select to authenticated using (public.is_member(shelf_id));
 create policy "members add sections" on public.sections for insert to authenticated
-  with check (public.is_member(shelf_id) and not is_catch_all and legacy_genre = 'misc');
+  with check (public.is_member(shelf_id) and not is_catch_all and legacy_genre = 'misc' and not public.section_was_merged(id));
 create policy "members edit sections" on public.sections for update to authenticated
   using (public.is_member(shelf_id)) with check (public.is_member(shelf_id));
 -- A section with records (deleted ones too) is also refused, by records' foreign key.

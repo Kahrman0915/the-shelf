@@ -182,6 +182,17 @@ describe('an old app, which writes genre', () => {
     expect((await placeOf(id)).section_id).toBe(k('rock'));
   });
 
+  it('lands misc in the catch-all, even with a section made later moved above it', async () => {
+    const blues = (await as(megan, `insert into public.sections (shelf_id, name, color, position) values ($1, 'Blues', 'slate', 9) returning id`, [kShelf]))
+      .rows[0] as { id: string };
+    await as(megan, 'update public.sections set position = 3 where id = $1', [blues.id]);
+    const inserted = await oldAppInsert(megan, kShelf, 'misc');
+    const edited = await oldAppInsert(megan, kShelf, 'rock');
+    await as(megan, `update public.records set genre = 'misc' where id = $1`, [edited]);
+    expect(await placeOf(inserted)).toEqual({ section_id: k('misc'), genre: 'misc' });
+    expect(await placeOf(edited)).toEqual({ section_id: k('misc'), genre: 'misc' });
+  });
+
   it('lands a genre with no section of its own in the catch-all', async () => {
     await as(stranger, 'delete from public.sections where id = $1', [s('reggae')]);
     const id = await oldAppInsert(stranger, sShelf, 'reggae');
@@ -267,6 +278,26 @@ describe('rerouting late writes', () => {
     await expect(as(megan, 'update public.records set section_id = $2 where id = $1', [id, s('jazz')])).rejects.toThrow(
       /section belongs to another shelf/,
     );
+  });
+
+  it('another shelf holding a merged section’s id doesn’t turn this shelf’s writes away', async () => {
+    const existing = await newAppInsert(megan, kShelf, k('reggae'));
+    await merge(kahrman, k('rock'), k('jazz'));
+    // Made past the rules (they refuse it now), as if it got there anyway.
+    await db.query(`insert into public.sections (id, shelf_id, name, color, position) values ($1, $2, 'Squat', 'teal', 9)`, [k('rock'), sShelf]);
+    const oldApp = await oldAppInsert(megan, kShelf, 'rock');
+    const late = await newAppInsert(megan, kShelf, k('rock'));
+    await as(megan, `update public.records set genre = 'rock' where id = $1`, [existing]);
+    expect(await placeOf(oldApp)).toEqual({ section_id: k('jazz'), genre: 'jazz' });
+    expect(await placeOf(late)).toEqual({ section_id: k('jazz'), genre: 'jazz' });
+    expect(await placeOf(existing)).toEqual({ section_id: k('jazz'), genre: 'jazz' });
+  });
+
+  it('another shelf holding a deleted section’s id sends this shelf’s old-app writes to the catch-all', async () => {
+    await as(megan, 'delete from public.sections where id = $1', [k('reggae')]);
+    await as(stranger, `insert into public.sections (id, shelf_id, name, color, position) values ($1, $2, 'Squat', 'teal', 9)`, [k('reggae'), sShelf]);
+    const id = await oldAppInsert(megan, kShelf, 'reggae');
+    expect(await placeOf(id)).toEqual({ section_id: k('misc'), genre: 'misc' });
   });
 });
 
@@ -398,6 +429,21 @@ describe('rules', () => {
     ).rejects.toThrow(/row-level security/);
   });
 
+  it('nobody can add a section with a merged section’s id, on any shelf', async () => {
+    const blues = (await as(megan, `insert into public.sections (shelf_id, name, color, position) values ($1, 'Blues', 'teal', 9) returning id`, [kShelf]))
+      .rows[0] as { id: string };
+    await merge(megan, blues.id, k('jazz'));
+    await merge(kahrman, k('rock'), k('jazz'));
+    // A resent create would bring a merged section back.
+    await expect(
+      as(megan, `insert into public.sections (id, shelf_id, name, color, position) values ($1, $2, 'Blues', 'teal', 9)`, [blues.id, kShelf]),
+    ).rejects.toThrow(/row-level security/);
+    await expect(
+      as(stranger, `insert into public.sections (id, shelf_id, name, color, position) values ($1, $2, 'Squat', 'teal', 9)`, [k('rock'), sShelf]),
+    ).rejects.toThrow(/row-level security/);
+    expect((await db.query('select id from public.sections where id in ($1, $2)', [blues.id, k('rock')])).rows).toEqual([]);
+  });
+
   it('a member can rename, recolour and reorder', async () => {
     const r = await as(megan, `update public.sections set name = 'Rock & roll', color = 'slate', position = 12 where id = $1 returning name, color, position`, [
       k('rock'),
@@ -451,6 +497,8 @@ describe('checks', () => {
   it('a name is 1–40 characters once trimmed', async () => {
     await expect(update('name = $2', 'a'.repeat(41))).rejects.toThrow(/violates check constraint/);
     await expect(update('name = $2', '   ')).rejects.toThrow(/violates check constraint/);
+    await expect(update('name = $2', '\t')).rejects.toThrow(/violates check constraint/);
+    await expect(update('name = $2', ' \n\t ')).rejects.toThrow(/violates check constraint/);
     await expect(update('name = $2', 'a'.repeat(40))).resolves.toBeDefined();
   });
 
