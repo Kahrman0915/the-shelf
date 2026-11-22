@@ -9,9 +9,10 @@ const TIPS = [
 ];
 
 /** The first-time (and any-time) advice for taking a sharp cover photo. */
-export function PhotoTips({ open, onDone }: { open: boolean; onDone: () => void }) {
+/** Only the Got it button calls onDone; Escape or a tap outside calls onDismiss, which just closes. */
+export function PhotoTips({ open, onDone, onDismiss }: { open: boolean; onDone: () => void; onDismiss?: () => void }) {
   return (
-    <Dialog.Root open={open} onOpenChange={(next) => !next && onDone()}>
+    <Dialog.Root open={open} onOpenChange={(next) => !next && onDismiss?.()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
         <Dialog.Content

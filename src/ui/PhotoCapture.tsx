@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { dropDraft, markPhotoTipsSeen, saveDraft, useDrafts, usePhotoTipsSeen } from '@/data/photoDrafts';
 import { PHOTO_SIDES, type DraftPhoto, type PhotoSide } from '@/data/photos';
@@ -12,9 +12,8 @@ const BIG = 'h-14 w-full rounded-lg font-display text-[22px] tracking-[0.04em]';
 const SMALL = 'h-12 w-full rounded-lg text-[15px] font-semibold';
 const LABEL: Record<PhotoSide, string> = { front: 'Front photo file', back: 'Back photo file' };
 
-function Thumb({ photo, squaring, onRetake, onRemove }: { photo: DraftPhoto | undefined; squaring: boolean; onRetake: () => void; onRemove: () => void }) {
+function Thumb({ side, photo, squaring, onRetake, onRemove }: { side: PhotoSide; photo: DraftPhoto | undefined; squaring: boolean; onRetake: () => void; onRemove: () => void }) {
   const url = useBytesUrl(photo?.bytes ?? null);
-  const side = photo?.side ?? 'front';
   return (
     <PhotoThumb side={side} url={url} squaring={squaring} noEdges={photo?.foundEdges === false}>
       <Button variant="ghost" className={SMALL} onClick={onRetake}>Retake</Button>
@@ -33,6 +32,14 @@ export function PhotoCapture() {
   const [askBack, setAskBack] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const taking = useRef<Record<PhotoSide, number>>({ front: 0, back: 0 });
+
+  useEffect(() => {
+    const counters = taking.current;
+    return () => {
+      counters.front++;
+      counters.back++;
+    };
+  }, []);
 
   async function take(side: PhotoSide, file: File) {
     setFailure(null);
@@ -61,6 +68,11 @@ export function PhotoCapture() {
       return;
     }
     front.open();
+  }
+
+  function tipsDismissed() {
+    setTipsOpen(false);
+    setAfterTips(false);
   }
 
   function tipsDone() {
@@ -95,6 +107,7 @@ export function PhotoCapture() {
           {shown.map((side) => (
             <Thumb
               key={side}
+              side={side}
               photo={drafts?.[side]}
               squaring={!!squaring[side]}
               onRetake={() => camera[side].open()}
@@ -102,6 +115,9 @@ export function PhotoCapture() {
             />
           ))}
         </div>
+      )}
+      {drafts?.front && !drafts.back && !squaring.back && !askBack && (
+        <Button onClick={() => back.open()} className={SMALL}>Take the back</Button>
       )}
       {askBack && drafts?.front && !drafts.back && !squaring.back && (
         <div className="flex flex-col gap-2">
@@ -125,7 +141,7 @@ export function PhotoCapture() {
       >
         Photo tips
       </Button>
-      <PhotoTips open={tipsOpen} onDone={tipsDone} />
+      <PhotoTips open={tipsOpen} onDone={tipsDone} onDismiss={tipsDismissed} />
     </section>
   );
 }

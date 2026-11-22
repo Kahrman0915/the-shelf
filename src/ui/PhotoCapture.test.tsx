@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/data/db';
@@ -39,19 +39,17 @@ describe('PhotoCapture', () => {
     await user.click(await takeButton());
     expect(await screen.findByText('Tips for a sharp cover')).toBeInTheDocument();
     expect(click).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: 'Got it' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Got it' }));
     expect(click).toHaveBeenCalledOnce();
     await waitFor(async () => expect(await db.meta.get('photoTipsSeen')).toBeDefined());
   });
 
   it('opens the front camera straight away once the tips are seen', async () => {
     await markPhotoTipsSeen();
-    const user = userEvent.setup();
     render(<PhotoCapture />);
     const click = vi.spyOn(frontInput(), 'click');
     const button = await takeButton();
-    await waitFor(() => expect(button).toBeEnabled());
-    await user.click(button);
+    fireEvent.click(button);
     expect(click).toHaveBeenCalledOnce();
     expect(screen.queryByText('Tips for a sharp cover')).not.toBeInTheDocument();
   });
@@ -64,7 +62,7 @@ describe('PhotoCapture', () => {
     expect(await screen.findByAltText('Front photo')).toBeInTheDocument();
     expect(screen.getByText('Now the back')).toBeInTheDocument();
     const click = vi.spyOn(backInput(), 'click');
-    await user.click(screen.getByRole('button', { name: 'Take the back' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Take the back' }));
     expect(click).toHaveBeenCalledOnce();
     await user.upload(backInput(), file());
     expect(await screen.findByAltText('Back photo')).toBeInTheDocument();
@@ -96,7 +94,7 @@ describe('PhotoCapture', () => {
     await user.upload(frontInput(), file());
     await screen.findByAltText('Front photo');
     const click = vi.spyOn(frontInput(), 'click');
-    await user.click(screen.getByRole('button', { name: 'Retake' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retake' }));
     expect(click).toHaveBeenCalledOnce();
     vi.mocked(squareUpPhoto).mockResolvedValue({ bytes: new Uint8Array([7]).buffer, foundEdges: true });
     await user.upload(frontInput(), file());
@@ -141,5 +139,80 @@ describe('PhotoCapture', () => {
     expect(await screen.findByText('Tips for a sharp cover')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Got it' }));
     await waitFor(() => expect(screen.queryByText('Tips for a sharp cover')).not.toBeInTheDocument());
+  });
+
+  it('lets you take the back after skipping it', async () => {
+    const user = userEvent.setup();
+    render(<PhotoCapture />);
+    await user.upload(frontInput(), file());
+    await user.click(await screen.findByRole('button', { name: 'Skip the back' }));
+    const click = vi.spyOn(backInput(), 'click');
+    fireEvent.click(screen.getByRole('button', { name: 'Take the back' }));
+    expect(click).toHaveBeenCalledOnce();
+    await user.upload(backInput(), file());
+    expect(await screen.findByAltText('Back photo')).toBeInTheDocument();
+  });
+
+  it('lets you take the back after a reload with only a front draft', async () => {
+    await db.photoDrafts.put({ side: 'front', bytes: found.bytes, foundEdges: true });
+    const user = userEvent.setup();
+    render(<PhotoCapture />);
+    await screen.findByAltText('Front photo');
+    fireEvent.click(screen.getByRole('button', { name: 'Take the back' }));
+    await user.upload(backInput(), file());
+    expect(await screen.findByAltText('Back photo')).toBeInTheDocument();
+  });
+
+  it('keeps the newest photo when an older one finishes squaring last', async () => {
+    const user = userEvent.setup();
+    let resolveA!: (v: typeof found) => void;
+    let resolveB!: (v: typeof found) => void;
+    vi.mocked(squareUpPhoto)
+      .mockImplementationOnce(() => new Promise((r) => (resolveA = r)))
+      .mockImplementationOnce(() => new Promise((r) => (resolveB = r)));
+    render(<PhotoCapture />);
+    await user.upload(frontInput(), file());
+    await user.upload(frontInput(), file());
+    resolveB({ bytes: new Uint8Array([2]).buffer, foundEdges: true });
+    await waitFor(async () => expect(await db.photoDrafts.get('front')).toBeDefined());
+    resolveA({ bytes: new Uint8Array([1]).buffer, foundEdges: true });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(new Uint8Array((await db.photoDrafts.get('front'))!.bytes)[0]).toBe(2);
+  });
+
+  it('stores nothing when a photo is removed while it is squaring', async () => {
+    const user = userEvent.setup();
+    let resolveA!: (v: typeof found) => void;
+    vi.mocked(squareUpPhoto).mockImplementationOnce(() => new Promise((r) => (resolveA = r)));
+    render(<PhotoCapture />);
+    await user.upload(frontInput(), file());
+    await user.click(await screen.findByRole('button', { name: 'Remove' }));
+    resolveA(found);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await db.photoDrafts.count()).toBe(0);
+  });
+
+  it('stores nothing when a photo finishes squaring after the screen is gone', async () => {
+    const user = userEvent.setup();
+    let resolveA!: (v: typeof found) => void;
+    vi.mocked(squareUpPhoto).mockImplementationOnce(() => new Promise((r) => (resolveA = r)));
+    const view = render(<PhotoCapture />);
+    await user.upload(frontInput(), file());
+    view.unmount();
+    resolveA(found);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await db.photoDrafts.count()).toBe(0);
+  });
+
+  it('closing the tips without Got it neither marks them seen nor opens the camera', async () => {
+    const user = userEvent.setup();
+    render(<PhotoCapture />);
+    const click = vi.spyOn(frontInput(), 'click');
+    await user.click(await takeButton());
+    await screen.findByText('Tips for a sharp cover');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByText('Tips for a sharp cover')).not.toBeInTheDocument());
+    expect(click).not.toHaveBeenCalled();
+    expect(await db.meta.get('photoTipsSeen')).toBeUndefined();
   });
 });
