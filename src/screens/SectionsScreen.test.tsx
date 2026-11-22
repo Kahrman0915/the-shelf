@@ -1,11 +1,12 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
 import { db, sectionsFromSet } from '@/data/db';
 import type { ShelfRecord } from '@/data/schema';
 import { KAHRMANS_NINE, sectionIdFor } from '@/domain/sections';
+import { holdTable } from '@/test/holdTable';
 import { SectionsScreen } from './SectionsScreen';
 
 const SHELF = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -163,5 +164,90 @@ describe('SectionsScreen', () => {
     renderScreen();
     await screen.findByRole('button', { name: /^Rock, / });
     for (const b of within(screen.getByRole('main')).getAllByRole('button')) expect(b.className, b.outerHTML).toMatch(/(^|\s)(min-)?h-12(\s|$)/);
+  });
+
+  const order = async () => {
+    const all = await db.sections.toArray();
+    expect(new Set(all.map((x) => x.position)).size).toBe(all.length);
+    return all.sort((a, b) => a.position - b.position).map((x) => x.name);
+  };
+  const names = KAHRMANS_NINE.map((x) => x.name);
+  const moved = (from: number, to: number) => {
+    const n = [...names];
+    n.splice(to, 0, ...n.splice(from, 1));
+    return n;
+  };
+  async function stage(section: RegExp, clicks: string[], finish: 'Save' | 'Cancel' = 'Save') {
+    renderScreen();
+    await userEvent.click(await screen.findByRole('button', { name: section }));
+    for (const c of clicks) await userEvent.click(screen.getByRole('button', { name: c }));
+    await userEvent.click(screen.getByRole('button', { name: finish }));
+  }
+
+  it('Move up twice puts the section two places higher, with no clashing positions', async () => {
+    await stage(/^Popular pop, /, ['Move up', 'Move up']);
+    await waitFor(async () => expect(await order()).toEqual(moved(3, 1)));
+  });
+
+  it('Move down twice puts the section two places lower', async () => {
+    await stage(/^Rock, /, ['Move down', 'Move down']);
+    await waitFor(async () => expect(await order()).toEqual(moved(1, 3)));
+  });
+
+  it('Move up then down changes nothing', async () => {
+    await stage(/^Rock, /, ['Move up', 'Move down']);
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Name' })).toBeNull());
+    expect(await order()).toEqual(names);
+  });
+
+  it('Cancel after a staged move writes nothing', async () => {
+    await stage(/^Rock, /, ['Move up'], 'Cancel');
+    expect(await db.outbox.count()).toBe(0);
+    expect(await order()).toEqual(names);
+  });
+
+  it('shows the staged position as the moves are made', async () => {
+    renderScreen();
+    await userEvent.click(await screen.findByRole('button', { name: /^Rock, / }));
+    expect(screen.getByText('Position 2 of 9')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Move down' }));
+    expect(screen.getByText('Position 3 of 9')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Move up' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Move up' }));
+    expect(screen.getByText('Position 1 of 9')).toBeInTheDocument();
+  });
+
+  it('says 1 record, not 1 records, when merging one', async () => {
+    renderScreen();
+    await screen.findByRole('button', { name: 'Jazz / big band, 1 record' });
+    await menu('Jazz / big band');
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Merge into…' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Rock' }));
+    expect(await screen.findByText('Move 1 record from Jazz / big band into Rock? Jazz / big band will be removed.')).toBeInTheDocument();
+  });
+
+  it('shows no counts and offers no menu (so no Delete) until the counts are in', async () => {
+    const release = holdTable(db, db.records);
+    renderScreen();
+    await screen.findByRole('button', { name: 'Reggae' });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(screen.queryByText(/records?$/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reggae, 0 records' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'More for Reggae' })).toBeNull();
+    await release();
+    expect(await screen.findByRole('button', { name: 'Reggae, 0 records' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'More for Reggae' })).toBeInTheDocument();
+  });
+
+  it('shows a failed Save inside the sheet, in plain words', async () => {
+    renderScreen();
+    await userEvent.click(await screen.findByRole('button', { name: /^Rock, / }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), ' x');
+    vi.spyOn(db.outbox, 'add').mockRejectedValueOnce(new Error('ZodError: [{"code":"too_big"}]'));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const alert = await within(screen.getByRole('dialog')).findByRole('alert');
+    expect(alert).toHaveTextContent('Couldn’t save that. Check the section and try again.');
+    expect(alert).not.toHaveTextContent('Zod');
+    expect(screen.getByRole('textbox', { name: 'Name' })).toBeInTheDocument();
   });
 });

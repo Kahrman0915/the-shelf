@@ -10,6 +10,11 @@ const LABEL = 'text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-mu
 const ERROR = 'text-[15px] text-brick-ink';
 const OUTLINE = 'h-12 flex-1 rounded-lg border-[1.5px] border-line-strong bg-transparent text-[15px] font-semibold';
 
+const SWATCH_NAMES: Record<SwatchKey, string> = {
+  jazz: 'Blue', rock: 'Brick', popsoul: 'Amber', popularpop: 'Rose', misc: 'Stone', country: 'Olive', reggae: 'Green',
+  soundtracks: 'Plum', christmas: 'Crimson', teal: 'Teal', slate: 'Slate', sand: 'Sand',
+};
+
 export type SectionMove = 'up' | 'down';
 
 /** Edit one section: name, colour, which Discogs genres land here, holiday, and where it sits. Nothing is saved until Save; Cancel drops it all. */
@@ -19,6 +24,7 @@ export function SectionSheet({
   sections,
   onSave,
   onCancel,
+  failure = null,
 }: {
   open: boolean;
   section: Section;
@@ -26,6 +32,8 @@ export function SectionSheet({
   sections: Section[];
   onSave: (changes: SectionChanges, moves: SectionMove[]) => void;
   onCancel: () => void;
+  /** Why the last Save didn't go through, in plain words. */
+  failure?: string | null;
 }) {
   const [name, setName] = useState(section.name);
   const [color, setColor] = useState<SwatchKey>(section.color as SwatchKey);
@@ -80,8 +88,8 @@ export function SectionSheet({
                 <RadioGroup.Item
                   key={key}
                   value={key}
-                  aria-label={key}
-                  className="size-12 h-12 rounded-full border-2 border-transparent data-[state=checked]:border-ink data-[state=checked]:ring-2 data-[state=checked]:ring-surface-raised"
+                  aria-label={SWATCH_NAMES[key]}
+                  className="size-12 rounded-full border-2 border-transparent data-[state=checked]:border-ink data-[state=checked]:ring-2 data-[state=checked]:ring-surface-raised"
                   style={{ background: `var(--section-${key})` }}
                 />
               ))}
@@ -126,6 +134,7 @@ export function SectionSheet({
             </Switch.Root>
           </div>
 
+          <p className="text-[15px] text-ink-muted">Position {at + 1} of {sections.length}</p>
           <div className="flex gap-2">
             <Button type="button" variant="outline" className={OUTLINE} disabled={at <= 0} onClick={() => setMoves((m) => [...m, 'up'])}>
               Move up
@@ -135,6 +144,7 @@ export function SectionSheet({
             </Button>
           </div>
 
+          {failure && <p role="alert" className={ERROR}>{failure}</p>}
           <div className="flex flex-col gap-2">
             <Button type="button" className="h-12 w-full rounded-lg font-display text-[22px] tracking-[0.04em]" onClick={save}>
               Save

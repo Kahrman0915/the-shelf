@@ -44,7 +44,7 @@ export function SectionsScreen() {
   const [failure, setFailure] = useState<string | null>(null);
 
   const ctx = () => ({ me: userId, now: new Date().toISOString() });
-  const countOf = (s: Section) => counts?.get(s.id) ?? 0;
+  const countOf = (s: Section) => counts?.get(s.id) ?? 0; // only asked once counts are loaded
 
   async function run(make: () => { postcards: NewPostcard[] }) {
     setFailure(null);
@@ -53,7 +53,7 @@ export function SectionsScreen() {
       if (postcards.length > 0) await perform(db, postcards, runNow);
       return postcards;
     } catch (e) {
-      setFailure(e instanceof Error ? e.message : String(e));
+      setFailure('Couldn’t save that. Check the section and try again.');
       return null;
     }
   }
@@ -83,20 +83,20 @@ export function SectionsScreen() {
 
       <ul className="flex flex-col border-t border-line">
         {(sections ?? []).map((s) => {
-          const n = countOf(s);
+          const n = counts ? countOf(s) : null;
           return (
             <li key={s.id} className="flex items-center border-b border-line">
               <button
                 type="button"
-                aria-label={`${s.name}, ${n} ${n === 1 ? 'record' : 'records'}`}
+                aria-label={n === null ? s.name : `${s.name}, ${n} ${n === 1 ? 'record' : 'records'}`}
                 onClick={() => setOpenId(s.id)}
                 className="flex h-12 min-w-0 flex-1 items-center gap-3 text-left"
               >
                 <span aria-hidden className="size-4 flex-none rounded-full" style={{ background: `var(--section-${s.color})` }} />
                 <span className="min-w-0 flex-1 truncate text-[17px] font-bold">{s.name}</span>
-                <span aria-hidden className="text-[15px] text-ink-muted">{n}</span>
+                {n !== null && <span aria-hidden className="text-[15px] text-ink-muted">{n}</span>}
               </button>
-              {!s.isCatchAll && (
+              {!s.isCatchAll && n !== null && (
                 <DropdownMenu.Root>
                   <DropdownMenu.Trigger asChild>
                     <button type="button" aria-label={`More for ${s.name}`} className="flex size-12 h-12 flex-none items-center justify-center rounded-lg text-ink-muted">
@@ -133,10 +133,10 @@ export function SectionsScreen() {
         <Plus className="size-5" aria-hidden />
         Add
       </Button>
-      {failure && <p role="alert" className="text-base text-brick-ink">{failure}</p>}
+      {failure && !open && <p role="alert" className="text-base text-brick-ink">{failure}</p>}
 
       {open && sections && (
-        <SectionSheet key={open.id} open section={open} sections={sections} onSave={(changes, moves) => void save(open, changes, moves)} onCancel={() => setOpenId(null)} />
+        <SectionSheet key={open.id} open section={open} sections={sections} onSave={(changes, moves) => void save(open, changes, moves)} onCancel={() => { setFailure(null); setOpenId(null); }} failure={failure} />
       )}
 
       <Dialog.Root open={pending?.kind === 'pick'} onOpenChange={(next) => !next && setPending(null)}>
@@ -165,7 +165,7 @@ export function SectionsScreen() {
 
       <ConfirmDialog
         open={pending?.kind === 'merge'}
-        message={pending?.kind === 'merge' ? `Move ${countOf(pending.from)} records from ${pending.from.name} into ${pending.into.name}? ${pending.from.name} will be removed.` : ''}
+        message={pending?.kind === 'merge' ? `Move ${countOf(pending.from)} ${countOf(pending.from) === 1 ? 'record' : 'records'} from ${pending.from.name} into ${pending.into.name}? ${pending.from.name} will be removed.` : ''}
         confirmLabel="Merge"
         cancelLabel="Keep it"
         danger="confirm"

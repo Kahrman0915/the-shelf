@@ -21,7 +21,7 @@ describe('SectionSheet', () => {
     setup();
     expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Rock');
     expect(screen.getAllByRole('radio')).toHaveLength(12);
-    expect(screen.getByRole('radio', { name: 'rock' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Brick' })).toBeChecked();
     expect(screen.getByText('Discogs genres that go here')).toBeInTheDocument();
     expect(screen.getAllByRole('checkbox')).toHaveLength(15);
     expect(screen.getByRole('checkbox', { name: 'Rock' })).toBeChecked();
@@ -58,13 +58,28 @@ describe('SectionSheet', () => {
   it('saves the changes and the moves; Cancel saves nothing', async () => {
     const { onSave, onCancel } = setup();
     await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), ' hard');
-    await userEvent.click(screen.getByRole('radio', { name: 'teal' }));
+    await userEvent.click(screen.getByRole('radio', { name: 'Teal' }));
     await userEvent.click(screen.getByRole('checkbox', { name: 'Blues' }));
     await userEvent.click(screen.getByRole('button', { name: 'Move up' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(onSave).toHaveBeenCalledWith({ name: 'Rock hard', color: 'teal', discogsGenres: ['Rock', 'Blues'], takesHoliday: false }, ['up']);
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onCancel).toHaveBeenCalled();
+  });
+
+  it('Escape closes without saving', async () => {
+    const { onSave, onCancel } = setup();
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), ' x');
+    await userEvent.keyboard('{Escape}');
+    expect(onCancel).toHaveBeenCalled();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('names each colour for a person', () => {
+    setup();
+    expect(screen.getAllByRole('radio').map((r) => r.getAttribute('aria-label'))).toEqual([
+      'Blue', 'Brick', 'Amber', 'Rose', 'Stone', 'Olive', 'Green', 'Plum', 'Crimson', 'Teal', 'Slate', 'Sand',
+    ]);
   });
 
   it('disables Move up on the first section and Move down on the last', () => {
@@ -80,7 +95,7 @@ describe('SectionSheet', () => {
 
   it('every control is at least 48px tall', () => {
     setup();
-    const tall = (el: HTMLElement) => /(^|\s)(min-)?h-12(\s|$)/.test(el.className) || /(^|\s)(min-)?h-12(\s|$)/.test(el.closest('label')?.className ?? '');
+    const tall = (el: HTMLElement) => /(^|\s)((min-)?h-12|size-12)(\s|$)/.test(el.className) || /(^|\s)(min-)?h-12(\s|$)/.test(el.closest('label')?.className ?? '');
     const controls = [
       ...screen.getAllByRole('radio'), ...screen.getAllByRole('checkbox'), screen.getByRole('switch'), screen.getByRole('textbox'),
       ...screen.getAllByRole('button'),
