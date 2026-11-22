@@ -23,9 +23,22 @@ const AUTH_STANDIN = `
   alter default privileges in schema public grant execute on functions to anon, authenticated;
 `;
 
+/** Just enough of Supabase's storage schema for our bucket rules to run. Real Supabase provides this. */
+const STORAGE_STANDIN = `
+  create schema storage;
+  create table storage.buckets (id text primary key, name text not null, public boolean not null default false,
+    file_size_limit bigint, allowed_mime_types text[]);
+  create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text references storage.buckets(id),
+    name text not null, owner uuid, created_at timestamptz not null default now(), unique (bucket_id, name));
+  alter table storage.objects enable row level security;
+  grant usage on schema storage to authenticated;
+  grant select, insert, update, delete on storage.objects to authenticated;
+`;
+
 export async function freshDb(): Promise<PGlite> {
   const db = new PGlite();
   await db.exec(AUTH_STANDIN);
+  await db.exec(STORAGE_STANDIN);
   const dir = join(import.meta.dirname, '..', 'migrations');
   for (const file of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
     await db.exec(readFileSync(join(dir, file), 'utf8'));
