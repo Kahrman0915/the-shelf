@@ -1,9 +1,8 @@
 // Finds a sleeve's record on Discogs: barcode, then catalog number, then name.
 import type { Answer } from '../_shared/discogs.ts';
-import type { FoundRecord } from '../_shared/shape.ts';
-import type { Read } from './read.ts';
+import type { FoundRecord, Identified, Read } from '../_shared/shape.ts';
 
-export type Identified = { read: Read; match: 'exact' | 'several' | 'none'; results: FoundRecord[] };
+export type { Identified };
 
 type Search = (params: Record<string, string>) => Promise<Answer>;
 

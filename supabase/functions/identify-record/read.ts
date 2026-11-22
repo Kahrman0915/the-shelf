@@ -1,13 +1,9 @@
 // What Claude is asked to read off a sleeve, and how its answer is checked. Plain TypeScript: no
 // Deno, no SDK import, so Vitest can load it.
 
-export type Read = {
-  artist: string | null;
-  title: string | null;
-  barcode: string | null;
-  catalog: string | null;
-  label: string | null;
-};
+import type { Read } from '../_shared/shape.ts';
+
+export type { Read };
 
 /** Each photo, once decoded. */
 export const MAX_PHOTO_BYTES = 2 * 1024 * 1024;

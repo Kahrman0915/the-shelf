@@ -16,6 +16,18 @@ export type FoundRecord = {
   thumb: string | null;
 };
 
+/** What Claude reads off a sleeve. */
+export type Read = {
+  artist: string | null;
+  title: string | null;
+  barcode: string | null;
+  catalog: string | null;
+  label: string | null;
+};
+
+/** What identify-record answers. */
+export type Identified = { read: Read; match: 'exact' | 'several' | 'none'; results: FoundRecord[] };
+
 const MAX_RESULTS = 6;
 
 export function cleanQuery(raw: unknown): string | null {

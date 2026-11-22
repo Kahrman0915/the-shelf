@@ -391,6 +391,12 @@ describe('supabaseBackend() Claude functions', () => {
     expect(decoded[big.length - 1]).toBe((big.length - 1) % 251);
   });
 
+  it('base64 round-trips a buffer that ends in a partial chunk', () => {
+    const odd = new Uint8Array(0x8000 * 2 + 5).map((_, i) => (i * 7) % 256);
+    const decoded = Uint8Array.from(atob(base64(odd.buffer)), (c) => c.charCodeAt(0));
+    expect(Array.from(decoded)).toEqual(Array.from(odd));
+  });
+
   it('identifyRecord posts front and back as base64 and returns the answer', async () => {
     const fetchMock = vi.fn().mockResolvedValue(reply(200, identified));
     vi.stubGlobal('fetch', fetchMock);
@@ -462,6 +468,11 @@ describe('supabaseBackend() Claude functions', () => {
 
   it('findFunFact returns null on { fact: null }', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(200, { fact: null })));
+    expect(await supabaseBackend(withSession({ access_token: 't' })).findFunFact(fact)).toBeNull();
+  });
+
+  it('findFunFact returns null when the fact comes without a source', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(200, { fact: 'Unsourced.' })));
     expect(await supabaseBackend(withSession({ access_token: 't' })).findFunFact(fact)).toBeNull();
   });
 

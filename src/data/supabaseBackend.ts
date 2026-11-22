@@ -64,6 +64,8 @@ function photoFailure(error: PhotoError): never {
   throw new BackendError(REJECTED.other(`photo ${error.statusCode ?? 'unknown'}`));
 }
 
+const SIGN_IN_AGAIN = 'Sign in again to look it up.';
+
 /** POSTs to a Claude-backed Edge Function and returns its JSON answer, mapping failures to plain words. */
 async function callClaudeFunction<T>(client: SupabaseClient, name: string, body: unknown, timeoutMs: number): Promise<T> {
   const { data, error } = await client.auth.getSession();
@@ -91,8 +93,6 @@ async function callClaudeFunction<T>(client: SupabaseClient, name: string, body:
     throw new BackendError(CLAUDE_DOWN);
   }
 }
-
-const SIGN_IN_AGAIN = 'Sign in again to look it up.';
 
 export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
   return {

@@ -1,13 +1,7 @@
+import type { FoundRecord, Identified } from '../../supabase/functions/_shared/shape';
 import type { NewRecordRow, RecordPatchRow } from './rowMapping';
-import type { FoundRecord } from '../../supabase/functions/_shared/shape';
-import type { Read } from '../../supabase/functions/identify-record/read';
 
-export type { FoundRecord };
-export type { Read };
-
-/** What identify-record answers. Mirrors `Identified` in supabase/functions/identify-record/match.ts, which
- *  can't be imported here: it pulls in Deno-style `.ts` import paths that the app's tsc refuses. */
-export type Identified = { read: Read; match: 'exact' | 'several' | 'none'; results: FoundRecord[] };
+export type { FoundRecord, Identified, Read } from '../../supabase/functions/_shared/shape';
 
 /** Everything the app needs from the server. Screens use this, never Supabase directly. */
 export type SignedIn = { userId: string; email: string };
@@ -47,7 +41,7 @@ export interface Backend extends ShelfSource, ShelfWriter {
   searchDiscogs(query: string): Promise<FoundRecord[]>;
   /** Has Claude read a sleeve (front, and the back when there is one) and look it up on Discogs. Photos are sent, never stored. */
   identifyRecord(front: ArrayBuffer, back: ArrayBuffer | null): Promise<Identified>;
-  /** A sourced fun fact about a record, or null when none was found. */
+  /** A sourced fun fact about a record, or null when none was found or the answer came without a source. */
   findFunFact(r: { artist: string; title: string; year: number | null; label: string | null }): Promise<{ fact: string; sourceUrl: string } | null>;
   /** The photo's bytes, or null when it isn't there (yet). Throws BackendError(NO_SIGNAL) offline. */
   downloadPhoto(path: string): Promise<ArrayBuffer | null>;
