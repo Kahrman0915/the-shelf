@@ -335,6 +335,29 @@ describe('photo postcards', () => {
     expect(await db.photos.get(PATH)).toBeUndefined();
   });
 
+  it('a refused photo.delete counts as sent: it isn’t shown, doesn’t hold the record, and the bytes still go', async () => {
+    backend.photos.set(PATH, bytes());
+    await savePostcards(db, [{ ...card, recordId: B, kind: 'photo.delete', fields: { path: PATH } }, patch(B, { notes: 'after' })], []);
+    await db.photos.put({ path: PATH, bytes: bytes() });
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    backend.rejectNext = REJECTED.permission;
+    expect(await pushOutbox(db, backend)).toEqual({ sent: 2, rejected: 0, noSignal: false });
+    expect(await db.outbox.count()).toBe(0);
+    expect(await db.photos.get(PATH)).toBeUndefined();
+    expect(warned).toHaveBeenCalledOnce();
+    expect(warned.mock.calls[0].join(' ')).toContain(REJECTED.permission);
+    expect(warned.mock.calls[0].join(' ')).not.toContain(PATH);
+  });
+
+  it('no signal on photo.delete still stops the run and keeps it', async () => {
+    await savePostcards(db, [{ ...card, recordId: B, kind: 'photo.delete', fields: { path: PATH } }], []);
+    await db.photos.put({ path: PATH, bytes: bytes() });
+    backend.online = false;
+    expect((await pushOutbox(db, backend)).noSignal).toBe(true);
+    expect(await db.outbox.count()).toBe(1);
+    expect(await db.photos.get(PATH)).toBeDefined();
+  });
+
   it('a lost reply on upload is safe to send again', async () => {
     const path = `${SHELF}/${B}/front-bbbb.jpg`;
     await savePostcards(db, [{ ...card, recordId: B, kind: 'photo.upload', fields: { path } }], [{ path, bytes: bytes() }]);

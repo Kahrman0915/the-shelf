@@ -8,12 +8,13 @@ function PosterFor({ record }: { record: ShelfRecord }) {
   return <Poster artist={record.artist} title={record.title} genre={record.genre} className="w-full" />;
 }
 
-function Photos({ record, coverPath, backPath }: { record: ShelfRecord; coverPath: string; backPath: string | null }) {
-  const front = usePhotoUrl(coverPath);
-  const back = usePhotoUrl(backPath);
+function Photos({ record }: { record: ShelfRecord }) {
+  const front = usePhotoUrl(record.coverPath);
+  const back = usePhotoUrl(record.backPath);
   const [flipped, setFlipped] = useState(false);
-  if (!front) return <PosterFor record={record} />;
+  if (!front && !back) return <PosterFor record={record} />;
   const showBack = flipped && back !== null;
+  const face = 'absolute inset-0 size-full [backface-visibility:hidden]';
   return (
     <div className="flex flex-col gap-3">
       <div className="aspect-square w-full [perspective:1200px]">
@@ -21,18 +22,20 @@ function Photos({ record, coverPath, backPath }: { record: ShelfRecord; coverPat
           className="relative size-full [transform-style:preserve-3d] transition-transform duration-500 motion-reduce:transition-none"
           style={{ transform: showBack ? 'rotateY(180deg)' : undefined }}
         >
-          <img
-            src={front}
-            alt={`Front of ${record.title}`}
-            aria-hidden={showBack ? true : undefined}
-            className="absolute inset-0 size-full object-cover [backface-visibility:hidden]"
-          />
+          {front ? (
+            <img src={front} alt={`Front of ${record.title}`} aria-hidden={showBack ? true : undefined} className={`${face} object-cover`} />
+          ) : (
+            // No front photo (or not on the phone yet): the poster is the front, so a back photo can still be seen.
+            <div aria-hidden={showBack ? true : undefined} className={face}>
+              <PosterFor record={record} />
+            </div>
+          )}
           {back && (
             <img
               src={back}
               alt={`Back of ${record.title}`}
               aria-hidden={showBack ? undefined : true}
-              className="absolute inset-0 size-full [transform:rotateY(180deg)] object-cover [backface-visibility:hidden]"
+              className={`${face} [transform:rotateY(180deg)] object-cover`}
             />
           )}
         </div>
@@ -53,8 +56,9 @@ function Photos({ record, coverPath, backPath }: { record: ShelfRecord; coverPat
   );
 }
 
-/** The record's front photo (with Flip to the back), or its poster while there is no photo on the phone. */
+/** The record's front photo (with Flip to the back), or its poster while there is no front photo on the phone.
+ *  A back photo without a front still gets Flip, with the poster as the front. */
 export function RecordCover({ record }: { record: ShelfRecord }) {
-  if (!record.coverPath) return <PosterFor record={record} />;
-  return <Photos record={record} coverPath={record.coverPath} backPath={record.backPath} />;
+  if (!record.coverPath && !record.backPath) return <PosterFor record={record} />;
+  return <Photos record={record} />;
 }

@@ -74,6 +74,18 @@ describe('RecordCover', () => {
     expect(screen.getByRole('button', { name: 'Show the back' })).toBeInTheDocument();
   });
 
+  it('a record with only a back photo shows the poster, with Flip to the back', async () => {
+    await db.photos.put({ path: BACK, bytes: bytes() });
+    show(record({ backPath: BACK }));
+    const flip = await screen.findByRole('button', { name: 'Show the back' });
+    expect(screen.getByRole('img', { name: /^Poster for/ })).toBeInTheDocument();
+    expect(screen.getByAltText('Back of Sahara')).toHaveAttribute('aria-hidden', 'true');
+    await userEvent.click(flip);
+    expect(screen.getByRole('img', { name: 'Back of Sahara' })).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: /^Poster for/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Show the front' })).toBeInTheDocument();
+  });
+
   it('shows the poster while the front is still on its way', async () => {
     show(record({ coverPath: FRONT }));
     await waitFor(() => expect(screen.getByRole('img', { name: /^Poster for/ })).toBeInTheDocument());

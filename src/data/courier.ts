@@ -24,7 +24,14 @@ async function send(db: ShelfDB, writer: ShelfWriter, p: Postcard): Promise<'sen
       return 'sent';
     }
     case 'photo.delete':
-      await writer.deletePhoto(p.fields.path);
+      try {
+        await writer.deletePhoto(p.fields.path);
+      } catch (e) {
+        // A failed delete only leaves an unused file on the shelf: nothing the person needs to see, and
+        // nothing to hold the record for (spec §3.2). No signal still stops the run, to try again later.
+        if (!(e instanceof BackendError) || e.message === NO_SIGNAL) throw e;
+        console.warn('A photo couldn’t be deleted from the shelf:', e.message);
+      }
       await db.photos.delete(p.fields.path);
       return 'sent';
   }
