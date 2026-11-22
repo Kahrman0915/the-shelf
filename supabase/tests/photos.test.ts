@@ -66,6 +66,25 @@ describe('the covers bucket', () => {
     await expect(put(stranger, `${kShelf}/${crypto.randomUUID()}/front-${crypto.randomUUID()}.jpg`)).rejects.toThrow(/row-level security/);
   });
 
+  it('lets no one outside the shelf replace or remove its photos', async () => {
+    const name = `${kShelf}/${crypto.randomUUID()}/front-${crypto.randomUUID()}.jpg`;
+    await put(kahrman, name);
+    const asStranger = (sql: string, params: unknown[]) => asUser(db, stranger, () => db.query(sql, params));
+    const upd = await asStranger(`update storage.objects set owner = $2 where bucket_id = 'covers' and name = $1 returning id`, [name, stranger.id]);
+    expect(upd.rows).toHaveLength(0);
+    const del = await asStranger(`delete from storage.objects where bucket_id = 'covers' and name = $1 returning id`, [name]);
+    expect(del.rows).toHaveLength(0);
+    expect((await see(kahrman, name)).rows).toHaveLength(1);
+  });
+
+  it('refuses a member moving a photo into another shelf’s folder', async () => {
+    const name = `${kShelf}/${crypto.randomUUID()}/front-${crypto.randomUUID()}.jpg`;
+    await put(megan, name);
+    const moved = `${sShelf}/${crypto.randomUUID()}/front-${crypto.randomUUID()}.jpg`;
+    await expect(asMegan(`update storage.objects set name = $2 where bucket_id = 'covers' and name = $1`, [name, moved])).rejects.toThrow(/row-level security/);
+    expect((await see(megan, name)).rows).toHaveLength(1);
+  });
+
   it('refuses a folder that isn’t a shelf id', async () => {
     await expect(put(megan, `not-a-uuid/x/front-${crypto.randomUUID()}.jpg`)).rejects.toThrow(/row-level security/);
   });
