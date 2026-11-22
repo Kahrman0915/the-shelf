@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { RecordFields } from '@/data/actions';
+import { SHELF_LOADING } from '@/data/backend';
 import type { Section, ShelfRecord } from '@/data/schema';
 import { sanitizeAsking } from '@/domain/price';
 import { emptyForm, findDuplicate, isDirty, parseRecordForm, type FormErrors, type RecordFormValues } from '@/domain/recordForm';
@@ -163,11 +164,12 @@ export function RecordForm({ mode, initial, sections, records, excludeId, onSave
 
       <div className="flex flex-col gap-2">
         <label htmlFor={fieldId('sectionId')} className={LABEL}>Section</label>
-        <Select value={values.sectionId} onValueChange={(id) => set('sectionId', id)}>
+        <Select value={values.sectionId} onValueChange={(id) => set('sectionId', id)} disabled={sections.length === 0}>
           <SelectTrigger
             id={fieldId('sectionId')}
             className="w-full rounded-lg border-[1.5px] border-line-strong bg-surface-sunk px-4 text-base text-ink data-[size=default]:h-12 [&_svg]:text-ink-muted"
             {...err('sectionId')}
+            aria-describedby={errors.sectionId ? `${fieldId('sectionId')}-error` : sections.length === 0 ? `${fieldId('sectionId')}-loading` : undefined}
           >
             <SelectValue placeholder="Choose a section" />
           </SelectTrigger>
@@ -179,6 +181,11 @@ export function RecordForm({ mode, initial, sections, records, excludeId, onSave
             ))}
           </SelectContent>
         </Select>
+        {sections.length === 0 && (
+          <p id={`${fieldId('sectionId')}-loading`} className="text-[15px] text-ink-muted">
+            {SHELF_LOADING}
+          </p>
+        )}
         {errorLine('sectionId')}
       </div>
 

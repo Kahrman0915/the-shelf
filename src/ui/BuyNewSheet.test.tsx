@@ -18,6 +18,12 @@ async function chooseSection(label: string) {
 }
 
 describe('BuyNewSheet', () => {
+  it('with no sections on the phone yet, the picker is disabled and says the shelf is still loading', () => {
+    render(<BuyNewSheet open initialArtist="" sections={[]} onOpenChange={() => {}} onSave={async () => {}} />);
+    expect(screen.getByRole('combobox', { name: 'Section' })).toBeDisabled();
+    expect(screen.getByText('Your shelf is still loading. Try again in a moment.')).toBeInTheDocument();
+  });
+
   it('lists the shelf’s sections in order', async () => {
     setup();
     await userEvent.click(screen.getByRole('combobox', { name: 'Section' }));

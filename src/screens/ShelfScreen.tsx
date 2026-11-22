@@ -19,7 +19,10 @@ export function ShelfScreen() {
   const sections = useSections(shelfId);
   const sectionsById = useSectionsById(shelfId);
   const { lastSyncedAt } = useSyncStatus();
-  const [section, setSection] = useState<SectionFilter>('all');
+  const [chosen, setSection] = useState<SectionFilter>('all');
+  // The section filtered to was merged away (or deleted), here or on another phone: back to all sections.
+  const section = chosen !== 'all' && sections && !sections.some((s) => s.id === chosen) ? 'all' : chosen;
+  if (section !== chosen) setSection(section);
   const [query, setQuery] = useState('');
   const rows = items ? shelfRows(items, { section, query }) : [];
   const pile = items ? newArrivals(items).map((i) => i.record) : [];
@@ -57,8 +60,9 @@ export function ShelfScreen() {
           />
         </label>
       </div>
-      <PileRow records={pile} sectionsById={sectionsById} onOpen={() => navigate('/arrivals')} />
-      {items === undefined ? null : items.filter((i) => i.record.status === 'owned').length === 0 ? (
+      {/* Spines wait for the sections too, so none is drawn in the wrong colour first. */}
+      {sectionsById && <PileRow records={pile} sectionsById={sectionsById} onOpen={() => navigate('/arrivals')} />}
+      {items === undefined || sectionsById === undefined ? null : items.filter((i) => i.record.status === 'owned').length === 0 ? (
         <p className="px-4 py-8 text-ink-muted">{lastSyncedAt ? 'Nothing on the shelf yet.' : 'Filling the shelf…'}</p>
       ) : rows.length === 0 ? (
         <p className="px-4 py-8 text-ink-muted">Nothing on the shelf matches that.</p>

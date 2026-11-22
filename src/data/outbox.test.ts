@@ -276,6 +276,24 @@ describe('applyPostcard: sections', () => {
     expect((await db.records.orderBy('id').toArray()).map((r) => r.sectionId)).toEqual([S2, S2, S3]);
   });
 
+  it('section.merge that can’t be applied moves no records', async () => {
+    // A section stored before a rule it now breaks: the merged section can't be saved, so nothing may change.
+    await db.sections.bulkPut([section(S1), section(S2, { name: '' })]);
+    await db.records.put(record({ sectionId: S1 }));
+    // As the pull's re-apply does: the throw is caught inside the same transaction, so any write before it would stick.
+    let thrown: unknown = null;
+    await db.transaction('rw', [db.records, db.ratings, db.sections], async () => {
+      try {
+        await applyPostcard(db, sMerge(S1, S2));
+      } catch (e) {
+        thrown = e;
+      }
+    });
+    expect(thrown).toBeInstanceOf(BackendError);
+    expect((await db.records.get(REC))?.sectionId).toBe(S1);
+    expect(await db.sections.get(S1)).toBeDefined();
+  });
+
   it('section.merge does nothing while the section it goes into is not on the phone', async () => {
     await db.sections.put(section(S1, { discogsGenres: ['Rock'] }));
     await db.records.put(record({ sectionId: S1 }));

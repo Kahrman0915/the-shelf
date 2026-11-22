@@ -24,7 +24,7 @@ export function ArrivalsScreen() {
         <h1 className="font-display text-[44px] leading-[44px] tracking-[0.01em]">New arrivals</h1>
       </header>
       <SyncNotice />
-      {items === undefined ? null : rows.length === 0 ? (
+      {items === undefined || sectionsById === undefined ? null : rows.length === 0 ? (
         <p className="px-4 py-8 text-ink-muted">Nothing waiting. Records you buy at a show land here.</p>
       ) : (
         <div className="border-t border-line">

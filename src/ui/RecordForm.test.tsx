@@ -74,6 +74,12 @@ async function chooseSection(label: string) {
 const box = (name: string) => screen.getByRole('textbox', { name });
 
 describe('RecordForm', () => {
+  it('with no sections on the phone yet, the picker is disabled and says the shelf is still loading', () => {
+    setup({ sections: [] });
+    expect(screen.getByRole('combobox', { name: 'Section' })).toBeDisabled();
+    expect(screen.getByText('Your shelf is still loading. Try again in a moment.')).toBeInTheDocument();
+  });
+
   it('the Section picker lists the shelf’s sections in order', async () => {
     setup();
     expect(screen.getByRole('combobox', { name: 'Section' })).toHaveTextContent('Choose a section');

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { BackendError, SHELF_LOADING } from '@/data/backend';
 import { GENRE_KEYS } from './genres';
 import { md5Hex } from './md5';
 import {
@@ -103,6 +104,8 @@ describe('sectionFor', () => {
 
   it('throws when there is no catch-all', () => {
     const noCatchAll = starter.filter((s) => !s.isCatchAll);
-    expect(() => sectionFor(['Electronic'], [], noCatchAll)).toThrow();
+    expect(() => sectionFor(['Electronic'], [], noCatchAll)).toThrow(BackendError);
+    expect(() => sectionFor(['Electronic'], [], [])).toThrow(SHELF_LOADING);
+    expect(SHELF_LOADING).toBe('Your shelf is still loading. Try again in a moment.');
   });
 });

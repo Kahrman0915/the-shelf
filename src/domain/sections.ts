@@ -1,3 +1,4 @@
+import { BackendError, SHELF_LOADING } from '@/data/backend';
 import { GENRE_KEYS } from './genres';
 import { md5Hex } from './md5';
 
@@ -90,6 +91,7 @@ export function sectionFor(genres: string[], styles: string[], sections: Sortabl
     if (claim) return claim.id;
   }
   const catchAll = ordered.find((s) => s.isCatchAll);
-  if (!catchAll) throw new Error('No catch-all section to sort into');
+  // Every shelf has a catch-all; with none, the phone just doesn't have the shelf's sections yet.
+  if (!catchAll) throw new BackendError(SHELF_LOADING);
   return catchAll.id;
 }

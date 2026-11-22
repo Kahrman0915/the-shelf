@@ -7,7 +7,7 @@ import { useCurrentShelf } from '@/app/CurrentShelf';
 import { useSyncStatus } from '@/app/SyncContext';
 import { UNDO_WINDOW_MS } from '@/app/UndoContext';
 import { addFound, perform } from '@/data/actions';
-import type { FoundRecord, Identified, Read } from '@/data/backend';
+import { SHELF_LOADING, type FoundRecord, type Identified, type Read } from '@/data/backend';
 import { db } from '@/data/db';
 import { useSections } from '@/data/hooks';
 import { wantFunFact } from '@/data/funFacts';
@@ -190,6 +190,11 @@ export function FindRecord({ records, onAdded, photos, handFormEdited = false }:
       takeOver();
     }
     if (saving.current !== 'idle') return false;
+    // A fresh phone before its first sync has no sections to sort the record into yet.
+    if (!sections || sections.length === 0) {
+      setMessage(SHELF_LOADING);
+      return false;
+    }
     saving.current = 'running';
     const searchBefore = latest.current;
     const waiting = photos && photos.drafts !== usedDrafts.current ? photos : null;

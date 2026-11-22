@@ -65,7 +65,7 @@ export function RecordScreen() {
       const wasArrival = record.status === 'new_arrival';
       const ctx = { me: userId, now: new Date().toISOString() };
       await perform(db, rate(record, value, ctx).postcards, runNow);
-      const sectionName = sectionOf(record, sectionsById)?.name;
+      const sectionName = sectionsById && sectionOf(record, sectionsById)?.name;
       setConfirmation(wasArrival ? [RATING_WORDS[value], 'On the shelf', sectionName].filter(Boolean).join(' · ') : RATING_WORDS[value]);
     } catch (e) {
       fail(e);
@@ -114,7 +114,8 @@ export function RecordScreen() {
         )}
       </div>
       <SyncNotice />
-      {record === undefined ? null : record === null ? (
+      {/* The poster waits for the sections, so it's never drawn in the wrong colour first. */}
+      {record === undefined || sectionsById === undefined ? null : record === null ? (
         <p className="px-4 text-ink-muted">That record isn’t on this phone.</p>
       ) : (
         <>

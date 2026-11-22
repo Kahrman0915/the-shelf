@@ -93,10 +93,12 @@ export async function applyPostcard(db: ShelfDB, p: NewPostcard | Postcard): Pro
       if (from.isCatchAll) throw new BackendError('Section rules broken: the catch-all section can’t be merged away');
       const into = await db.sections.get(p.fields.into);
       if (!into) return;
-      // Every record in it moves, deleted ones too (another phone can restore them), as merge_section does.
-      await db.records.where('sectionId').equals(from.id).modify({ sectionId: into.id });
       const genres = [...into.discogsGenres, ...from.discogsGenres.filter((g) => !into.discogsGenres.includes(g))];
-      await db.sections.put(checkSection({ ...into, discogsGenres: genres, takesHoliday: into.takesHoliday || from.takesHoliday }));
+      const merged = checkSection({ ...into, discogsGenres: genres, takesHoliday: into.takesHoliday || from.takesHoliday });
+      // Checked first, so nothing is written unless all of it can be. Every record in it moves, deleted ones too
+      // (another phone can restore them), as merge_section does.
+      await db.records.where('sectionId').equals(from.id).modify({ sectionId: into.id });
+      await db.sections.put(merged);
       await db.sections.delete(from.id);
       return;
     }

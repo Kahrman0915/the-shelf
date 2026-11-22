@@ -15,7 +15,7 @@ const pershing: ShelfRecord = {
 
 describe('SpineRow', () => {
   it('reads artist, then title, then year · label · catalog, and never shows price paid', () => {
-    render(<SpineRow record={pershing} rating={4} color="var(--genre-jazz)" tag={null} />);
+    render(<SpineRow record={pershing} rating={4} color="var(--section-jazz)" tag={null} />);
     const text = document.body.textContent ?? '';
     expect(text.indexOf('Ahmad Jamal Trio')).toBeLessThan(text.indexOf('At the Pershing'));
     expect(screen.getByText('1958 · Argo · LP-628')).toBeInTheDocument();
@@ -24,14 +24,14 @@ describe('SpineRow', () => {
   });
 
   it('shows nothing for an unplayed record and a tag when given', () => {
-    render(<SpineRow record={pershing} rating={undefined} color="var(--genre-jazz)" tag="upgrade" />);
+    render(<SpineRow record={pershing} rating={undefined} color="var(--section-jazz)" tag="upgrade" />);
     expect(screen.queryByRole('img')).toBeNull();
     expect(screen.getByText('Upgrade')).toBeInTheDocument();
   });
 
   it('is a button when it can be opened', async () => {
     const onOpen = vi.fn();
-    render(<SpineRow record={pershing} rating={4} color="var(--genre-jazz)" tag={null} onOpen={onOpen} />);
+    render(<SpineRow record={pershing} rating={4} color="var(--section-jazz)" tag={null} onOpen={onOpen} />);
     await userEvent.click(screen.getByRole('button'));
     expect(onOpen).toHaveBeenCalledOnce();
   });

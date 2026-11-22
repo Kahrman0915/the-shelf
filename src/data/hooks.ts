@@ -47,10 +47,10 @@ export function useSections(shelfId: string): Section[] | undefined {
   return useLiveQuery(async () => (await db.sections.where('shelfId').equals(shelfId).toArray()).sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)), [shelfId]);
 }
 
-/** The shelf's sections by id, for colouring and naming records; empty while loading. */
-export function useSectionsById(shelfId: string): ReadonlyMap<string, Section> {
+/** The shelf's sections by id, for colouring and naming records; undefined while loading, so nothing is drawn in the wrong colour first. */
+export function useSectionsById(shelfId: string): ReadonlyMap<string, Section> | undefined {
   const sections = useSections(shelfId);
-  return useMemo(() => new Map((sections ?? []).map((s) => [s.id, s])), [sections]);
+  return useMemo(() => sections && new Map(sections.map((s) => [s.id, s])), [sections]);
 }
 
 /** Whether the browser agreed to keep this phone's data; null until it has been asked. */

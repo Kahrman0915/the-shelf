@@ -1117,6 +1117,23 @@ describe('FindRecord: the shelf’s own sections', () => {
     expect(await sectionNameOfSaved()).toBe('Pop / soul / contemporary');
   });
 
+  it('before the shelf’s sections are on the phone, a tap saves nothing and says the shelf is still loading', async () => {
+    await db.sections.clear();
+    setup({ prepare: (b) => (b.discogsResults = [SOUL]) });
+    await search('al green');
+    await userEvent.click(await card(/Let’s Stay Together/));
+    expect(await screen.findByText('Your shelf is still loading. Try again in a moment.')).toBeInTheDocument();
+    expect(screen.queryByText(/No catch-all/)).toBeNull();
+    expect(await db.records.count()).toBe(0);
+    expect(await db.outbox.count()).toBe(0);
+    // Once they arrive, the same card saves.
+    await db.sections.bulkPut(sectionsFromSet(SHELF, KAHRMANS_NINE, '2026-01-01T00:00:00.000Z'));
+    await waitFor(async () => {
+      await userEvent.click(screen.getByRole('button', { name: /Let’s Stay Together/ }));
+      expect(await db.records.count()).toBe(1);
+    });
+  });
+
   it('and in Soul & Funk on a starter shelf', async () => {
     await db.sections.clear();
     await db.sections.bulkPut(sectionsFromSet(SHELF, STARTER_SET, '2026-01-01T00:00:00.000Z'));

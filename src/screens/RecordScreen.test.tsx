@@ -6,6 +6,7 @@ import { CurrentShelfProvider } from '@/app/CurrentShelf';
 import { db, sectionsFromSet } from '@/data/db';
 import { FUN_FACT_NONE_PREFIX, wantFunFact } from '@/data/funFacts';
 import type { ShelfRecord } from '@/data/schema';
+import { holdTable } from '@/test/holdTable';
 import { RecordScreen } from './RecordScreen';
 import { KAHRMANS_NINE, sectionIdFor } from '@/domain/sections';
 
@@ -104,6 +105,19 @@ describe('RecordScreen', () => {
     renderRecord();
     await userEvent.click(await screen.findByRole('radio', { name: '5 of 5, Desert island' }));
     expect(await screen.findByText(/On the shelf · Miscellaneous$/)).toBeInTheDocument();
+  });
+
+  it('draws the poster only once the sections are in, so it never shows the wrong colour first', async () => {
+    await db.records.put(record({ sectionId: sectionIdFor(SHELF, 'rock') }));
+    const release = holdTable(db, db.sections);
+    renderRecord();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(screen.queryByRole('img', { name: /^Poster for/ })).toBeNull();
+    await release();
+    const poster = await screen.findByRole('img', { name: /^Poster for John Coltrane/ });
+    const fills = [...poster.querySelectorAll('circle')].map((c) => c.getAttribute('fill'));
+    expect(fills).toContain('var(--section-rock)');
+    expect(fills).not.toContain('var(--section-misc)');
   });
 
   it('rating a new arrival puts it on the shelf', async () => {

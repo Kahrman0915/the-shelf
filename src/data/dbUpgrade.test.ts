@@ -283,6 +283,25 @@ describe('version 7', () => {
     db.close();
   });
 
+  it('chooses the set from the session’s own shelf only', async () => {
+    await version6Phone({ imported: false });
+    const OTHER_SHELF = '99999999-9999-4999-8999-999999999999';
+    const v6 = new Dexie(name);
+    v6.version(6).stores({ records: 'id, shelfId, status, genre, importKey' });
+    await v6.table('records').put({
+      ...savedBeforeDetails('66666666-6666-4666-8666-666666666666'), shelfId: OTHER_SHELF, funFact: null, funFactSource: null, coverImageUrl: null,
+      genre: 'rock', importKey: KAHRMAN_KEY,
+    });
+    v6.close();
+
+    const db = new ShelfDB(name);
+    const sections = (await db.sections.toArray()).sort((x, y) => x.position - y.position);
+    expect(sections.map((s) => s.name)).toEqual(STARTER_SET.map((s) => s.name));
+    expect(sections.every((s) => s.shelfId === SHELF)).toBe(true);
+    expect((await db.records.get('66666666-6666-4666-8666-666666666666'))?.sectionId).toBe(sectionIdFor(OTHER_SHELF, 'rock'));
+    db.close();
+  });
+
   it('keeps sections the phone already has', async () => {
     const own: Section = {
       id: sectionIdFor(SHELF, 'misc'), shelfId: SHELF, name: 'Odds and ends', color: 'sand', position: 0, discogsGenres: [],

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { NewBuy } from '@/data/actions';
+import { SHELF_LOADING } from '@/data/backend';
 import type { Section } from '@/data/schema';
 import { GRADE_KEYS, type Grade } from '@/domain/grades';
 import { parsePrice, sanitizeAsking } from '@/domain/price';
@@ -132,11 +133,11 @@ export function BuyNewSheet({
 
             <div className="flex flex-col gap-2">
               <label htmlFor="buy-section" className={LABEL}>Section</label>
-              <Select value={sectionId} onValueChange={setSectionId}>
+              <Select value={sectionId} onValueChange={setSectionId} disabled={sections.length === 0}>
                 <SelectTrigger
                   id="buy-section"
                   aria-invalid={errors.sectionId ? true : undefined}
-                  aria-describedby={errors.sectionId ? 'buy-section-error' : undefined}
+                  aria-describedby={errors.sectionId ? 'buy-section-error' : sections.length === 0 ? 'buy-section-loading' : undefined}
                   className="w-full rounded-lg border-[1.5px] border-line-strong bg-surface-sunk px-4 text-base text-ink data-[size=default]:h-12 [&_svg]:text-ink-muted"
                 >
                   <SelectValue placeholder="Choose a section" />
@@ -149,6 +150,7 @@ export function BuyNewSheet({
                   ))}
                 </SelectContent>
               </Select>
+              {sections.length === 0 && <p id="buy-section-loading" className="text-[15px] text-ink-muted">{SHELF_LOADING}</p>}
               {errors.sectionId && <p id="buy-section-error" className={ERROR}>{errors.sectionId}</p>}
             </div>
 

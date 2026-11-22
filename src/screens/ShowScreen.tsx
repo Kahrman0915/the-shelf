@@ -75,7 +75,7 @@ export function ShowScreen() {
             Bought it
           </Button>
         </div>
-      ) : (
+      ) : sectionsById === undefined ? null : (
         <div className="border-t border-line">
           {results.map((item) => (
             <SpineRow

@@ -67,6 +67,9 @@ export const COVERS_BUCKET = 'covers';
 
 export const NO_SIGNAL = 'No signal. Try again when you’re back online.';
 
+/** The shelf's sections aren't on the phone yet (a fresh phone before its first sync). */
+export const SHELF_LOADING = 'Your shelf is still loading. Try again in a moment.';
+
 /** Plain words for why a Discogs lookup failed (other than having no signal). */
 export const DISCOGS_MESSAGES = {
   rateLimited: 'Too many searches at once. Wait a minute and try again.',
