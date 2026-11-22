@@ -72,7 +72,8 @@ language sql set search_path = '' as $$
 $$;
 
 -- The changeover, on every record write. In order:
---   1. an old-app write (no section on insert, or only the genre changed) moves to the genre's section;
+--   1. an old-app write (no section on insert, or only the genre changed) moves to the genre's section,
+--      or, if that was merged away, to the section derived from the genre, which step 2 then follows;
 --   2. a section that was merged away is followed to its survivor; an unknown one means the catch-all;
 --   3. a section from another shelf is refused;
 --   4. genre is set from the section, so old phones keep reading the right one.
@@ -87,10 +88,16 @@ begin
     select s.id into v_id from public.sections s
     where s.shelf_id = new.shelf_id and s.legacy_genre = new.genre
     order by s.position, s.id limit 1;
+    v_id := coalesce(v_id, public.section_id_for(new.shelf_id, new.genre));
   end if;
 
+  -- The key-share lock waits out a merge in flight on this section (it holds the row for update),
+  -- then finds the row gone and reads the redirect that merge committed, instead of failing the
+  -- foreign key check later.
   for hop in 1..10 loop
-    exit when v_id is null or exists (select 1 from public.sections s where s.id = v_id);
+    exit when v_id is null;
+    perform 1 from public.sections s where s.id = v_id for key share;
+    exit when found;
     select r.into_id into v_id from public.section_redirects r where r.from_id = v_id;
   end loop;
 
@@ -117,6 +124,10 @@ revoke execute on function public.records_fill_section() from public, anon, auth
 create function public.sections_claim() returns trigger
 language plpgsql security invoker set search_path = '' as $$
 begin
+  -- Depth 1 is a write made by the app, merge_section(), bootstrap() or a migration; deeper is this
+  -- trigger's own updates below. Two consequences: section writes must be one row per statement (two
+  -- rows claiming the same genre in one statement aren't checked against each other), and a section
+  -- written from inside some other trigger skips claims entirely.
   if pg_trigger_depth() > 1 then
     return new;
   end if;
@@ -179,7 +190,9 @@ begin
     takes_holiday = s.takes_holiday or v_from.takes_holiday
   where s.id = p_into;
 
-  insert into public.section_redirects (from_id, into_id, shelf_id) values (p_from, p_into, v_from.shelf_id);
+  -- A redirect already written from this section (by hand, before any merge) gives way to this one.
+  insert into public.section_redirects (from_id, into_id, shelf_id) values (p_from, p_into, v_from.shelf_id)
+  on conflict (from_id) do update set into_id = excluded.into_id;
   update public.section_redirects r set into_id = p_into where r.into_id = p_from;
 
   delete from public.sections s where s.id = p_from;
@@ -196,11 +209,13 @@ revoke all on function public.section_id_for(uuid, public.genre), public.seed_se
 select public.seed_sections(s.id, exists (select 1 from public.records r where r.shelf_id = s.id and r.import_key is not null))
 from public.shelves s;
 
+-- The trigger goes on before the backfill, so a record written meanwhile is placed too, even if this
+-- file isn't run as one transaction.
+create trigger records_section before insert or update on public.records for each row execute function public.records_fill_section();
+
 update public.records set section_id = public.section_id_for(shelf_id, genre);
 alter table public.records alter column section_id set not null;
 create index records_section on public.records (section_id);
-
-create trigger records_section before insert or update on public.records for each row execute function public.records_fill_section();
 
 -- bootstrap(): same body as 20261111120100_bootstrap_requires_email.sql, plus seeding a new shelf's sections.
 create or replace function public.bootstrap(p_display_name text default null) returns uuid

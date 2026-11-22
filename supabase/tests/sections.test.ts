@@ -188,6 +188,15 @@ describe('an old app, which writes genre', () => {
     expect(await placeOf(id)).toEqual({ section_id: s('misc'), genre: 'misc' });
   });
 
+  it('follows a merged genre’s section to where it was merged', async () => {
+    const existing = await newAppInsert(megan, kShelf, k('reggae'));
+    await merge(kahrman, k('rock'), k('jazz'));
+    const inserted = await oldAppInsert(megan, kShelf, 'rock');
+    await as(megan, `update public.records set genre = 'rock' where id = $1`, [existing]);
+    expect(await placeOf(inserted)).toEqual({ section_id: k('jazz'), genre: 'jazz' });
+    expect(await placeOf(existing)).toEqual({ section_id: k('jazz'), genre: 'jazz' });
+  });
+
   it('leaves the section alone when an edit doesn’t touch the genre', async () => {
     const id = await newAppInsert(megan, kShelf, k('reggae'));
     await as(megan, `update public.records set title = 'Changed', genre = 'reggae' where id = $1`, [id]);
@@ -297,14 +306,27 @@ describe('merge_section', () => {
     await expect(merge(kahrman, k('misc'), k('jazz'))).rejects.toThrow(/catch-all/);
   });
 
-  it('refuses sections on two shelves, or a section into itself', async () => {
-    await expect(merge(kahrman, k('rock'), s('rock'))).rejects.toThrow();
-    await expect(merge(kahrman, k('rock'), k('rock'))).rejects.toThrow();
+  it('refuses sections on two shelves, even for someone on both, or a section into itself', async () => {
+    await db.query(`insert into public.shelf_members (shelf_id, user_id, role) values ($1, $2, 'member')`, [sShelf, megan.id]);
+    await expect(merge(megan, k('rock'), s('rock'))).rejects.toThrow(/sections are on different shelves/);
+    await expect(merge(megan, k('rock'), k('rock'))).rejects.toThrow(/merged into itself/);
   });
 
   it('a stranger can’t merge', async () => {
-    await expect(merge(stranger, k('rock'), k('jazz'))).rejects.toThrow();
+    await expect(merge(stranger, k('rock'), k('jazz'))).rejects.toThrow(/section not found/);
     expect(await sectionsOf(kShelf)).toHaveLength(9);
+  });
+
+  it('refuses anyone who isn’t on the shelf, even with every row in view', async () => {
+    // Run as the database owner, which sees past the row rules but is nobody's shelf-mate.
+    await expect(db.query('select public.merge_section($1, $2)', [k('rock'), k('jazz')])).rejects.toThrow(/not a member of this shelf/);
+    expect(await sectionsOf(kShelf)).toHaveLength(9);
+  });
+
+  it('replaces a redirect already written from the section', async () => {
+    await as(megan, 'insert into public.section_redirects (from_id, into_id, shelf_id) values ($1, $2, $3)', [k('rock'), k('country'), kShelf]);
+    await merge(megan, k('rock'), k('jazz'));
+    expect((await db.query('select into_id from public.section_redirects where from_id = $1', [k('rock')])).rows).toEqual([{ into_id: k('jazz') }]);
   });
 
   it('can’t be run when signed out', async () => {
