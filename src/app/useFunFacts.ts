@@ -6,10 +6,13 @@ import { useBackend } from './BackendContext';
 import { useCurrentShelf } from './CurrentShelf';
 import { useSyncStatus } from './SyncContext';
 
+/** How long after a failed try the queue is worked once more. */
+export const FUN_FACT_RETRY_MS = 60_000;
+
 /**
  * Works the fun-fact queue: when a record is queued (one already waiting at mount counts) and when the
- * signal comes back. A try counted on a record doesn't start another run at once, so its second try
- * comes later. Mount once, in the app shell.
+ * signal comes back. A try counted on a record doesn't start another run at once: when a run ends with
+ * one, a single run follows FUN_FACT_RETRY_MS later (any newer run replaces it). Mount once, in the app shell.
  */
 export function useFunFacts(): void {
   const backend = useBackend();
@@ -18,9 +21,40 @@ export function useFunFacts(): void {
   const queued = useLiveQuery(async () => (await readFunFactQueue(db)).map((e) => e.recordId), []);
 
   const run = useRef<() => void>(() => {});
+  const retry = useRef<{ timer: ReturnType<typeof setTimeout> | null; latest: number; mounted: boolean }>({
+    timer: null,
+    latest: 0,
+    mounted: false,
+  });
   useEffect(() => {
-    run.current = () => void runFunFacts(db, backend, { me: userId }, runNow).catch(console.error);
+    const r = retry.current;
+    const stopTimer = () => {
+      if (r.timer !== null) clearTimeout(r.timer);
+      r.timer = null;
+    };
+    run.current = () => {
+      stopTimer();
+      const mine = ++r.latest;
+      runFunFacts(db, backend, { me: userId }, runNow)
+        .then(({ retryLater }) => {
+          // Runs finish in the order they started, so only the newest one decides about a retry.
+          if (mine !== r.latest || !r.mounted || !retryLater) return;
+          stopTimer();
+          r.timer = setTimeout(() => run.current(), FUN_FACT_RETRY_MS);
+        })
+        .catch(console.error);
+    };
   }, [backend, userId, runNow]);
+
+  useEffect(() => {
+    const r = retry.current;
+    r.mounted = true;
+    return () => {
+      r.mounted = false;
+      if (r.timer !== null) clearTimeout(r.timer);
+      r.timer = null;
+    };
+  }, []);
 
   useEffect(() => {
     const onOnline = () => run.current();
@@ -40,13 +74,11 @@ export function useFunFacts(): void {
 
 export type FunFactStatus = 'queued' | 'none' | 'idle';
 
-/** Whether a record is waiting for a fun fact, had none found last time, or neither. */
-export function useFunFactStatus(recordId: string): FunFactStatus {
-  return (
-    useLiveQuery(async (): Promise<FunFactStatus> => {
-      const [queue, none] = await Promise.all([readFunFactQueue(db), db.meta.get(`${FUN_FACT_NONE_PREFIX}${recordId}`)]);
-      if (queue.some((e) => e.recordId === recordId)) return 'queued';
-      return none ? 'none' : 'idle';
-    }, [recordId]) ?? 'idle'
-  );
+/** Whether a record is waiting for a fun fact, had none found last time, or neither; undefined while loading. */
+export function useFunFactStatus(recordId: string): FunFactStatus | undefined {
+  return useLiveQuery(async (): Promise<FunFactStatus> => {
+    const [queue, none] = await Promise.all([readFunFactQueue(db), db.meta.get(`${FUN_FACT_NONE_PREFIX}${recordId}`)]);
+    if (queue.some((e) => e.recordId === recordId)) return 'queued';
+    return none ? 'none' : 'idle';
+  }, [recordId]);
 }

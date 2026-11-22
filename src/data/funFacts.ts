@@ -1,6 +1,6 @@
 import { addFunFact, perform } from './actions';
 import { BackendError, NO_SIGNAL, type Backend } from './backend';
-import type { ShelfDB } from './db';
+import { readSession, type ShelfDB } from './db';
 import type { NewPostcard } from './outbox';
 
 /** The meta key holding the records waiting for a fun fact, oldest first. */
@@ -9,6 +9,8 @@ export const FUN_FACT_QUEUE = 'funFactQueue';
 export const FUN_FACT_NONE_PREFIX = 'funFactNone:';
 
 export type FunFactWanted = { recordId: string; tries: number };
+/** `retryLater`: a try was counted on a record still on the queue, so another run later may find its fact. */
+export type FunFactRunResult = { retryLater: boolean };
 
 /** A record is tried this many times automatically; after that it's left for the button. */
 const MAX_TRIES = 2;
@@ -18,7 +20,10 @@ export async function readFunFactQueue(db: ShelfDB): Promise<FunFactWanted[]> {
   if (!row) return [];
   try {
     const parsed: unknown = JSON.parse(row.value);
-    return Array.isArray(parsed) ? (parsed as FunFactWanted[]) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (e): e is FunFactWanted => typeof e === 'object' && e !== null && typeof e.recordId === 'string' && typeof e.tries === 'number',
+    );
   } catch {
     return [];
   }
@@ -35,9 +40,13 @@ async function changeQueue(db: ShelfDB, change: (queue: FunFactWanted[]) => FunF
 
 const without = (recordId: string) => (queue: FunFactWanted[]) => queue.filter((e) => e.recordId !== recordId);
 
-/** Put a record on the fun-fact queue, unless it's already there. */
+/** Put a record on the fun-fact queue, unless it's already there, forgetting any earlier "none found". */
 export async function wantFunFact(db: ShelfDB, recordId: string): Promise<void> {
-  await changeQueue(db, (queue) => (queue.some((e) => e.recordId === recordId) ? queue : [...queue, { recordId, tries: 0 }]));
+  await changeQueue(
+    db,
+    (queue) => (queue.some((e) => e.recordId === recordId) ? queue : [...queue, { recordId, tries: 0 }]),
+    () => db.meta.delete(`${FUN_FACT_NONE_PREFIX}${recordId}`),
+  );
 }
 
 /** The last fun-fact run started on each phone's notebook. */
@@ -47,21 +56,40 @@ const runs = new WeakMap<ShelfDB, Promise<unknown>>();
  * Work the fun-fact queue oldest first, one record at a time, each tried once per run.
  * A found fact is saved only if the record is still there, not deleted, and still has no fact.
  * No signal stops the run and keeps the rest for next time. Runs on one notebook never overlap,
- * so a record is never asked about twice at once.
+ * so a record is never asked about twice at once. A run ends as soon as `ctx.me` is no longer the
+ * person signed in on this phone, so it never saves a fact under the previous person's name.
  */
-export function runFunFacts(db: ShelfDB, backend: Pick<Backend, 'findFunFact'>, ctx: { me: string }, after?: () => void): Promise<void> {
+export function runFunFacts(
+  db: ShelfDB,
+  backend: Pick<Backend, 'findFunFact'>,
+  ctx: { me: string },
+  after?: () => void,
+): Promise<FunFactRunResult> {
   const go = () => funFactRun(db, backend, ctx, after);
   const run = (runs.get(db) ?? Promise.resolve()).then(go, go);
   runs.set(db, run);
   return run;
 }
 
-async function funFactRun(db: ShelfDB, backend: Pick<Backend, 'findFunFact'>, ctx: { me: string }, after?: () => void): Promise<void> {
+async function funFactRun(
+  db: ShelfDB,
+  backend: Pick<Backend, 'findFunFact'>,
+  ctx: { me: string },
+  after?: () => void,
+): Promise<FunFactRunResult> {
   const tried = new Set<string>();
+  // Records whose failed try was counted in this run and that are still on the queue.
+  const failed = new Set<string>();
+  const stillMe = async () => (await readSession(db))?.userId === ctx.me;
+  const done = async (): Promise<FunFactRunResult> => {
+    const queue = await readFunFactQueue(db);
+    return { retryLater: queue.some((e) => failed.has(e.recordId)) };
+  };
   for (;;) {
+    if (!(await stillMe())) return { retryLater: false };
     // Read the queue fresh each time, so a record queued during the run is seen.
     const next = (await readFunFactQueue(db)).find((e) => !tried.has(e.recordId));
-    if (!next) return;
+    if (!next) return done();
     const { recordId } = next;
     tried.add(recordId);
 
@@ -75,13 +103,17 @@ async function funFactRun(db: ShelfDB, backend: Pick<Backend, 'findFunFact'>, ct
     try {
       found = await backend.findFunFact({ artist: record.artist, title: record.title, year: record.year, label: record.label });
     } catch (e) {
-      if (e instanceof BackendError && e.message === NO_SIGNAL) return;
+      if (e instanceof BackendError && e.message === NO_SIGNAL) return done();
       if (!(e instanceof BackendError)) console.error(e);
       await changeQueue(db, (queue) =>
         queue.flatMap((w) => (w.recordId !== recordId ? [w] : w.tries + 1 >= MAX_TRIES ? [] : [{ ...w, tries: w.tries + 1 }])),
       );
+      failed.add(recordId);
       continue;
     }
+
+    // Signed out (or someone else signed in) while the request was out: save nothing, keep the queue.
+    if (!(await stillMe())) return { retryLater: false };
 
     // The answer can take a while: the fact may have been typed, or the record deleted (or undone), meanwhile.
     const now = await db.records.get(recordId);

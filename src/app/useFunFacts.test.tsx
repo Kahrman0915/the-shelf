@@ -1,14 +1,14 @@
 import { act, cleanup, render, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { db } from '@/data/db';
-import { wantFunFact } from '@/data/funFacts';
+import { db, writeSession } from '@/data/db';
+import { readFunFactQueue, wantFunFact } from '@/data/funFacts';
 import type { ShelfRecord } from '@/data/schema';
 import { FakeBackend } from '@/test/fakeBackend';
 import { BackendProvider } from './BackendContext';
 import { CurrentShelfProvider } from './CurrentShelf';
 import { SyncContext } from './SyncContext';
-import { useFunFacts, useFunFactStatus } from './useFunFacts';
+import { FUN_FACT_RETRY_MS, useFunFacts, useFunFactStatus } from './useFunFacts';
 
 const SHELF = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ME = '11111111-1111-4111-8111-111111111111';
@@ -48,10 +48,12 @@ function mount(backend: FakeBackend, runNow = vi.fn()) {
 beforeEach(async () => {
   await db.delete();
   await db.open();
+  await writeSession(db, { userId: ME, email: 'k@example.com', shelfId: SHELF });
 });
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 describe('useFunFacts', () => {
@@ -91,6 +93,55 @@ describe('useFunFacts', () => {
     });
     await waitFor(async () => expect((await db.records.get(A))?.funFact).toBe(FACT.fact));
   });
+
+  it('a record queued again after it left the queue (the button) is asked about promptly', async () => {
+    await db.records.put(record());
+    await wantFunFact(db, A);
+    const backend = new FakeBackend({});
+    mount(backend);
+    await waitFor(async () => expect(await db.meta.get(`funFactNone:${A}`)).toBeDefined());
+    await waitFor(async () => expect(await readFunFactQueue(db)).toEqual([]));
+    backend.funFacts.set('Miles Davis|Kind of Blue', FACT);
+    await act(() => wantFunFact(db, A));
+    await waitFor(async () => expect((await db.records.get(A))?.funFact).toBe(FACT.fact));
+    expect(backend.funFactCalls).toHaveLength(2);
+  });
+
+  describe('after a failed try', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+    });
+
+    async function failOnce() {
+      await db.records.put(record());
+      await wantFunFact(db, A);
+      const backend = new FakeBackend({});
+      backend.claudeFails = 'down';
+      mount(backend);
+      await waitFor(async () => expect(await readFunFactQueue(db)).toEqual([{ recordId: A, tries: 1 }]));
+      return backend;
+    }
+
+    it('tries once more a minute later, then leaves it for the button', async () => {
+      const backend = await failOnce();
+      await act(() => vi.advanceTimersByTimeAsync(FUN_FACT_RETRY_MS - 1000));
+      expect(backend.funFactCalls).toHaveLength(1);
+      await act(() => vi.advanceTimersByTimeAsync(1000));
+      await waitFor(async () => expect(await readFunFactQueue(db)).toEqual([]));
+      expect(backend.funFactCalls).toHaveLength(2);
+      // Left for the button: no third automatic try.
+      await act(() => vi.advanceTimersByTimeAsync(FUN_FACT_RETRY_MS * 2));
+      expect(backend.funFactCalls).toHaveLength(2);
+    });
+
+    it('the retry a minute later saves the fact once Claude answers', async () => {
+      const backend = await failOnce();
+      backend.claudeFails = null;
+      backend.funFacts.set('Miles Davis|Kind of Blue', FACT);
+      await act(() => vi.advanceTimersByTimeAsync(FUN_FACT_RETRY_MS));
+      await waitFor(async () => expect((await db.records.get(A))?.funFact).toBe(FACT.fact));
+    });
+  });
 });
 
 describe('useFunFactStatus', () => {
@@ -98,7 +149,8 @@ describe('useFunFactStatus', () => {
 
   it('is idle, then queued, then none once nothing was found', async () => {
     const { result } = renderHook(() => useFunFactStatus(A), { wrapper });
-    expect(result.current).toBe('idle');
+    expect(result.current).toBeUndefined();
+    await waitFor(() => expect(result.current).toBe('idle'));
     await act(() => wantFunFact(db, A));
     await waitFor(() => expect(result.current).toBe('queued'));
     await act(async () => {

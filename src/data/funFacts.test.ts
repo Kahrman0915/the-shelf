@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeBackend } from '@/test/fakeBackend';
-import { ShelfDB } from './db';
-import { runFunFacts, wantFunFact } from './funFacts';
+import { ShelfDB, writeSession } from './db';
+import { readFunFactQueue, runFunFacts, wantFunFact } from './funFacts';
 import type { ShelfRecord } from './schema';
 
 const SHELF = '11111111-1111-4111-8111-111111111111';
@@ -70,6 +70,7 @@ function meanwhile(change: () => Promise<unknown>) {
 beforeEach(async () => {
   db = new ShelfDB(`fun-facts-${crypto.randomUUID()}`);
   await db.open();
+  await writeSession(db, { userId: ME, email: 'k@example.com', shelfId: SHELF });
   backend = new FakeBackend({});
 });
 
@@ -85,10 +86,26 @@ describe('wantFunFact', () => {
     expect(await queue()).toEqual([{ recordId: A, tries: 0 }]);
   });
 
+  it('clears an earlier “none found”, so a re-queue starts fresh', async () => {
+    await db.meta.put({ key: `funFactNone:${A}`, value: 'true' });
+    await wantFunFact(db, A);
+    expect(await db.meta.get(`funFactNone:${A}`)).toBeUndefined();
+  });
+
   it('keeps the order records were asked in', async () => {
     await wantFunFact(db, A);
     await wantFunFact(db, B);
     expect((await queue()).map((e) => e.recordId)).toEqual([A, B]);
+  });
+});
+
+describe('readFunFactQueue', () => {
+  it('drops entries without a string recordId and a numeric tries', async () => {
+    await db.meta.put({
+      key: 'funFactQueue',
+      value: JSON.stringify([{ recordId: A, tries: 1 }, { recordId: 7, tries: 0 }, { recordId: B }, null, 'x', { tries: 0 }]),
+    });
+    expect(await readFunFactQueue(db)).toEqual([{ recordId: A, tries: 1 }]);
   });
 });
 
@@ -202,6 +219,39 @@ describe('runFunFacts', () => {
     expect(await queue()).toEqual([]);
     expect(backend.funFactCalls).toHaveLength(2);
     expect(await db.meta.get(`funFactNone:${A}`)).toBeUndefined();
+  });
+
+  it('says to retry later only while a counted try leaves a record on the queue', async () => {
+    await db.records.put(record(A));
+    backend.claudeFails = 'down';
+    await wantFunFact(db, A);
+    expect(await runFunFacts(db, backend, ctx)).toEqual({ retryLater: true });
+    expect(await runFunFacts(db, backend, ctx)).toEqual({ retryLater: false });
+    backend.claudeFails = null;
+    await wantFunFact(db, A);
+    expect(await runFunFacts(db, backend, ctx)).toEqual({ retryLater: false });
+  });
+
+  it('a sign-out during the request ends the run: nothing is saved under the old identity', async () => {
+    await db.records.bulkPut([record(A), record(B, { title: 'Sketches of Spain' })]);
+    backend.funFacts.set('Miles Davis|Kind of Blue', FACT);
+    backend.funFacts.set('Miles Davis|Sketches of Spain', FACT);
+    meanwhile(() => writeSession(db, { userId: B, email: 'm@example.com', shelfId: SHELF }));
+    await wantFunFact(db, A);
+    await wantFunFact(db, B);
+    await runFunFacts(db, backend, ctx);
+    expect(backend.funFactCalls).toEqual(['Miles Davis|Kind of Blue']);
+    expect(await db.outbox.count()).toBe(0);
+    expect((await db.records.get(A))?.funFact).toBeNull();
+  });
+
+  it('a run for someone no longer signed in asks nothing', async () => {
+    await db.records.put(record(A));
+    await db.meta.delete('session');
+    await wantFunFact(db, A);
+    await runFunFacts(db, backend, ctx);
+    expect(backend.funFactCalls).toEqual([]);
+    expect(await queue()).toEqual([{ recordId: A, tries: 0 }]);
   });
 
   it('two runs called together ask once per record', async () => {
