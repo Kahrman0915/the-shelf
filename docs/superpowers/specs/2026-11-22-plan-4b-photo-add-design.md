@@ -1,7 +1,7 @@
 # Plan 4b: Add a record from photos (design)
 
 Date: 2026-11-22
-Status: approved in conversation, awaiting written review
+Status: builder-checked, awaiting Kahrman's approval
 Builds on: `2026-11-12-plan-4a-build-2a-discogs-lookup-design.md` (Find a record is live), `2026-11-12-plan-4a-add-edit-delete-design.md` (Add/Edit/Record screens), the original spec's §9 "Photos" (`2026-09-18-the-shelf-design.md`).
 
 ## 1. Intent
@@ -34,6 +34,7 @@ He wants adding a record to be as close to effortless as possible during a big c
 | 8 | Records without photos | *Proposed, accepted:* keep the generative poster; Flip only appears when there's a back photo |
 | 9 | Existing records | *Proposed, accepted:* Edit gets **Add photos**, so records already on the shelf can get theirs |
 | 10 | Offline | *Proposed, accepted:* photos save on the phone and upload later through the outbox; recognition needs signal |
+| 11 | Photos of a record already on the shelf | **Ask each time:** "Add these photos to the one on your shelf?" Yes puts them on that record, No saves a second copy (for when you really own two) |
 
 ## 3. Build 4b-1: Photos
 
@@ -45,6 +46,11 @@ He wants adding a record to be as close to effortless as possible during a big c
 - Small front and back thumbnails then show above the Find box.
 - In 4b-1 you still search and tap a card, or fill the form by hand. **Whichever record you save next takes those photos with it.**
 - After a save, the thumbnails clear for the next record.
+- **Already on the shelf (decision 11).** Photos are waiting, and the record you pick matches one on the shelf (build 1's `findDuplicate`, the same check behind the *Already on the shelf* tag). The app then asks **Add these photos to the one on your shelf?**, with two 48 px buttons: **Add to that one** and **Save a second copy**.
+  - **Add to that one** patches the existing record's `cover_path` / `back_path`, and no new record is made. The confirmation reads **Photos added: {title} · Undo**. Undo puts the record's old paths back and returns the thumbnails to the Add screen.
+  - *Our call:* if that record already has photos, the question reads **Replace the photos on the one on your shelf?** and the button reads **Replace them**. Replacing queues a delete of the old files once the change can no longer be undone.
+  - **Save a second copy** works as today, with the photos on the new record.
+  - With no photos waiting, nothing changes: tapping a duplicate still saves a second copy straight away.
 - 4b-2 later replaces "search yourself" with recognition, and the screen stays the same.
 
 **Record screen.** Your **front photo replaces the poster** at the same size and place.
@@ -56,12 +62,12 @@ He wants adding a record to be as close to effortless as possible during a big c
 ### 3.2 Rules
 - **Shrinking:** each photo is shrunk on the phone to at most **1600 px** on its long edge, as JPEG at about 0.8 quality, before it's stored or uploaded. That's roughly 200–400 KB. Text on the back (catalog numbers) must stay readable for 4b-2, which is why it's 1600 px rather than the original spec's 1200.
 - **Shape:** the photo is kept **as taken**; it isn't cropped. It's displayed filling a square frame (`object-fit: cover`), so a slightly off-centre shot still looks right. *Builder's call to revisit after real use.*
-- **Privacy:** stored in a **private** Supabase Storage bucket `covers`, at `covers/{shelf_id}/{record_id}/front.jpg` and `…/back.jpg`. Only members of that shelf can read, write or delete objects under their shelf's folder. Megan sees Kahrman's photos and vice versa.
+- **Privacy:** stored in a **private** Supabase Storage bucket `covers`, at `covers/{shelf_id}/{record_id}/front-{photo_id}.jpg` and `…/back-{photo_id}.jpg`. *Our call (builder check):* every photo gets its own name, so a Retake makes a new path. The other phone then sees the new path and downloads the new photo, and a cached old one never lingers. A Retake also queues a delete of the old file. Only members of that shelf can read, write or delete objects under their shelf's folder. Megan sees Kahrman's photos and vice versa.
 - **Records point to photos:** `records.cover_path`, which already exists, holds the front's storage path. A new column `records.back_path` holds the back's. A null path means no photo.
 - **Offline-safe:** taking a photo saves the shrunk image **on the phone** at once, in the notebook, and queues an upload in the outbox. The record shows the photo immediately from the phone's copy. When there's signal, the courier uploads the image, *then* patches the record's path. A record's create always goes before its photo upload.
 - **Viewing on the other phone:** photos are downloaded when the Record screen is opened, and **kept on the phone** so they still show offline afterwards.
 - **Remove:** clears the record's path. The stored image is deleted from Storage by the courier. A failed delete is not an error the person needs to see.
-- **Undo after Add:** soft-deletes the record as now. The uploaded photos may stay in Storage. *Builder's call whether to delete them too.*
+- **Undo after Add brings the photos back.** *Our call (builder check):* Undo soft-deletes the record as now, **and the front and back thumbnails return to the Add screen**, so a wrong card can be fixed by tapping the right one without photographing the sleeve again. This matters most in 4b-2, where an exact match saves automatically and Undo is how you correct it. So the draft photos stay on the phone until the save can no longer be undone, and the next save stores them under its own record. Any copy already uploaded for the undone record is deleted by the courier.
 
 ### 3.3 Data
 - **Migration:**
@@ -107,7 +113,6 @@ He wants adding a record to be as close to effortless as possible during a big c
 ## 6. Left to the builder
 - The exact layout of the Take photos step and the thumbnails.
 - The flip animation.
-- Whether Undo also deletes uploaded photos.
 - The upload retry policy within the existing courier rules.
 - How photos are downloaded (signed URL vs. authenticated download).
 - Messages for a failed upload, in the existing header-notice style.
