@@ -35,6 +35,9 @@ He wants adding a record to be as close to effortless as possible during a big c
 | 9 | Existing records | *Proposed, accepted:* Edit gets **Add photos**, so records already on the shelf can get theirs |
 | 10 | Offline | *Proposed, accepted:* photos save on the phone and upload later through the outbox; recognition needs signal |
 | 11 | Photos of a record already on the shelf | **Ask each time:** "Add these photos to the one on your shelf?" Yes puts them on that record, No saves a second copy (for when you really own two) |
+| 12 | How photos look | Kahrman: *"clear, cropped to show only the record (remove background) and squared up… very crisp and clean."* Each photo is **automatically cropped to the sleeve and squared up**, as if scanned |
+| 13 | How the crop happens | **B: fully automatic**, with no check step. Chosen over A (automatic plus a corner check, which costs one tap per photo) and C (placing the corners by hand, too fiddly) |
+| 14 | Teaching good shots | **The first time** someone takes photos, the app shows **tips for a good picture** before the camera opens |
 
 ## 3. Build 4b-1: Photos
 
@@ -43,7 +46,14 @@ He wants adding a record to be as close to effortless as possible during a big c
 **Add screen.** A new **Take photos** button is the first thing on the screen, above *Find a record*.
 - Tapping it opens the phone's camera for **Front**. After the shot, the camera opens again for **Back**.
 - Each step can be retaken or skipped. Skipping the back is allowed.
-- Small front and back thumbnails then show above the Find box.
+- Small front and back thumbnails then show above the Find box. **They show the squared-up result** (§3.2), so a bad crop is visible here and can be retaken before saving.
+- **Photo tips, the first time (decision 14).** The first time this phone takes photos (Add or Edit), a sheet appears **before the camera opens**: **Tips for a sharp cover**, with a **Got it** button that goes on to the camera. *Our proposal for the tips:*
+  1. Lay the sleeve flat on a plain surface that's **darker or lighter than the sleeve**, so its edges stand out.
+  2. Fit the **whole sleeve in**, with a little space around all four edges.
+  3. Hold the phone **straight above it**.
+  4. Use **even light**, with no glare or shadow across it.
+  - It isn't shown again on that phone; *our call:* remembered in the notebook's meta, so it's per phone.
+  - A small **Photo tips** link under the Take photos button reopens it at any time.
 - In 4b-1 you still search and tap a card, or fill the form by hand. **Whichever record you save next takes those photos with it.**
 - After a save, the thumbnails clear for the next record.
 - **Already on the shelf (decision 11).** Photos are waiting, and the record you pick matches one on the shelf (build 1's `findDuplicate`, the same check behind the *Already on the shelf* tag). The app then asks **Add these photos to the one on your shelf?**, with two 48 px buttons: **Add to that one** and **Save a second copy**.
@@ -60,8 +70,16 @@ He wants adding a record to be as close to effortless as possible during a big c
 **Edit screen.** A **Photos** section shows the front and back slots as thumbnails, each with **Take** / **Retake** and **Remove**. Saving Edit saves photo changes along with any field changes.
 
 ### 3.2 Rules
-- **Shrinking:** each photo is shrunk on the phone to at most **1600 px** on its long edge, as JPEG at about 0.8 quality, before it's stored or uploaded. That's roughly 200–400 KB. Text on the back (catalog numbers) must stay readable for 4b-2, which is why it's 1600 px rather than the original spec's 1200.
-- **Shape:** the photo is kept **as taken**; it isn't cropped. It's displayed filling a square frame (`object-fit: cover`), so a slightly off-centre shot still looks right. *Builder's call to revisit after real use.*
+- **Squaring up (decisions 12–13), all on the phone and offline:**
+  1. Find the sleeve's **four corners** in the full-size photo (edge detection).
+  2. **Flatten** that four-sided shape into a perfect square (a perspective warp), which removes the background and straightens an angled shot.
+  3. Do this from the **full-size** photo and shrink only at the end, so the result stays sharp.
+  - **No colour filters.** The cover's real colours are kept. Light sharpening is the builder's call, if it helps on real shots.
+  - **If no sleeve can be found** (no clear four-sided shape), *our call:* use the photo's **centre square** instead, and put a small **Couldn't find the edges · Retake** note on that thumbnail. Saving is still allowed.
+  - **Edge-finding tool:** loaded only when the camera is first used, then kept by the app for offline. *Builder's call:* which library (OpenCV.js or similar) and its size, weighing a few MB against accuracy.
+- **Shrinking:** the squared photo is saved at **1600 × 1600 px**, as JPEG at about 0.85 quality, before it's stored or uploaded. That's roughly 300–500 KB. Text on the back (catalog numbers) must stay readable for 4b-2, which is why it's 1600 px rather than the original spec's 1200.
+- **Only the squared photo is kept.** The original isn't stored. 4b-2 reads the squared photos too, since a flat, straight back is easier to read.
+- **Shape:** every saved photo is square, so it fills the Record screen's square frame exactly.
 - **Privacy:** stored in a **private** Supabase Storage bucket `covers`, at `covers/{shelf_id}/{record_id}/front-{photo_id}.jpg` and `…/back-{photo_id}.jpg`. *Our call (builder check):* every photo gets its own name, so a Retake makes a new path. The other phone then sees the new path and downloads the new photo, and a cached old one never lingers. A Retake also queues a delete of the old file. Only members of that shelf can read, write or delete objects under their shelf's folder. Megan sees Kahrman's photos and vice versa.
 - **Records point to photos:** `records.cover_path`, which already exists, holds the front's storage path. A new column `records.back_path` holds the back's. A null path means no photo.
 - **Offline-safe:** taking a photo saves the shrunk image **on the phone** at once, in the notebook, and queues an upload in the outbox. The record shows the photo immediately from the phone's copy. When there's signal, the courier uploads the image, *then* patches the record's path. A record's create always goes before its photo upload.
@@ -84,7 +102,7 @@ He wants adding a record to be as close to effortless as possible during a big c
 - Recognition (4b-2).
 - Photos in Bought it at the show.
 - Photos on shelf rows or the pile.
-- Cropping or rotating tools.
+- Hand-adjusting the crop (dragging corners). If automatic squaring misses too often in real use, the corner check (approach A) is the fallback to add.
 - More than two photos.
 
 ## 4. Build 4b-2: Recognition (outline; detailed in its own spec)
@@ -107,7 +125,8 @@ He wants adding a record to be as close to effortless as possible during a big c
   - 48 px tap targets;
   - plain-words messages;
   - secrets set via the Supabase dashboard, never pasted into Terminal.
-- **iPhone camera:** use the standard file input with `capture="environment"`, so it opens the native camera. iPhone photos may arrive as HEIC; the shrinking step must produce JPEG.
+- **iPhone camera:** use the standard file input with `capture="environment"`, so it opens the native camera. iPhone photos may arrive as HEIC; the squaring step must produce JPEG and respect the photo's orientation.
+- **Test the squaring on real sleeves** on Kahrman's phone before go-live: light and dark sleeves, on light and dark surfaces, and at a slight angle.
 - **Storage:** IndexedDB holding Blobs must work in iOS Safari home-screen apps. It does on current iOS, but test on Kahrman's phone.
 
 ## 6. Left to the builder
