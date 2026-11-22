@@ -30,20 +30,29 @@ function Runner() {
   return null;
 }
 
-function mount(backend: FakeBackend, runNow = vi.fn()) {
+const SYNCED = '2026-11-22T09:00:00.000Z';
+
+/** Show the runner again with this session's last sync at another time, as the sync does. */
+let resync: (lastSyncedAt: string | null) => void = () => {};
+
+function mount(backend: FakeBackend, runNow = vi.fn(), lastSyncedAt: string | null = SYNCED) {
   const shelf = { shelfId: SHELF, userId: ME, email: 'k@example.com', signOut: async () => null, signOutAndDelete: async () => {} };
-  const sync = { lastSyncedAt: null, problem: null, runNow, retry: async () => {}, discard: async () => {} };
-  render(
+  const tree = (at: string | null) => (
     <BackendProvider backend={backend}>
       <CurrentShelfProvider value={shelf}>
-        <SyncContext.Provider value={sync}>
+        <SyncContext.Provider value={{ lastSyncedAt: at, problem: null, runNow, retry: async () => {}, discard: async () => {} }}>
           <Runner />
         </SyncContext.Provider>
       </CurrentShelfProvider>
-    </BackendProvider>,
+    </BackendProvider>
   );
+  const { rerender } = render(tree(lastSyncedAt));
+  resync = (at) => rerender(tree(at));
   return runNow;
 }
+
+/** Let any work already started settle. */
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)));
 
 beforeEach(async () => {
   await db.delete();
@@ -107,6 +116,59 @@ describe('useFunFacts', () => {
     expect(backend.funFactCalls).toHaveLength(2);
   });
 
+  it('asks nothing until this session’s first sync has finished, then works the queue once', async () => {
+    // A record queued while offline: a fact typed on the other phone may be on its way in that sync.
+    await db.records.put(record());
+    await wantFunFact(db, A);
+    const backend = new FakeBackend({});
+    backend.funFacts.set('Miles Davis|Kind of Blue', FACT);
+    mount(backend, vi.fn(), null);
+    await settle();
+    await act(async () => {
+      window.dispatchEvent(new Event('online'));
+    });
+    await settle();
+    expect(backend.funFactCalls).toEqual([]);
+    resync(SYNCED);
+    await waitFor(async () => expect((await db.records.get(A))?.funFact).toBe(FACT.fact));
+    resync('2026-11-22T09:01:00.000Z');
+    await settle();
+    expect(backend.funFactCalls).toHaveLength(1);
+  });
+
+  describe('a record held back while its save can be undone', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true });
+    });
+
+    it('is not asked about before its time, and is once that has passed', async () => {
+      await db.records.put(record());
+      await wantFunFact(db, A, { notBefore: Date.now() + 9_000 });
+      const backend = new FakeBackend({});
+      backend.funFacts.set('Miles Davis|Kind of Blue', FACT);
+      mount(backend);
+      await act(() => vi.advanceTimersByTimeAsync(8_000));
+      expect(backend.funFactCalls).toEqual([]);
+      expect(await readFunFactQueue(db)).toHaveLength(1);
+      await act(() => vi.advanceTimersByTimeAsync(2_000));
+      await waitFor(async () => expect((await db.records.get(A))?.funFact).toBe(FACT.fact));
+      expect(backend.funFactCalls).toHaveLength(1);
+    });
+
+    it('is never asked about once Undo has taken the record off', async () => {
+      await db.records.put(record());
+      await wantFunFact(db, A, { notBefore: Date.now() + 9_000 });
+      const backend = new FakeBackend({});
+      backend.funFacts.set('Miles Davis|Kind of Blue', FACT);
+      mount(backend);
+      await act(() => vi.advanceTimersByTimeAsync(2_000));
+      await act(() => db.records.update(A, { deletedAt: new Date().toISOString() }));
+      await act(() => vi.advanceTimersByTimeAsync(8_000));
+      await waitFor(async () => expect(await readFunFactQueue(db)).toEqual([]));
+      expect(backend.funFactCalls).toEqual([]);
+    });
+  });
+
   describe('after a failed try', () => {
     beforeEach(() => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
@@ -158,5 +220,14 @@ describe('useFunFactStatus', () => {
       await db.meta.put({ key: `funFactNone:${A}`, value: 'true' });
     });
     await waitFor(() => expect(result.current).toBe('none'));
+  });
+
+  it('is failed once both tries couldn’t reach Claude', async () => {
+    const { result } = renderHook(() => useFunFactStatus(A), { wrapper });
+    await waitFor(() => expect(result.current).toBe('idle'));
+    await act(() => db.meta.put({ key: `funFactFailed:${A}`, value: 'true' }));
+    await waitFor(() => expect(result.current).toBe('failed'));
+    await act(() => wantFunFact(db, A));
+    await waitFor(() => expect(result.current).toBe('queued'));
   });
 });

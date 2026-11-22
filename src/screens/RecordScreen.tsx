@@ -199,9 +199,10 @@ export function RecordScreen() {
             {!record.funFact && funFactStatus === 'queued' && (
               <p role="status" className="text-[15px] text-ink-muted">Finding a fun fact…</p>
             )}
-            {!record.funFact && (funFactStatus === 'idle' || funFactStatus === 'none') && (
+            {!record.funFact && (funFactStatus === 'idle' || funFactStatus === 'none' || funFactStatus === 'failed') && (
               <div className="flex flex-col gap-2">
                 {funFactStatus === 'none' && <p className="text-[15px] text-ink-muted">Claude couldn’t find one with a source.</p>}
+                {funFactStatus === 'failed' && <p className="text-[15px] text-ink-muted">Couldn’t reach Claude. Try again later.</p>}
                 <Button
                   variant="outline"
                   className="h-12 w-fit rounded-lg border-[1.5px] border-line-strong bg-transparent px-5 text-[15px] font-semibold"

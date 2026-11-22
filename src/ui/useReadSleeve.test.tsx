@@ -136,6 +136,30 @@ describe('useReadSleeve', () => {
     expect(result.current.state).toBe('idle');
   });
 
+  it('offline: the signal coming back reads the photos, once', async () => {
+    setOnline(false);
+    const { backend, onAnswer, result } = setup({ drafts: drafts(), ready: true });
+    await waitFor(() => expect(result.current.state).toBe('offline'));
+    act(() => setOnline(true));
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith(ANSWER));
+    act(() => {
+      setOnline(false);
+      setOnline(true);
+    });
+    await new Promise((r) => setTimeout(r, 400));
+    expect(backend.identifyCalls).toBe(1);
+    expect(result.current.state).toBe('idle');
+  });
+
+  it('the signal coming back reads nothing when nothing is waiting for it', async () => {
+    const { backend, onAnswer, result } = setup({ drafts: drafts(), ready: true });
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledOnce());
+    act(() => setOnline(true));
+    await new Promise((r) => setTimeout(r, 400));
+    expect(backend.identifyCalls).toBe(1);
+    expect(result.current.state).toBe('idle');
+  });
+
   it('a signal lost during the reading counts as offline', async () => {
     const backend = new FakeBackend({});
     backend.online = false;

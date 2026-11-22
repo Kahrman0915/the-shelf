@@ -53,10 +53,10 @@ export function useReadSleeve({ drafts, ready, onAnswer }: { drafts: Drafts | nu
   const turn = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const answer = useRef(onAnswer);
-  const current = useRef<{ drafts: Drafts | null; ready: boolean }>({ drafts, ready });
+  const current = useRef<{ drafts: Drafts | null; ready: boolean; state: ReadState }>({ drafts, ready, state });
   useEffect(() => {
     answer.current = onAnswer;
-    current.current = { drafts, ready };
+    current.current = { drafts, ready, state };
   });
 
   /** Drop any reading under way or about to start. */
@@ -139,6 +139,16 @@ export function useReadSleeve({ drafts, ready, onAnswer }: { drafts: Drafts | nu
     handled.current = now;
     read(now);
   }, [read]);
+
+  // Found offline: the signal coming back reads them, as Look it up would. Read once that way: they're
+  // handled from then on, and a reading that finds no signal again waits for the next time it's back.
+  useEffect(() => {
+    const onOnline = () => {
+      if (current.current.state === 'offline') retry();
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [retry]);
 
   /** The person searched for themselves: the reading's answer would only get in the way. */
   const cancel = useCallback(() => {

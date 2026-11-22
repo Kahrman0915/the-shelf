@@ -204,7 +204,27 @@ describe('FindRecord', () => {
     await userEvent.click(await card(/Forces Of Nature/));
     await screen.findByText(/On the shelf:/);
     const [record] = await db.records.toArray();
-    await waitFor(async () => expect(JSON.parse((await db.meta.get('funFactQueue'))?.value ?? '[]')).toEqual([{ recordId: record.id, tries: 0 }]));
+    await waitFor(async () =>
+      expect(JSON.parse((await db.meta.get('funFactQueue'))?.value ?? '[]')).toEqual([{ recordId: record.id, tries: 0, notBefore: expect.any(Number) }]),
+    );
+  });
+
+  it('the fun fact waits until the Undo has gone, so an Undo costs no call', async () => {
+    setup();
+    await search('mccoy tyner forces of nature');
+    const before = Date.now();
+    await userEvent.click(await card(/Forces Of Nature/));
+    await screen.findByText(/On the shelf:/);
+    const after = Date.now();
+    const queued = async () => JSON.parse((await db.meta.get('funFactQueue'))?.value ?? '[]') as { notBefore?: number }[];
+    await waitFor(async () => expect(await queued()).toHaveLength(1));
+    const [{ notBefore }] = await queued();
+    expect(notBefore).toBeGreaterThanOrEqual(before + UNDO_WINDOW_MS + 1_000);
+    expect(notBefore).toBeLessThanOrEqual(after + UNDO_WINDOW_MS + 1_000);
+    // Undo inside the window: the record is gone by the time it's due, so the runner drops it unasked.
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(async () => expect((await db.records.toArray())[0].deletedAt).not.toBeNull());
+    expect(Date.now()).toBeLessThan(notBefore!);
   });
 
   it('the box clears and has focus after saving', async () => {
@@ -829,7 +849,9 @@ describe('FindRecord', () => {
       expect(photos.onUsed).toHaveBeenCalledOnce();
       expect(backend.identifyCalls).toBe(1);
       expect(backend.discogsCalls).toEqual([]);
-      await waitFor(async () => expect(JSON.parse((await db.meta.get('funFactQueue'))?.value ?? '[]')).toEqual([{ recordId: record.id, tries: 0 }]));
+      await waitFor(async () =>
+        expect(JSON.parse((await db.meta.get('funFactQueue'))?.value ?? '[]')).toEqual([{ recordId: record.id, tries: 0, notBefore: expect.any(Number) }]),
+      );
     });
 
     it('the pressing line leaves out what Discogs doesn’t know', async () => {

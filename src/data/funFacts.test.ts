@@ -52,7 +52,7 @@ let db: ShelfDB;
 let backend: FakeBackend;
 const ctx = { me: ME };
 
-async function queue(): Promise<{ recordId: string; tries: number }[]> {
+async function queue(): Promise<{ recordId: string; tries: number; notBefore?: number }[]> {
   const row = await db.meta.get('funFactQueue');
   return row ? JSON.parse(row.value) : [];
 }
@@ -92,6 +92,17 @@ describe('wantFunFact', () => {
     expect(await db.meta.get(`funFactNone:${A}`)).toBeUndefined();
   });
 
+  it('can hold a record back until a time, as a save that can still be undone does', async () => {
+    await wantFunFact(db, A, { notBefore: 5_000 });
+    expect(await queue()).toEqual([{ recordId: A, tries: 0, notBefore: 5_000 }]);
+  });
+
+  it('clears an earlier “couldn’t reach Claude”, too', async () => {
+    await db.meta.put({ key: `funFactFailed:${A}`, value: 'true' });
+    await wantFunFact(db, A);
+    expect(await db.meta.get(`funFactFailed:${A}`)).toBeUndefined();
+  });
+
   it('keeps the order records were asked in', async () => {
     await wantFunFact(db, A);
     await wantFunFact(db, B);
@@ -106,6 +117,14 @@ describe('readFunFactQueue', () => {
       value: JSON.stringify([{ recordId: A, tries: 1 }, { recordId: 7, tries: 0 }, { recordId: B }, null, 'x', { tries: 0 }]),
     });
     expect(await readFunFactQueue(db)).toEqual([{ recordId: A, tries: 1 }]);
+  });
+
+  it('keeps a numeric notBefore and drops any other', async () => {
+    await db.meta.put({
+      key: 'funFactQueue',
+      value: JSON.stringify([{ recordId: A, tries: 0, notBefore: 9 }, { recordId: B, tries: 0, notBefore: 'soon' }]),
+    });
+    expect(await readFunFactQueue(db)).toEqual([{ recordId: A, tries: 0, notBefore: 9 }, { recordId: B, tries: 0 }]);
   });
 });
 
@@ -219,6 +238,42 @@ describe('runFunFacts', () => {
     expect(await queue()).toEqual([]);
     expect(backend.funFactCalls).toHaveLength(2);
     expect(await db.meta.get(`funFactNone:${A}`)).toBeUndefined();
+  });
+
+  it('a record that leaves the queue after its second failed try is noted as failed', async () => {
+    await db.records.put(record(A));
+    backend.claudeFails = 'down';
+    await wantFunFact(db, A);
+    await runFunFacts(db, backend, ctx);
+    expect(await db.meta.get(`funFactFailed:${A}`)).toBeUndefined();
+    await runFunFacts(db, backend, ctx);
+    expect(await db.meta.get(`funFactFailed:${A}`)).toEqual({ key: `funFactFailed:${A}`, value: 'true' });
+  });
+
+  it('leaves a record held back until later on the queue, unasked, and asks once the time has passed', async () => {
+    await db.records.bulkPut([record(A), record(B, { title: 'Sketches of Spain' })]);
+    backend.funFacts.set('Miles Davis|Kind of Blue', FACT);
+    await wantFunFact(db, A, { notBefore: Date.now() + 60_000 });
+    await wantFunFact(db, B);
+    await runFunFacts(db, backend, ctx);
+    expect(backend.funFactCalls).toEqual(['Miles Davis|Sketches of Spain']);
+    expect((await queue()).map((e) => e.recordId)).toEqual([A]);
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000);
+    await runFunFacts(db, backend, ctx);
+    expect(backend.funFactCalls).toEqual(['Miles Davis|Sketches of Spain', 'Miles Davis|Kind of Blue']);
+    expect((await db.records.get(A))?.funFact).toBe(FACT.fact);
+  });
+
+  it('a record undone while held back is never asked about', async () => {
+    await db.records.put(record(A));
+    backend.funFacts.set('Miles Davis|Kind of Blue', FACT);
+    await wantFunFact(db, A, { notBefore: Date.now() + 9_000 });
+    await runFunFacts(db, backend, ctx);
+    await db.records.update(A, { deletedAt: WHEN });
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 9_000);
+    await runFunFacts(db, backend, ctx);
+    expect(backend.funFactCalls).toEqual([]);
+    expect(await queue()).toEqual([]);
   });
 
   it('says to retry later only while a counted try leaves a record on the queue', async () => {

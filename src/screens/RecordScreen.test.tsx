@@ -218,6 +218,16 @@ describe('RecordScreen', () => {
       expect(screen.getByRole('button', { name: 'Find a fun fact' })).toBeInTheDocument();
     });
 
+    it('says Claude couldn’t be reached after both tries failed, with the button to try again', async () => {
+      await db.records.put(record());
+      await db.meta.put({ key: `funFactFailed:${ID}`, value: 'true' });
+      renderRecord();
+      expect(await screen.findByText('Couldn’t reach Claude. Try again later.')).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Find a fun fact' }));
+      expect(await screen.findByText('Finding a fun fact…')).toBeInTheDocument();
+      expect(screen.queryByText('Couldn’t reach Claude. Try again later.')).not.toBeInTheDocument();
+    });
+
     it('shows a stored fact as before, with no button', async () => {
       await db.records.put(record({ funFact: 'Recorded in one session.', funFactSource: 'https://example.com/a' }));
       renderRecord();

@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { useBackend } from '@/app/BackendContext';
 import { useCurrentShelf } from '@/app/CurrentShelf';
 import { useSyncStatus } from '@/app/SyncContext';
+import { UNDO_WINDOW_MS } from '@/app/UndoContext';
 import { addFound, perform } from '@/data/actions';
 import type { FoundRecord, Identified, Read } from '@/data/backend';
 import { db } from '@/data/db';
@@ -31,6 +32,8 @@ const LOOK_OFFLINE = 'Needs signal to look it up. Your photos are kept.';
 const NO_MATCH = 'Couldn’t pin it down. Check the search below.';
 const WHICH_PRESSING = 'Which pressing is yours?';
 const LABEL = 'text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted';
+/** A new record's fun fact waits until its Undo has gone (and a second more), so an Undo costs no call. */
+const FUN_FACT_AFTER_MS = UNDO_WINDOW_MS + 1_000;
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const joined = (parts: (string | number | null)[]) => parts.filter((p) => p !== null && p !== '').join(' · ');
@@ -247,15 +250,15 @@ export function FindRecord({ records, onAdded, photos, handFormEdited = false }:
         await perform(db, plan.postcards, runNow, plan.photos);
         made = { text: `Photos added: ${to.existing.title}`, undo: plan.undo, drafts, later: plan.later, readWords: recognisedAs?.readWords ?? null };
       } else {
-        const found = addFound(record, ctx);
-        const create = found.postcards[0];
+        const added = addFound(record, ctx);
+        const create = added.postcards[0];
         const plan = drafts && create.kind === 'record.create' ? addPhotosTo(create.fields, drafts, ctx) : null;
-        await perform(db, [...found.postcards, ...(plan?.postcards ?? [])], runNow, plan?.photos ?? []);
+        await perform(db, [...added.postcards, ...(plan?.postcards ?? [])], runNow, plan?.photos ?? []);
         // The record is saved: a failure to queue its fun fact mustn't make the save look failed.
-        await wantFunFact(db, ctx.newId).catch(console.error);
+        await wantFunFact(db, ctx.newId, { notBefore: Date.now() + FUN_FACT_AFTER_MS }).catch(console.error);
         made = {
           text: `On the shelf: ${record.title}`,
-          undo: [...(found.undo ?? []), ...(plan?.undo ?? [])],
+          undo: [...(added.undo ?? []), ...(plan?.undo ?? [])],
           drafts,
           later: [],
           detail: recognisedAs?.detail ?? null,

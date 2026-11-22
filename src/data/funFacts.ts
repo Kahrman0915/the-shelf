@@ -7,8 +7,11 @@ import type { NewPostcard } from './outbox';
 export const FUN_FACT_QUEUE = 'funFactQueue';
 /** Meta `funFactNone:{recordId}` = 'true': the last search found no fact with a source. */
 export const FUN_FACT_NONE_PREFIX = 'funFactNone:';
+/** Meta `funFactFailed:{recordId}` = 'true': both automatic tries failed to reach Claude. */
+export const FUN_FACT_FAILED_PREFIX = 'funFactFailed:';
 
-export type FunFactWanted = { recordId: string; tries: number };
+/** `notBefore` (ms since the epoch): not asked about before then, so an Undo meanwhile costs nothing. */
+export type FunFactWanted = { recordId: string; tries: number; notBefore?: number };
 /** `retryLater`: a try was counted on a record still on the queue, so another run later may find its fact. */
 export type FunFactRunResult = { retryLater: boolean };
 
@@ -21,9 +24,12 @@ export async function readFunFactQueue(db: ShelfDB): Promise<FunFactWanted[]> {
   try {
     const parsed: unknown = JSON.parse(row.value);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (e): e is FunFactWanted => typeof e === 'object' && e !== null && typeof e.recordId === 'string' && typeof e.tries === 'number',
-    );
+    return parsed.flatMap((e): FunFactWanted[] => {
+      if (typeof e !== 'object' || e === null || typeof e.recordId !== 'string' || typeof e.tries !== 'number') return [];
+      const wanted: FunFactWanted = { recordId: e.recordId, tries: e.tries };
+      if (typeof e.notBefore === 'number') wanted.notBefore = e.notBefore;
+      return [wanted];
+    });
   } catch {
     return [];
   }
@@ -40,20 +46,26 @@ async function changeQueue(db: ShelfDB, change: (queue: FunFactWanted[]) => FunF
 
 const without = (recordId: string) => (queue: FunFactWanted[]) => queue.filter((e) => e.recordId !== recordId);
 
-/** Put a record on the fun-fact queue, unless it's already there, forgetting any earlier "none found". */
-export async function wantFunFact(db: ShelfDB, recordId: string): Promise<void> {
+/** Put a record on the fun-fact queue, unless it's already there, forgetting any earlier "none found" or
+ *  "couldn't reach Claude". `notBefore`: hold it back until then (a save that can still be undone). */
+export async function wantFunFact(db: ShelfDB, recordId: string, { notBefore }: { notBefore?: number } = {}): Promise<void> {
+  const wanted: FunFactWanted = notBefore === undefined ? { recordId, tries: 0 } : { recordId, tries: 0, notBefore };
   await changeQueue(
     db,
-    (queue) => (queue.some((e) => e.recordId === recordId) ? queue : [...queue, { recordId, tries: 0 }]),
-    () => db.meta.delete(`${FUN_FACT_NONE_PREFIX}${recordId}`),
+    (queue) => (queue.some((e) => e.recordId === recordId) ? queue : [...queue, wanted]),
+    () => db.meta.bulkDelete([`${FUN_FACT_NONE_PREFIX}${recordId}`, `${FUN_FACT_FAILED_PREFIX}${recordId}`]),
   );
 }
+
+/** A record held back (`notBefore`) until a time still to come. */
+export const heldBack = (e: FunFactWanted, now: number): boolean => e.notBefore !== undefined && e.notBefore > now;
 
 /** The last fun-fact run started on each phone's notebook. */
 const runs = new WeakMap<ShelfDB, Promise<unknown>>();
 
 /**
- * Work the fun-fact queue oldest first, one record at a time, each tried once per run.
+ * Work the fun-fact queue oldest first, one record at a time, each tried once per run. Records held back
+ * until later stay on the queue, unasked.
  * A found fact is saved only if the record is still there, not deleted, and still has no fact.
  * No signal stops the run and keeps the rest for next time. Runs on one notebook never overlap,
  * so a record is never asked about twice at once. A run ends as soon as `ctx.me` is no longer the
@@ -88,7 +100,7 @@ async function funFactRun(
   for (;;) {
     if (!(await stillMe())) return { retryLater: false };
     // Read the queue fresh each time, so a record queued during the run is seen.
-    const next = (await readFunFactQueue(db)).find((e) => !tried.has(e.recordId));
+    const next = (await readFunFactQueue(db)).find((e) => !tried.has(e.recordId) && !heldBack(e, Date.now()));
     if (!next) return done();
     const { recordId } = next;
     tried.add(recordId);
@@ -105,8 +117,19 @@ async function funFactRun(
     } catch (e) {
       if (e instanceof BackendError && e.message === NO_SIGNAL) return done();
       if (!(e instanceof BackendError)) console.error(e);
-      await changeQueue(db, (queue) =>
-        queue.flatMap((w) => (w.recordId !== recordId ? [w] : w.tries + 1 >= MAX_TRIES ? [] : [{ ...w, tries: w.tries + 1 }])),
+      let leaves = false;
+      await changeQueue(
+        db,
+        (queue) =>
+          queue.flatMap((w) => {
+            if (w.recordId !== recordId) return [w];
+            leaves = w.tries + 1 >= MAX_TRIES;
+            return leaves ? [] : [{ ...w, tries: w.tries + 1 }];
+          }),
+        // Left for the button, which then says Claude couldn't be reached rather than nothing at all.
+        async () => {
+          if (leaves) await db.meta.put({ key: `${FUN_FACT_FAILED_PREFIX}${recordId}`, value: 'true' });
+        },
       );
       failed.add(recordId);
       continue;
