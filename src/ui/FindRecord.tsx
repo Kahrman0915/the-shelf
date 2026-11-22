@@ -70,7 +70,8 @@ export function FindRecord({ records, onAdded, photos, handFormEdited = false }:
   const [noMatch, setNoMatch] = useState<Drafts | null>(null);
   // Once the photos are done, Claude reads the sleeve. Only the latest reading answers, and a search of
   // the person's own takes over from it.
-  const sleeve = useReadSleeve({ drafts: photos?.drafts ?? null, ready: photos?.ready ?? false, onAnswer: recognised });
+  // While the hand form is being filled in, the person is adding the record themselves: no reading starts.
+  const sleeve = useReadSleeve({ drafts: photos?.drafts ?? null, ready: (photos?.ready ?? false) && !handFormEdited, onAnswer: recognised });
   // Where an undone save hands its photos back. Kept from the save itself: once the drafts are used, `photos` goes.
   const handBack = useRef<Photos['onBack'] | null>(null);
   // The drafts a save already took. Until clearing them reaches `photos`, they're still passed in; a second
@@ -96,11 +97,11 @@ export function FindRecord({ records, onAdded, photos, handFormEdited = false }:
   const latest = useRef(0);
   // A ref, not just state: two taps before React re-renders must still save one record.
   // 'running' while a save is under way, whatever else lands meanwhile. 'held' after a save until
-  // the cards it came from have left the screen. Back to 'idle' at once on failure.
+  // the cards it came from have left the screen, or new photos arrive. Back to 'idle' at once on failure.
   const saving = useRef<'idle' | 'running' | 'held'>('idle');
   useEffect(() => {
     if (saving.current === 'held') saving.current = 'idle';
-  }, [found]);
+  }, [found, photos?.drafts]);
 
   useEffect(() => {
     const update = () => setOnline(isOnline());
@@ -269,7 +270,9 @@ export function FindRecord({ records, onAdded, photos, handFormEdited = false }:
       offer(made);
       setNoMatch(null);
       if (latest.current === searchBefore) {
-        saving.current = 'held';
+        // Held only while cards are showing: with none (a sleeve recognised straight away), there's nothing
+        // to tap twice, and nothing to clear that would release it.
+        saving.current = found ? 'held' : 'idle';
         latest.current++;
         setQuery('');
         setFound(null);

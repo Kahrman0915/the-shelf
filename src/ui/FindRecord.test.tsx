@@ -963,6 +963,22 @@ describe('FindRecord', () => {
       expect(backend.identifyCalls).toBe(2);
     });
 
+    it('two sleeves in a row, each recognised exactly with no search made: both are saved with their photos', async () => {
+      const { backend, photos } = reading({ read: READ, match: 'exact', results: [CHARLIE] });
+      await screen.findByText('1988 · Fantasy · F-8431');
+      // The Add screen clears the used drafts; the next sleeve's photos arrive.
+      rerenderPhotos(undefined);
+      backend.identified = { read: READ, match: 'exact', results: [CHARLIE_1965] };
+      const next = { ...photos, drafts: { front: { side: 'front' as const, bytes: new Uint8Array([3]).buffer, foundEdges: true } }, onUsed: vi.fn() };
+      rerenderPhotos(next);
+      await waitFor(() => expect(backend.identifyCalls).toBe(2));
+      expect(await screen.findByText('1965 · Fantasy · FANTASY 3381')).toBeInTheDocument();
+      const records = await db.records.toArray();
+      expect(records.map((r) => r.discogsReleaseId).sort()).toEqual([501, 502]);
+      for (const r of records) expect(r.coverPath).not.toBeNull();
+      expect(next.onUsed).toHaveBeenCalledOnce();
+    });
+
     it('the no-match line goes once a record is saved, and doesn’t come back for the next sleeve', async () => {
       const { backend, photos } = reading({ read: READ, match: 'none', results: [] });
       await screen.findByText('Couldn’t pin it down. Check the search below.');

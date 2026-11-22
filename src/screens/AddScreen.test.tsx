@@ -201,6 +201,22 @@ describe('AddScreen', () => {
     expect(screen.queryByText(/On the shelf:/)).not.toBeInTheDocument();
   });
 
+  it('with the hand form already being filled in, photos taken aren’t read', async () => {
+    vi.mocked(squareUpPhoto).mockImplementation(async () => ({ bytes: new Uint8Array([1]).buffer, foundEdges: true }));
+    const backend = new FakeBackend({});
+    backend.identified = { read: { artist: 'John Coltrane', title: 'Ascension', barcode: null, catalog: 'A-95', label: 'Impulse!' }, match: 'exact', results: [FOUND] };
+    const user = userEvent.setup();
+    renderAdd('/add', backend);
+    await openHandForm();
+    await user.type(box('Artist'), 'John');
+    await user.upload(screen.getByLabelText('Front photo file'), new File([new Uint8Array([1])], 'shot.jpg', { type: 'image/jpeg' }));
+    await user.click(await screen.findByRole('button', { name: 'Skip the back' }));
+    await new Promise((r) => setTimeout(r, 400));
+    expect(backend.identifyCalls).toBe(0);
+    expect(await db.records.count()).toBe(0);
+    expect(screen.queryByText('Looking it up…')).not.toBeInTheDocument();
+  });
+
   it('the find box is first and the hand form starts folded', async () => {
     renderAdd('/add');
     const find = screen.getByRole('searchbox', { name: 'Find a record' });
