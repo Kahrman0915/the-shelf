@@ -76,3 +76,26 @@ From build 1's final review (2026-11-12). Build 1 shipped add, edit and delete b
 - A grade can't be cleared back to "none" once set.
 - `1,200,000` typed into a price is read as 1.2 (Plan 3's price helpers).
 - The Record screen design notes still stand: the artist appears twice, and the poster runs edge to edge.
+
+# Plan 4a build 2a → next handoff
+
+From build 2a's go-live (2026-11-22). Build 2a shipped "Find a record": a Discogs search on the Add screen, tap to save, and Undo.
+
+## Must know
+- **`discogs-search` Edge Function:**
+  - holds `DISCOGS_TOKEN` as a Supabase secret;
+  - checks the caller is a real signed-in user itself (`auth.ts`, `auth.getUser`). Supabase's `verify_jwt` let the public publishable key through on this project's new API keys, so `verify_jwt` is only a first layer;
+  - returns 401 `not-signed-in` otherwise.
+- **Setting secrets:** don't paste them into Terminal with `read -s`. zsh's bracketed paste stored escape codes inside the token. Use the Supabase dashboard (Edge Functions → Secrets), or `$(pbpaste)`.
+- **Discogs terms** (spec §3):
+  - facts are CC0 and kept;
+  - images and results are never stored, and results over an hour old are cleared;
+  - "Data provided by Discogs" appears next to Discogs data;
+  - the notice is in Settings.
+- **The Edge Function code is not type-checked locally** (no Deno). `supabase functions deploy` is the type check.
+
+## Carry-overs
+- Build 2b (Claude): the fun fact and tidying messy dictation. Needs an Anthropic Console account and a spending cap.
+- "Your shelf sections" (`docs/ideas.md`): the genre table in `src/domain/discogsGenre.ts` becomes per-shelf data.
+- Minor UX: an auth-server outage reads as "Sign in again to search."; the result-card status line could be an always-mounted live region; `parseInt` accepts years like "1978-05".
+- The ten-record accuracy check on the phone (Task 6 Step 6) is still to do.
