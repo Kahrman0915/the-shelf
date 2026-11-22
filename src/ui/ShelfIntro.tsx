@@ -17,12 +17,14 @@ const PLAIN_COLORS = [
 ];
 const COLORS = [...GENRE_COLORS, ...PLAIN_COLORS];
 
-/** A record spine is a few millimetres of card: 2 to 4 px here. About one in fifty is a box set. */
+/** Zoomed in on one section of the wall: three shelves, so each record stands tall. */
+const SHELVES = 3;
+/** A record spine is a few millimetres of card: 3 to 6 px at this zoom. About one in fifty is a box set. */
 const BOX_SET_CHANCE = 0.02;
 /** LP sleeves are all the same height, so the tops line up. About one in seventy is a 10-inch. */
 const TEN_INCH_CHANCE = 0.015;
 /** The average spine plus its gap, for working out how many fill a row. */
-const SPINE_PITCH_PX = 4.1;
+const SPINE_PITCH_PX = 5.6;
 const MAX_PER_ROW = 640;
 /** How long one row takes to fill, however many spines it holds. */
 const ROW_FILL_MS = 620;
@@ -45,7 +47,7 @@ export function makeShelves(rows: number, perRow: number, seed = 7): Spine[][] {
       const boxSet = random() < BOX_SET_CHANCE;
       const tenInch = random() < TEN_INCH_CHANCE;
       return {
-        width: boxSet ? 7 + Math.floor(random() * 2) : 2 + Math.floor(random() * 3),
+        width: boxSet ? 10 + Math.floor(random() * 3) : 3 + Math.floor(random() * 4),
         height: tenInch ? 80 : 96 + Math.floor(random() * 2),
         color: COLORS[Math.floor(random() * COLORS.length)],
       };
@@ -76,7 +78,7 @@ export function ShelfIntro({ children }: { children: ReactNode }) {
   // While the panel is still rising off-screen in full mode, it must not be reachable by keyboard or screen reader.
   const [panelInert, setPanelInert] = useState(() => mode === 'full');
   const perRow = useMemo(() => spinesPerRow(window.innerWidth), []);
-  const shelves = useMemo(() => makeShelves(5, perRow), [perRow]);
+  const shelves = useMemo(() => makeShelves(SHELVES, perRow), [perRow]);
 
   useEffect(() => {
     try {

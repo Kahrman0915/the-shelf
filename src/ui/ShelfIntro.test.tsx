@@ -24,19 +24,24 @@ describe('makeShelves', () => {
   it('makes spines record-thin with level tops, in the shelf palette', () => {
     const spines = makeShelves(5, 90).flat();
     for (const s of spines) {
-      expect(s.width).toBeGreaterThanOrEqual(2);
-      expect(s.width).toBeLessThanOrEqual(8);
+      expect(s.width).toBeGreaterThanOrEqual(3);
+      expect(s.width).toBeLessThanOrEqual(12);
       expect([80, 96, 97]).toContain(s.height);
       expect(s.color).toMatch(/^var\(--(genre-[a-z]+|bourbon|ink|ink-muted|line-strong)\)$/);
     }
     // Records, not books: nearly all are a few pixels of card, and nearly all stand the same height.
-    expect(spines.filter((s) => s.width <= 4).length / spines.length).toBeGreaterThan(0.9);
+    expect(spines.filter((s) => s.width <= 6).length / spines.length).toBeGreaterThan(0.9);
     expect(spines.filter((s) => s.height >= 96).length / spines.length).toBeGreaterThan(0.9);
   });
 
+  it('shows three shelves, a close-up of one section of the wall', () => {
+    const { container } = render(<ShelfIntro>form</ShelfIntro>);
+    expect(container.querySelectorAll('.shelf-intro__row')).toHaveLength(3);
+  });
+
   it('fills a row on a phone and on a desktop without fattening the spines', () => {
-    expect(spinesPerRow(390)).toBe(100);
-    expect(spinesPerRow(1440)).toBe(356);
+    expect(spinesPerRow(390)).toBe(74);
+    expect(spinesPerRow(1440)).toBe(262);
     expect(spinesPerRow(5000)).toBe(640);
   });
 });
