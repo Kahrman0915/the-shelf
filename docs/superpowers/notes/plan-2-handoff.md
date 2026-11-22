@@ -140,3 +140,46 @@ From build 4b-1's go-live (2026-11-22). Build 4b-1 shipped record photos: front 
   - Orphaned files can stay in the bucket (no cleanup job).
 - **Watch on the phone:** memory when decoding full-resolution photos (24 MP), and how often squaring misses. If it misses often, add the corner check (approach A from the design).
 - The flaky `App.test.tsx` sign-in / sign-out tests under full parallel load.
+
+# Plan 4c → next handoff
+
+From Plan 4c's go-live (2026-11-22). Plan 4c shipped two things:
+- **Claude reads the sleeve:** photos are read by `identify-record` (Claude Haiku 5.5, then Discogs by barcode → catalog number → name), and an exact match saves with the photos.
+- **Sourced fun facts:** `fun-fact` (Haiku 5.5 with web search) adds a fact after each save on the phone that saved it. Older records get a **Find a fun fact** button.
+
+The opening animation now shows three shelves of record-thin spines.
+
+## Must know
+- **Secrets:** `ANTHROPIC_API_KEY` is a Supabase function secret, set by Kahrman in the dashboard. The Anthropic Console's monthly limit is the only spending stop; there are no per-person limits.
+- **Shared server code:** it lives in `supabase/functions/_shared/` (auth, the Discogs request, shapes, and the `Read` / `Identified` types the app imports type-only). Deploy all three functions together after a shared change.
+- **`identify-record`:**
+  - it answers within a 26 s budget (`deadline.ts`) so the app's 30 s never runs out first;
+  - reading uses `thinking: disabled` and 4096 max tokens;
+  - a match is exact only for a single barcode or catalog-plus-artist result, with Discogs' own total equal to 1;
+  - the barcode search is vinyl only.
+- **`fun-fact`:**
+  - it uses effort low and 8192 max tokens;
+  - the source must be one of the URLs the web search returned (exact match);
+  - the reply text is joined across blocks.
+- **Logs:** a stop reason other than `end_turn` is logged by name.
+- **The fun-fact queue:**
+  - it lives in notebook meta (`funFactQueue`, plus the `funFactNone:` / `funFactFailed:` flags);
+  - it runs only after the session's first sync, waits out the Undo window for Find saves, makes at most two tries with one 60 s delayed retry, and stops at sign-out.
+- **Reading the sleeve (`useReadSleeve`):**
+  - each set of photos is read once, after a 250 ms settle;
+  - Undo hands back the same photos byte for byte, and they're skipped rather than read again;
+  - a card tap, typing in Find or the hand form takes over from the reading.
+- **Tests:** `src/test/setup.ts` wraps `structuredClone`, because fake-indexeddb returns ArrayBuffers from another realm.
+- **No local Deno:** only the pure modules are tested. The smoke test is one signed-in call per function, then reading the function logs.
+
+## Carry-overs
+- **The ten-sleeve accuracy check was skipped at merge.** Do it on real records: exact and right, any wrong pressing, facts against their sources, and the cost from the Console.
+- **One fun fact opened with "Not a 1971 album…"** about a reissue. Watch the tone; the prompt could say the pressing year may be a reissue's.
+- **Deferred:**
+  - a TypeError after a request was sent counts no try;
+  - "Couldn't read the sleeve" is shown even when only Discogs is down;
+  - photos still waiting are read again on returning to Add;
+  - FindRecord is about 430 lines;
+  - the fun-fact live region and focus need an accessibility pass;
+  - `publicKey`/CORS code is copied into three functions;
+  - `discard` sets `lastSyncedAt` before any pull.
