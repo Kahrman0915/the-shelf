@@ -1,5 +1,5 @@
 import type { FoundRecord, Identified } from '../../supabase/functions/_shared/shape';
-import type { NewRecordRow, RecordPatchRow } from './rowMapping';
+import type { NewRecordRow, NewSectionRow, RecordPatchRow, SectionPatchRow } from './rowMapping';
 
 export type { FoundRecord, Identified, Read } from '../../supabase/functions/_shared/shape';
 
@@ -14,12 +14,19 @@ export interface ShelfSource {
   /** Every rating on the shelf, as raw rows. */
   ratings(shelfId: string): Promise<Record<string, unknown>[]>;
   members(shelfId: string): Promise<Member[]>;
+  /** Every section on the shelf, as raw rows. */
+  sections(shelfId: string): Promise<Record<string, unknown>[]>;
 }
 
 /** Writes. A BackendError whose message is NO_SIGNAL means "try later"; any other BackendError message is a plain-words rejection reason. */
 export interface ShelfWriter {
   insertRecord(row: NewRecordRow): Promise<'inserted' | 'already-there'>;
   patchRecord(id: string, fields: RecordPatchRow): Promise<'patched' | 'missing'>;
+  /** One section per request: the server's claim trigger checks one row at a time. */
+  insertSection(row: NewSectionRow): Promise<'inserted' | 'already-there'>;
+  patchSection(id: string, fields: SectionPatchRow): Promise<'patched' | 'missing'>;
+  /** Moves every record from one section into another, hands over its genres and holiday, removes it. A `from` that's already gone counts as done (a resend). */
+  mergeSection(fromId: string, intoId: string): Promise<void>;
   setRating(recordId: string, userId: string, value: number): Promise<void>;
   /** Stores a JPEG in the covers bucket at `path`. Overwrites, so it's safe to repeat. */
   uploadPhoto(path: string, bytes: ArrayBuffer): Promise<void>;

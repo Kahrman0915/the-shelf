@@ -5,7 +5,7 @@ import { discardPostcard, pushOutbox, retryPostcard, syncOnce } from './courier'
 import { clearPhoneIfNothingWaiting, ShelfDB, writeSession } from './db';
 import { savePostcards, type NewPostcard } from './outbox';
 import { recordToRow } from './rowMapping';
-import type { ShelfRecord } from './schema';
+import type { Section, ShelfRecord } from './schema';
 import { pullShelf } from './sync';
 
 const SHELF = '11111111-1111-4111-8111-111111111111';
@@ -83,6 +83,9 @@ describe('pushOutbox', () => {
       setRating: (recordId, userId, value) => backend.setRating(recordId, userId, value),
       uploadPhoto: (path, bytes) => backend.uploadPhoto(path, bytes),
       deletePhoto: (path) => backend.deletePhoto(path),
+      insertSection: (row) => backend.insertSection(row),
+      patchSection: (id, fields) => backend.patchSection(id, fields),
+      mergeSection: (from, into) => backend.mergeSection(from, into),
       patchRecord: async (id, fields) => {
         calls++;
         if (calls === 1) await gate;
@@ -187,6 +190,9 @@ describe('pushOutbox', () => {
       setRating: (recordId, userId, value) => backend.setRating(recordId, userId, value),
       uploadPhoto: (path, bytes) => backend.uploadPhoto(path, bytes),
       deletePhoto: (path) => backend.deletePhoto(path),
+      insertSection: (row) => backend.insertSection(row),
+      patchSection: (id, fields) => backend.patchSection(id, fields),
+      mergeSection: (from, into) => backend.mergeSection(from, into),
       patchRecord: async () => {
         throw bug;
       },
@@ -376,5 +382,68 @@ describe('photo postcards', () => {
     const [first] = await outbox();
     await discardPostcard(db, backend, SHELF, first.seq);
     expect(await db.photos.get(PATH)).toBeUndefined();
+  });
+});
+
+describe('section postcards', () => {
+  const S1 = '00000000-0000-4000-8000-000000000001';
+  const S2 = '00000000-0000-4000-8000-000000000002';
+  const section = (id: string, over: Partial<Section> = {}): Section => ({
+    id, shelfId: SHELF, name: 'Rock', color: 'rock', position: 1, discogsGenres: [], takesHoliday: false, isCatchAll: false, legacyGenre: 'misc', updatedAt: WHEN, ...over,
+  });
+  const sCard = (id: string) => ({ ...card, recordId: id });
+  const sCreate = (s: Section): NewPostcard => ({ ...sCard(s.id), kind: 'section.create', fields: s });
+  const sPatch = (id: string, fields: Partial<Section>): NewPostcard => ({ ...sCard(id), kind: 'section.patch', fields });
+  const sMerge = (from: string, into: string): NewPostcard => ({ ...sCard(from), kind: 'section.merge', fields: { into } });
+
+  it('sends create, patch and merge through the writer', async () => {
+    await savePostcards(db, [sCreate(section(S1, { discogsGenres: ['Rock'], takesHoliday: true })), sCreate(section(S2, { name: 'Jazz', discogsGenres: ['Jazz'] }))]);
+    expect(await pushOutbox(db, backend)).toEqual({ sent: 2, rejected: 0, noSignal: false });
+    expect(backend.sectionRow(S1)).toMatchObject({ name: 'Rock', shelf_id: SHELF, discogs_genres: ['Rock'] });
+
+    await savePostcards(db, [sPatch(S1, { name: 'Hard rock', position: 3 })]);
+    await pushOutbox(db, backend);
+    expect(backend.sectionRow(S1)).toMatchObject({ name: 'Hard rock', position: 3 });
+
+    await savePostcards(db, [sMerge(S1, S2)]);
+    expect(await pushOutbox(db, backend)).toEqual({ sent: 1, rejected: 0, noSignal: false });
+    expect(backend.sectionRow(S1)).toBeUndefined();
+    expect(backend.sectionRow(S2)).toMatchObject({ discogs_genres: ['Jazz', 'Rock'], takes_holiday: true });
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('a resent merge whose section is already gone counts as sent', async () => {
+    await savePostcards(db, [sCreate(section(S1)), sCreate(section(S2, { name: 'Jazz' }))]);
+    await pushOutbox(db, backend);
+    await savePostcards(db, [sMerge(S1, S2)]);
+    backend.loseNextReply = true;
+    expect((await pushOutbox(db, backend)).noSignal).toBe(true);
+    expect(backend.sectionRow(S1)).toBeUndefined();
+    expect(await pushOutbox(db, backend)).toEqual({ sent: 1, rejected: 0, noSignal: false });
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('a patch for a section the shelf no longer has is rejected in plain words', async () => {
+    await savePostcards(db, [sPatch(S1, { name: 'Ghost' })]);
+    expect(await pushOutbox(db, backend)).toEqual({ sent: 0, rejected: 1, noSignal: false });
+    expect((await db.outbox.toArray()).map((p) => p.reason)).toEqual([REJECTED.missing]);
+  });
+
+  it('holds a section’s later postcards while an earlier one for it is rejected', async () => {
+    await savePostcards(db, [sCreate(section(S1)), sPatch(S1, { name: 'Louder' })]);
+    backend.rejectNext = 'The shelf refused a value that’s out of range.';
+    expect(await pushOutbox(db, backend)).toEqual({ sent: 0, rejected: 1, noSignal: false });
+    expect((await db.outbox.orderBy('seq').toArray()).map((p) => [p.kind, p.state])).toEqual([['section.create', 'rejected'], ['section.patch', 'waiting']]);
+    expect(backend.sectionRow(S1)).toBeUndefined();
+  });
+
+  it('discarding a rejected section.create removes the section from the phone', async () => {
+    await savePostcards(db, [sCreate(section(S1))]);
+    backend.rejectNext = 'No.';
+    await pushOutbox(db, backend);
+    const [rejected] = await db.outbox.toArray();
+    await discardPostcard(db, backend, SHELF, rejected.seq);
+    expect(await db.sections.get(S1)).toBeUndefined();
+    expect(await db.outbox.count()).toBe(0);
   });
 });

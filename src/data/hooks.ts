@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import type { Member } from './backend';
 import { db } from './db';
 import { storageKept, type Postcard } from './outbox';
-import type { Rating, ShelfRecord } from './schema';
+import type { Rating, Section, ShelfRecord } from './schema';
 
 export type ShelfItem = { record: ShelfRecord; myRating: number | undefined };
 
@@ -39,6 +39,11 @@ export function useRatings(recordId: string): Rating[] | undefined {
 
 export function useMembers(shelfId: string): Member[] | undefined {
   return useLiveQuery(() => db.members.where('shelfId').equals(shelfId).toArray(), [shelfId]);
+}
+
+/** The shelf's sections in shelf order; undefined while loading. */
+export function useSections(shelfId: string): Section[] | undefined {
+  return useLiveQuery(async () => (await db.sections.where('shelfId').equals(shelfId).toArray()).sort((a, b) => a.position - b.position), [shelfId]);
 }
 
 /** Whether the browser agreed to keep this phone's data; null until it has been asked. */

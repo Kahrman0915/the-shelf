@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendError } from './backend';
 import { ShelfDB } from './db';
 import { applyPostcard, ensureStorageKept, savePostcards, storageKept, type NewPostcard } from './outbox';
-import type { ShelfRecord } from './schema';
+import type { Section, ShelfRecord } from './schema';
 
 const SHELF = '11111111-1111-4111-8111-111111111111';
 const ME = '22222222-2222-4222-8222-222222222222';
@@ -58,7 +58,7 @@ afterEach(async () => {
   await db.delete();
 });
 
-const apply = (p: NewPostcard) => db.transaction('rw', [db.records, db.ratings], () => applyPostcard(db, p));
+const apply = (p: NewPostcard) => db.transaction('rw', [db.records, db.ratings, db.sections], () => applyPostcard(db, p));
 
 describe('applyPostcard', () => {
   it('record.create puts the record when it is missing', async () => {
@@ -216,5 +216,62 @@ describe('ensureStorageKept', () => {
   it('stores and returns false with no storage argument and no navigator.storage', async () => {
     expect(await ensureStorageKept(db)).toBe(false);
     expect(await storageKept(db)).toBe(false);
+  });
+});
+
+describe('applyPostcard: sections', () => {
+  const S1 = '00000000-0000-4000-8000-000000000001';
+  const S2 = '00000000-0000-4000-8000-000000000002';
+  const section = (id: string, over: Partial<Section> = {}): Section => ({
+    id, shelfId: SHELF, name: 'Rock', color: 'rock', position: 1, discogsGenres: [], takesHoliday: false, isCatchAll: false, legacyGenre: 'misc', updatedAt: WHEN, ...over,
+  });
+  const sbase = (id: string) => ({ shelfId: SHELF, recordId: id, userId: ME, createdAt: WHEN });
+  const sApply = (p: NewPostcard) => db.transaction('rw', [db.records, db.ratings, db.sections], () => applyPostcard(db, p));
+  const sCreate = (s: Section): NewPostcard => ({ ...sbase(s.id), kind: 'section.create', fields: s });
+  const sPatch = (id: string, fields: Partial<Section>): NewPostcard => ({ ...sbase(id), kind: 'section.patch', fields });
+  const sMerge = (from: string, into: string): NewPostcard => ({ ...sbase(from), kind: 'section.merge', fields: { into } });
+
+  it('section.create puts the section when missing and leaves an existing one alone', async () => {
+    await sApply(sCreate(section(S1)));
+    expect(await db.sections.get(S1)).toEqual(section(S1));
+    await sApply(sCreate(section(S1, { name: 'Other' })));
+    expect((await db.sections.get(S1))?.name).toBe('Rock');
+  });
+
+  it('section.create refuses a section that breaks the rules, and changes nothing', async () => {
+    await expect(sApply(sCreate(section(S1, { name: '' })))).rejects.toThrow(BackendError);
+    expect(await db.sections.count()).toBe(0);
+  });
+
+  it('section.patch merges the given fields, and ignores a missing section', async () => {
+    await db.sections.put(section(S1));
+    await sApply(sPatch(S1, { name: 'Hard rock', position: 4 }));
+    await sApply(sPatch(S1, { name: 'Hard rock', position: 4 }));
+    expect(await db.sections.get(S1)).toEqual(section(S1, { name: 'Hard rock', position: 4 }));
+    await sApply(sPatch(S2, { name: 'Nope' }));
+    expect(await db.sections.get(S2)).toBeUndefined();
+  });
+
+  it('section.merge hands over genres and holiday, deletes the section, and is harmless to repeat', async () => {
+    await db.sections.bulkPut([
+      section(S1, { discogsGenres: ['Rock', 'Blues'], takesHoliday: true }),
+      section(S2, { name: 'Jazz', discogsGenres: ['Jazz', 'Blues'] }),
+    ]);
+    await sApply(sMerge(S1, S2));
+    await sApply(sMerge(S1, S2));
+    expect(await db.sections.get(S1)).toBeUndefined();
+    expect(await db.sections.get(S2)).toMatchObject({ discogsGenres: ['Jazz', 'Blues', 'Rock'], takesHoliday: true });
+  });
+
+  it('section.merge refuses to merge the catch-all away', async () => {
+    await db.sections.bulkPut([section(S1, { isCatchAll: true }), section(S2)]);
+    await expect(sApply(sMerge(S1, S2))).rejects.toThrow(BackendError);
+    expect(await db.sections.count()).toBe(2);
+  });
+
+  it('savePostcards applies and queues a section postcard, held by the section id', async () => {
+    await savePostcards(db, [sCreate(section(S1))]);
+    expect(await db.sections.get(S1)).toBeDefined();
+    expect((await db.outbox.toArray()).map((p) => [p.kind, p.recordId, p.state])).toEqual([['section.create', S1, 'waiting']]);
   });
 });

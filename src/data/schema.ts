@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { GENRE_KEYS } from '@/domain/genres';
 import { GRADE_KEYS } from '@/domain/grades';
+import { DISCOGS_GENRES, LEGACY_GENRES, SWATCH_KEYS } from '@/domain/sections';
 
 const text = z.string().trim().min(1);
 const optionalText = text.nullable();
@@ -59,3 +60,19 @@ export const RatingSchema = z.object({
 });
 
 export type Rating = z.infer<typeof RatingSchema>;
+
+/** A divider on one shelf. Its id is a guid, not a v4 uuid: the ones made for the two starting sets are derived (see sectionIdFor). */
+export const SectionSchema = z.object({
+  id: z.guid(),
+  shelfId: z.uuid(),
+  name: z.string().trim().min(1).max(40),
+  color: z.enum(SWATCH_KEYS),
+  position: z.number().int(),
+  discogsGenres: z.array(z.enum(DISCOGS_GENRES)),
+  takesHoliday: z.boolean(),
+  isCatchAll: z.boolean(),
+  legacyGenre: z.enum(LEGACY_GENRES),
+  updatedAt: z.string(),
+});
+
+export type Section = z.infer<typeof SectionSchema>;

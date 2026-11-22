@@ -168,6 +168,16 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
       }
     },
 
+    async sections(shelfId) {
+      const rows: Record<string, unknown>[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await client.from('sections').select('*').eq('shelf_id', shelfId).order('position').order('id').range(from, from + PAGE - 1);
+        if (error) fail('Couldn’t fetch sections', error);
+        rows.push(...(data as Record<string, unknown>[]));
+        if (data.length < PAGE) return rows;
+      }
+    },
+
     async members(shelfId): Promise<Member[]> {
       const { data, error } = await client.from('shelf_members').select('user_id, role, profiles(display_name)').eq('shelf_id', shelfId);
       if (error) fail('Couldn’t fetch who’s on the shelf', error);
@@ -199,6 +209,33 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
       const { data, error } = await client.from('records').update(fields).eq('id', id).select('id');
       if (error) writeFailure(error);
       return data.length > 0 ? 'patched' : 'missing';
+    },
+
+    async insertSection(row) {
+      const { error } = await client.from('sections').insert(row);
+      if (error?.code === '23505') return 'already-there';
+      if (error) writeFailure(error);
+      return 'inserted';
+    },
+
+    async patchSection(id, fields) {
+      const { data, error } = await client.from('sections').update(fields).eq('id', id).select('id');
+      if (error) writeFailure(error);
+      return data.length > 0 ? 'patched' : 'missing';
+    },
+
+    async mergeSection(fromId, intoId) {
+      const { error } = await client.rpc('merge_section', { p_from: fromId, p_into: intoId });
+      if (!error) return;
+      // A resend after the merge went through: the function can't find `from` any more, which is the
+      // outcome we wanted. If `from` is still there, something else was missing and that's a real refusal.
+      if (/section not found/i.test(error.message)) {
+        const { data, error: lookup } = await client.from('sections').select('id').eq('id', fromId).maybeSingle();
+        if (lookup) writeFailure(lookup);
+        if (data === null) return;
+        throw new BackendError(REJECTED.missing);
+      }
+      writeFailure(error);
     },
 
     async setRating(recordId, userId, value) {

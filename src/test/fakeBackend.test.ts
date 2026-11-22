@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BackendError, CLAUDE_DOWN, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED, type FoundRecord } from '@/data/backend';
-import { newRecordToRow } from '@/data/rowMapping';
-import type { ShelfRecord } from '@/data/schema';
+import { newRecordToRow, newSectionToRow, sectionToRow, type SectionRow } from '@/data/rowMapping';
+import type { Section, ShelfRecord } from '@/data/schema';
 import { FakeBackend, collectionRows } from './fakeBackend';
 
 const K = '11111111-1111-4111-8111-111111111111';
@@ -231,5 +231,53 @@ describe('FakeBackend', () => {
       await expect(b.uploadPhoto(P, bytes())).rejects.toThrow(NO_SIGNAL);
       expect(b.photos.has(P)).toBe(true);
     });
+  });
+});
+
+describe('FakeBackend sections', () => {
+  const id = (n: number) => `00000000-0000-4000-8000-00000000000${n}`;
+  const base: Omit<Section, 'id' | 'name' | 'position'> = { shelfId: SHELF, color: 'rock', discogsGenres: [], takesHoliday: false, isCatchAll: false, legacyGenre: 'misc', updatedAt: '2026-11-23T10:00:00.000Z' };
+  const sec = (n: number, over: Partial<SectionRow> = {}): SectionRow => ({ ...sectionToRow({ ...base, id: id(n), name: `S${n}`, position: n }), ...over });
+
+  it('serves a shelf’s sections, and fails offline', async () => {
+    const b = new FakeBackend({ sections: [sec(1), sec(2, { shelf_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' })] });
+    expect((await b.sections(SHELF)).map((s) => s.id)).toEqual([id(1)]);
+    b.online = false;
+    await expect(b.sections(SHELF)).rejects.toThrow(NO_SIGNAL);
+  });
+
+  it('inserts once; a repeat is already-there', async () => {
+    const b = new FakeBackend({});
+    const row = newSectionToRow({ ...base, id: id(1), name: 'S1', position: 0, discogsGenres: ['Rock'] });
+    expect(await b.insertSection(row)).toBe('inserted');
+    expect(await b.insertSection(row)).toBe('already-there');
+    expect(b.sectionRow(id(1))?.updated_at).toBeTruthy();
+  });
+
+  it('a section that takes holiday or a genre takes it off the others, like the claim trigger', async () => {
+    const b = new FakeBackend({ sections: [sec(1, { takes_holiday: true, discogs_genres: ['Rock', 'Blues'] }), sec(2)] });
+    expect(await b.patchSection(id(2), { takes_holiday: true, discogs_genres: ['Blues'] })).toBe('patched');
+    expect(b.sectionRow(id(1))).toMatchObject({ takes_holiday: false, discogs_genres: ['Rock'] });
+    expect(await b.patchSection(id(9), { name: 'x' })).toBe('missing');
+  });
+
+  it('merges like the database: hands over genres and holiday, removes the section, resend is fine', async () => {
+    const b = new FakeBackend({ sections: [sec(1, { takes_holiday: true, discogs_genres: ['Rock', 'Blues'] }), sec(2, { discogs_genres: ['Blues', 'Jazz'] }), sec(3, { is_catch_all: true })] });
+    await b.mergeSection(id(1), id(2));
+    expect(b.sectionRow(id(1))).toBeUndefined();
+    expect(b.sectionRow(id(2))).toMatchObject({ takes_holiday: true, discogs_genres: ['Blues', 'Jazz', 'Rock'] });
+    await b.mergeSection(id(1), id(2));
+    await expect(b.mergeSection(id(3), id(2))).rejects.toBeInstanceOf(BackendError);
+    await expect(b.mergeSection(id(2), id(9))).rejects.toBeInstanceOf(BackendError);
+  });
+
+  it('honours rejectNext and loseNextReply on section writes', async () => {
+    const b = new FakeBackend({ sections: [sec(1)] });
+    b.rejectNext = 'No.';
+    await expect(b.patchSection(id(1), { name: 'x' })).rejects.toThrow('No.');
+    expect(b.sectionRow(id(1))?.name).toBe('S1');
+    b.loseNextReply = true;
+    await expect(b.patchSection(id(1), { name: 'x' })).rejects.toThrow(NO_SIGNAL);
+    expect(b.sectionRow(id(1))?.name).toBe('x');
   });
 });

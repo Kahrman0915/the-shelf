@@ -1,7 +1,7 @@
 import { BackendError } from './backend';
 import type { ShelfDB } from './db';
 import type { StoredPhoto } from './photos';
-import { RatingSchema, RecordSchema, type ShelfRecord } from './schema';
+import { RatingSchema, RecordSchema, SectionSchema, type Section, type ShelfRecord } from './schema';
 
 type Base = {
   seq: number;
@@ -17,6 +17,9 @@ type Base = {
 export type Postcard =
   | (Base & { kind: 'record.create'; fields: ShelfRecord })
   | (Base & { kind: 'record.patch'; fields: Partial<ShelfRecord> })
+  | (Base & { kind: 'section.create'; fields: Section })
+  | (Base & { kind: 'section.patch'; fields: Partial<Section> })
+  | (Base & { kind: 'section.merge'; fields: { into: string } })
   | (Base & { kind: 'rating.set'; fields: { value: number } })
   | (Base & { kind: 'photo.upload'; fields: { path: string } })
   | (Base & { kind: 'photo.delete'; fields: { path: string } });
@@ -33,10 +36,19 @@ function checkRecord(record: unknown): ShelfRecord {
   return parsed.data;
 }
 
+function checkSection(section: unknown): Section {
+  const parsed = SectionSchema.safeParse(section);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    throw new BackendError(`Section rules broken: ${issue.path.join('.') || 'section'} ${issue.message}`);
+  }
+  return parsed.data;
+}
+
 /**
  * Turns a postcard into notebook changes. The only code that does. Safe to apply again:
  * create only when missing, patch merges, rating.set overwrites with the same value.
- * Call inside a rw transaction over records + ratings.
+ * Call inside a rw transaction over records + ratings + sections.
  */
 export async function applyPostcard(db: ShelfDB, p: NewPostcard | Postcard): Promise<void> {
   switch (p.kind) {
@@ -51,6 +63,32 @@ export async function applyPostcard(db: ShelfDB, p: NewPostcard | Postcard): Pro
       const existing = await db.records.get(p.recordId);
       if (!existing) return;
       await db.records.put(checkRecord({ ...existing, ...p.fields }));
+      return;
+    }
+    case 'section.create': {
+      if (p.fields.id !== p.recordId) throw new BackendError('Section rules broken: id doesn’t match the change’s section');
+      if (await db.sections.get(p.recordId)) return;
+      await db.sections.put(checkSection(p.fields));
+      return;
+    }
+    case 'section.patch': {
+      if ('id' in p.fields && p.fields.id !== p.recordId) throw new BackendError('Section rules broken: a change can’t move a section to a new id');
+      const existing = await db.sections.get(p.recordId);
+      if (!existing) return;
+      await db.sections.put(checkSection({ ...existing, ...p.fields }));
+      return;
+    }
+    case 'section.merge': {
+      const from = await db.sections.get(p.recordId);
+      if (!from) return; // already merged
+      if (from.isCatchAll) throw new BackendError('Section rules broken: the catch-all section can’t be merged away');
+      const into = await db.sections.get(p.fields.into);
+      if (!into) return;
+      // Records still sit under genres; once they carry a sectionId this also moves every record
+      // with sectionId === from over to into (Plan 5, Task 4).
+      const genres = [...into.discogsGenres, ...from.discogsGenres.filter((g) => !into.discogsGenres.includes(g))];
+      await db.sections.put(checkSection({ ...into, discogsGenres: genres, takesHoliday: into.takesHoliday || from.takesHoliday }));
+      await db.sections.delete(from.id);
       return;
     }
     case 'rating.set': {
@@ -74,7 +112,7 @@ export async function applyPostcard(db: ShelfDB, p: NewPostcard | Postcard): Pro
 
 /** Apply each postcard to the notebook and queue it, all in one transaction. Photo bytes are kept in the same go. */
 export async function savePostcards(db: ShelfDB, postcards: NewPostcard[], photos: StoredPhoto[] = []): Promise<void> {
-  await db.transaction('rw', [db.records, db.ratings, db.outbox, db.photos], async () => {
+  await db.transaction('rw', [db.records, db.ratings, db.sections, db.outbox, db.photos], async () => {
     await db.photos.bulkPut(photos);
     for (const p of postcards) await applyPostcard(db, p);
     for (const p of postcards) await db.outbox.add({ ...p, state: 'waiting', reason: null } as Postcard);

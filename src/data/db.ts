@@ -2,7 +2,7 @@ import Dexie, { type EntityTable, type Table } from 'dexie';
 import { BackendError, type Member } from './backend';
 import type { Postcard } from './outbox';
 import type { DraftPhoto, StoredPhoto } from './photos';
-import type { Rating, ShelfRecord } from './schema';
+import type { Rating, Section, ShelfRecord } from './schema';
 
 export type Meta = { key: string; value: string };
 
@@ -15,6 +15,7 @@ export class ShelfDB extends Dexie {
   outbox!: EntityTable<Postcard, 'seq'>;
   photos!: EntityTable<StoredPhoto, 'path'>;
   photoDrafts!: EntityTable<DraftPhoto, 'side'>;
+  sections!: EntityTable<Section, 'id'>;
 
   constructor(name = 'the-shelf') {
     super(name);
@@ -83,6 +84,16 @@ export class ShelfDB extends Dexie {
         // Forget when each shelf was last pulled, so the first pull after updating is a full one.
         await tx.table('meta').where('key').startsWith(LAST_PULLED_PREFIX).delete();
       });
+    this.version(6).stores({
+      records: 'id, shelfId, status, genre, importKey',
+      ratings: '[recordId+userId], recordId, userId',
+      members: '[shelfId+userId], shelfId',
+      meta: 'key',
+      outbox: '++seq, recordId, state',
+      photos: 'path',
+      photoDrafts: 'side',
+      sections: 'id, shelfId',
+    });
   }
 }
 
@@ -120,7 +131,7 @@ export async function writeSession(database: ShelfDB, session: RememberedSession
   await database.meta.put({ key: SESSION_KEY, value: JSON.stringify(session) });
 }
 
-const everything = (d: ShelfDB) => [d.records, d.ratings, d.members, d.meta, d.outbox, d.photos, d.photoDrafts];
+const everything = (d: ShelfDB) => [d.records, d.ratings, d.members, d.meta, d.outbox, d.photos, d.photoDrafts, d.sections];
 
 /** Call inside a rw transaction over everything(). */
 async function clearAll(d: ShelfDB): Promise<void> {

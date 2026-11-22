@@ -1,7 +1,7 @@
 import collection from '../../collection.json';
-import { BackendError, CLAUDE_DOWN, DISCOGS_MESSAGES, NO_SIGNAL, type Backend, type FoundRecord, type Identified, type Invite, type Member, type SignedIn } from '@/data/backend';
+import { BackendError, CLAUDE_DOWN, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED, type Backend, type FoundRecord, type Identified, type Invite, type Member, type SignedIn } from '@/data/backend';
 import { importCollection } from '@/data/importCollection';
-import { ratingToRow, recordToRow, type NewRecordRow, type RatingRow, type RecordPatchRow, type RecordRow } from '@/data/rowMapping';
+import { ratingToRow, recordToRow, type NewRecordRow, type NewSectionRow, type RatingRow, type RecordPatchRow, type RecordRow, type SectionPatchRow, type SectionRow } from '@/data/rowMapping';
 
 type Options = {
   users?: Record<string, string>;
@@ -10,6 +10,7 @@ type Options = {
   records?: RecordRow[];
   ratings?: RatingRow[];
   members?: Member[];
+  sections?: SectionRow[];
   signedIn?: SignedIn | null;
 };
 
@@ -47,6 +48,7 @@ export class FakeBackend implements Backend {
   private recordRows: RecordRow[];
   private ratingRows: RatingRow[];
   private memberList: Member[];
+  private sectionRows: SectionRow[];
   private inviteList: (Invite & { shelfId: string })[] = [];
 
   constructor(o: Options) {
@@ -56,6 +58,7 @@ export class FakeBackend implements Backend {
     this.recordRows = [...(o.records ?? [])];
     this.ratingRows = [...(o.ratings ?? [])];
     this.memberList = [...(o.members ?? [])];
+    this.sectionRows = (o.sections ?? []).map((r) => ({ ...r }));
     this.signedIn = o.signedIn ?? null;
   }
 
@@ -114,6 +117,11 @@ export class FakeBackend implements Backend {
     this.guard();
     const ids = new Set(this.recordRows.filter((r) => r.shelf_id === shelfId).map((r) => r.id));
     return this.ratingRows.filter((r) => ids.has(r.record_id)) as unknown as Record<string, unknown>[];
+  }
+
+  async sections(shelfId: string) {
+    this.guard();
+    return this.sectionRows.filter((s) => s.shelf_id === shelfId).map((s) => ({ ...s })) as unknown as Record<string, unknown>[];
   }
 
   async members(shelfId: string) {
@@ -210,6 +218,58 @@ export class FakeBackend implements Backend {
     return row ? ('patched' as const) : ('missing' as const);
   }
 
+  /** What the database's claim trigger does after a section takes holiday or some Discogs genres. */
+  private claim(row: SectionRow) {
+    for (const other of this.sectionRows) {
+      if (other.id === row.id || other.shelf_id !== row.shelf_id) continue;
+      if (row.takes_holiday && other.takes_holiday) Object.assign(other, { takes_holiday: false, updated_at: this.stamp() });
+      if (other.discogs_genres.some((g) => row.discogs_genres.includes(g))) {
+        Object.assign(other, { discogs_genres: other.discogs_genres.filter((g) => !row.discogs_genres.includes(g)), updated_at: this.stamp() });
+      }
+    }
+  }
+
+  async insertSection(row: NewSectionRow) {
+    this.beginWrite();
+    let result: 'inserted' | 'already-there' = 'already-there';
+    if (!this.sectionRows.some((s) => s.id === row.id)) {
+      const added: SectionRow = { ...row, discogs_genres: [...row.discogs_genres], updated_at: this.stamp() };
+      this.sectionRows.push(added);
+      this.claim(added);
+      result = 'inserted';
+    }
+    this.endWrite();
+    return result;
+  }
+
+  async patchSection(id: string, fields: SectionPatchRow) {
+    this.beginWrite();
+    const row = this.sectionRows.find((s) => s.id === id);
+    if (row) {
+      Object.assign(row, fields, { updated_at: this.stamp() });
+      this.claim(row);
+    }
+    this.endWrite();
+    return row ? ('patched' as const) : ('missing' as const);
+  }
+
+  /** Like merge_section(): a `from` that's gone is done (a resend); the catch-all can't be merged away. */
+  async mergeSection(fromId: string, intoId: string) {
+    this.beginWrite();
+    const from = this.sectionRows.find((s) => s.id === fromId);
+    if (from) {
+      const into = this.sectionRows.find((s) => s.id === intoId);
+      if (!into || into.shelf_id !== from.shelf_id) throw new BackendError(REJECTED.missing);
+      if (from.is_catch_all || from.id === into.id) throw new BackendError(REJECTED.other('P0001'));
+      // Records carry a section_id from Plan 5 Task 4 on; until then there is nothing to move.
+      into.discogs_genres = [...into.discogs_genres, ...from.discogs_genres.filter((g) => !into.discogs_genres.includes(g))];
+      into.takes_holiday = into.takes_holiday || from.takes_holiday;
+      into.updated_at = this.stamp();
+      this.sectionRows = this.sectionRows.filter((s) => s.id !== fromId);
+    }
+    this.endWrite();
+  }
+
   async setRating(recordId: string, userId: string, value: number) {
     this.beginWrite();
     const existing = this.ratingRows.find((r) => r.record_id === recordId && r.user_id === userId);
@@ -245,6 +305,11 @@ export class FakeBackend implements Backend {
   /** Test helper: a record as the "server" holds it. */
   recordRow(id: string): RecordRow | undefined {
     return this.recordRows.find((r) => r.id === id);
+  }
+
+  /** Test helper: a section as the "server" holds it. */
+  sectionRow(id: string): SectionRow | undefined {
+    return this.sectionRows.find((s) => s.id === id);
   }
 
   /** Test helper: a rating as the "server" holds it. */

@@ -1,7 +1,7 @@
 import { BackendError, NO_SIGNAL, REJECTED, type ShelfSource, type ShelfWriter } from './backend';
 import type { ShelfDB } from './db';
 import type { Postcard } from './outbox';
-import { newRecordToRow, patchToRow } from './rowMapping';
+import { newRecordToRow, newSectionToRow, patchToRow, sectionPatchToRow } from './rowMapping';
 import { forgetLastPull, pullShelf } from './sync';
 
 export type PushResult = { sent: number; rejected: number; noSignal: boolean };
@@ -14,6 +14,14 @@ async function send(db: ShelfDB, writer: ShelfWriter, p: Postcard): Promise<'sen
       return 'sent';
     case 'record.patch':
       return (await writer.patchRecord(p.recordId, patchToRow(p.fields))) === 'missing' ? 'missing' : 'sent';
+    case 'section.create':
+      await writer.insertSection(newSectionToRow(p.fields));
+      return 'sent';
+    case 'section.patch':
+      return (await writer.patchSection(p.recordId, sectionPatchToRow(p.fields))) === 'missing' ? 'missing' : 'sent';
+    case 'section.merge':
+      await writer.mergeSection(p.recordId, p.fields.into);
+      return 'sent';
     case 'rating.set':
       await writer.setRating(p.recordId, p.userId, p.fields.value);
       return 'sent';
@@ -107,7 +115,7 @@ export async function retryPostcard(db: ShelfDB, seq: number): Promise<void> {
 
 /** Delete this postcard and every later one for the same record, forget the last pull, pull everything. */
 export async function discardPostcard(db: ShelfDB, source: ShelfSource, shelfId: string, seq: number): Promise<void> {
-  await db.transaction('rw', [db.records, db.ratings, db.meta, db.outbox, db.photos], async () => {
+  await db.transaction('rw', [db.records, db.ratings, db.sections, db.meta, db.outbox, db.photos], async () => {
     const p = await db.outbox.get(seq);
     if (!p) return;
     const dropped = await db.outbox
@@ -123,6 +131,7 @@ export async function discardPostcard(db: ShelfDB, source: ShelfSource, shelfId:
       await db.records.delete(p.recordId);
       await db.ratings.where('recordId').equals(p.recordId).delete();
     }
+    if (dropped.some((q) => q.kind === 'section.create')) await db.sections.delete(p.recordId);
     await forgetLastPull(db, shelfId);
   });
   await pullShelf(db, source, shelfId);

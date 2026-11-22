@@ -3,7 +3,8 @@ import { FakeBackend, collectionRows } from '@/test/fakeBackend';
 import type { ShelfSource } from './backend';
 import { ShelfDB, clearPhone, writeSession } from './db';
 import { savePostcards } from './outbox';
-import { RowError, type RecordRow } from './rowMapping';
+import { RowError, sectionToRow, type RecordRow } from './rowMapping';
+import type { Section } from './schema';
 import { forgetLastPull, pullShelf } from './sync';
 
 const K = '11111111-1111-4111-8111-111111111111';
@@ -126,6 +127,7 @@ describe('pullShelf', () => {
       },
       ratings: (shelfId) => backend.ratings(shelfId),
       members: (shelfId) => backend.members(shelfId),
+      sections: (shelfId) => backend.sections(shelfId),
     };
     return { source, release };
   }
@@ -152,6 +154,46 @@ describe('pullShelf', () => {
     await pulling;
     expect(await db.records.count()).toBe(0);
     expect(await db.members.count()).toBe(0);
+  });
+});
+
+describe('pullShelf: sections', () => {
+  const S1 = '00000000-0000-4000-8000-000000000001';
+  const S2 = '00000000-0000-4000-8000-000000000002';
+  const section = (id: string, over: Partial<Section> = {}): Section => ({
+    id, shelfId: SHELF, name: 'Rock', color: 'rock', position: 1, discogsGenres: ['Rock'], takesHoliday: false, isCatchAll: false, legacyGenre: 'misc', updatedAt: WHEN, ...over,
+  });
+  const withSections = (...sections: Section[]) => new FakeBackend({ records: rows.records, ratings: rows.ratings, members: [], sections: sections.map(sectionToRow) });
+
+  it('brings the shelf’s sections with the records', async () => {
+    await pullShelf(db, withSections(section(S1), section(S2, { name: 'Jazz', position: 0 })), SHELF);
+    expect((await db.sections.toArray()).map((s) => s.name).sort()).toEqual(['Jazz', 'Rock']);
+  });
+
+  it('drops a section that was deleted on the server', async () => {
+    await pullShelf(db, withSections(section(S1), section(S2, { name: 'Jazz' })), SHELF);
+    await pullShelf(db, withSections(section(S1)), SHELF);
+    expect((await db.sections.toArray()).map((s) => s.id)).toEqual([S1]);
+  });
+
+  it('leaves another shelf’s sections on the phone alone', async () => {
+    const OTHER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    await db.sections.put(section(S2, { shelfId: OTHER }));
+    await pullShelf(db, withSections(section(S1)), SHELF);
+    expect((await db.sections.toArray()).map((s) => s.id).sort()).toEqual([S1, S2]);
+  });
+
+  it('keeps a queued section.create on top of the pull', async () => {
+    await savePostcards(db, [{ kind: 'section.create', shelfId: SHELF, recordId: S2, userId: K, createdAt: WHEN, fields: section(S2, { name: 'Mine' }) }]);
+    await pullShelf(db, withSections(section(S1)), SHELF);
+    expect((await db.sections.toArray()).map((s) => s.id).sort()).toEqual([S1, S2]);
+  });
+
+  it('writes nothing when a section row is not understood', async () => {
+    const bad = withSections(section(S1, { color: 'mauve' as Section['color'] }));
+    await expect(pullShelf(db, bad, SHELF)).rejects.toBeInstanceOf(RowError);
+    expect(await db.sections.count()).toBe(0);
+    expect(await db.records.count()).toBe(0);
   });
 });
 

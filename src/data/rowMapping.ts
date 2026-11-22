@@ -1,4 +1,4 @@
-import { RatingSchema, RecordSchema, type Rating, type ShelfRecord } from './schema';
+import { RatingSchema, RecordSchema, SectionSchema, type Rating, type Section, type ShelfRecord } from './schema';
 
 export type RecordRow = {
   id: string;
@@ -159,6 +159,76 @@ export function ratingFromRow(row: Record<string, unknown>): Rating {
   const parsed = RatingSchema.safeParse({ recordId: row.record_id, userId: row.user_id, value: num(row.value), updatedAt: row.updated_at });
   if (!parsed.success) {
     throw new RowError(parsed.error.issues.map((i) => `rating ${String(row.record_id)}: ${i.path.join('.')} ${i.message}`));
+  }
+  return parsed.data;
+}
+
+export type SectionRow = {
+  id: string;
+  shelf_id: string;
+  name: string;
+  color: Section['color'];
+  position: number;
+  discogs_genres: Section['discogsGenres'];
+  takes_holiday: boolean;
+  is_catch_all: boolean;
+  legacy_genre: Section['legacyGenre'];
+  updated_at: string;
+};
+
+export type NewSectionRow = Omit<SectionRow, 'updated_at'>;
+export type SectionPatchRow = Partial<Pick<SectionRow, 'name' | 'color' | 'position' | 'discogs_genres' | 'takes_holiday'>>;
+
+export function sectionToRow(s: Section): SectionRow {
+  return {
+    id: s.id,
+    shelf_id: s.shelfId,
+    name: s.name,
+    color: s.color,
+    position: s.position,
+    discogs_genres: s.discogsGenres,
+    takes_holiday: s.takesHoliday,
+    is_catch_all: s.isCatchAll,
+    legacy_genre: s.legacyGenre,
+    updated_at: s.updatedAt,
+  };
+}
+
+/** A section as the server should receive it on insert: updated_at is the server's to stamp. */
+export function newSectionToRow(s: Section): NewSectionRow {
+  const { updated_at: _updated, ...row } = sectionToRow(s);
+  return row;
+}
+
+/** The fields the shelf lets a member change: the `grant update (...)` columns on public.sections. */
+export const SECTION_EDITABLE_FIELDS = ['name', 'color', 'position', 'discogsGenres', 'takesHoliday'] as const satisfies readonly (keyof Section)[];
+
+/** Only editable fields may go into an update; anything else would be refused by the server, so fail here. */
+export function sectionPatchToRow(fields: Partial<Section>): SectionPatchRow {
+  const out: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(fields)) {
+    if (!(SECTION_EDITABLE_FIELDS as readonly string[]).includes(name)) throw new Error(`Not an editable section field: ${name}`);
+    out[name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)] = value;
+  }
+  return out as SectionPatchRow;
+}
+
+export function sectionFromRow(row: Record<string, unknown>): Section {
+  const parsed = SectionSchema.safeParse({
+    id: row.id,
+    shelfId: row.shelf_id,
+    name: row.name,
+    color: row.color,
+    position: num(row.position),
+    discogsGenres: row.discogs_genres,
+    takesHoliday: row.takes_holiday,
+    isCatchAll: row.is_catch_all,
+    legacyGenre: row.legacy_genre,
+    updatedAt: row.updated_at,
+  });
+  if (!parsed.success) {
+    const name = typeof row.id === 'string' ? row.id : 'section';
+    throw new RowError(parsed.error.issues.map((i) => `${name}: ${i.path.join('.') || '(section)'} ${i.message}`));
   }
   return parsed.data;
 }

@@ -591,3 +591,90 @@ describe('supabaseBackend() photos', () => {
     }
   });
 });
+
+describe('supabaseBackend() sections', () => {
+  const ROW = { id: 'sec-1' } as never;
+
+  it('reads every section on the shelf from the sections table, paged', async () => {
+    const tables: string[] = [];
+    const { builder, calls } = pagedQuery([Array.from({ length: 1000 }, (_, i) => ({ id: `s${i}` })), [{ id: 's1000' }]]);
+    const client = { from: (t: string) => (tables.push(t), { select: () => builder }) } as never;
+    const rows = await supabaseBackend(client).sections('shelf-1');
+    expect(rows).toHaveLength(1001);
+    expect(tables[0]).toBe('sections');
+    expect(calls.filter((c) => c.method === 'eq')[0].args).toEqual(['shelf_id', 'shelf-1']);
+    expect(calls.filter((c) => c.method === 'order').map((c) => c.args[0]).slice(0, 2)).toEqual(['position', 'id']);
+  });
+
+  it('insertSection writes one row to sections; a duplicate is already-there', async () => {
+    const { client, calls } = writeClient({ insert: [{ error: null }, { error: { code: '23505', message: 'duplicate key' } }] });
+    await expect(supabaseBackend(client).insertSection(ROW)).resolves.toBe('inserted');
+    await expect(supabaseBackend(client).insertSection(ROW)).resolves.toBe('already-there');
+    expect(calls[0]).toEqual({ op: 'sections.insert', args: [ROW] });
+  });
+
+  it('insertSection maps failures like records do', async () => {
+    const offline = writeClient({ insert: [{ error: { message: 'Failed to fetch' } }] });
+    await expect(supabaseBackend(offline.client).insertSection(ROW)).rejects.toThrow(new BackendError(NO_SIGNAL));
+    const denied = writeClient({ insert: [{ error: { code: '42501', message: 'new row violates row-level security policy' } }] });
+    await expect(supabaseBackend(denied.client).insertSection(ROW)).rejects.toThrow(new BackendError(REJECTED.permission));
+  });
+
+  it('patchSection updates by id with snake_case columns, and says missing when no row matched', async () => {
+    const { client, calls } = writeClient({ update: [{ data: [{ id: 'sec-1' }], error: null }, { data: [], error: null }] });
+    await expect(supabaseBackend(client).patchSection('sec-1', { takes_holiday: true })).resolves.toBe('patched');
+    expect(calls).toEqual([
+      { op: 'sections.update', args: [{ takes_holiday: true }] },
+      { op: 'sections.eq', args: ['id', 'sec-1'] },
+      { op: 'sections.select', args: ['id'] },
+    ]);
+    await expect(supabaseBackend(client).patchSection('sec-1', { name: 'x' })).resolves.toBe('missing');
+  });
+
+  it('patchSection throws NO_SIGNAL offline and the check-violation reason for a bad value', async () => {
+    const offline = writeClient({ update: [{ error: { message: 'NetworkError' } }] });
+    await expect(supabaseBackend(offline.client).patchSection('sec-1', {})).rejects.toThrow(new BackendError(NO_SIGNAL));
+    const bad = writeClient({ update: [{ error: { code: '23514', message: 'check constraint' } }] });
+    await expect(supabaseBackend(bad.client).patchSection('sec-1', {})).rejects.toThrow(new BackendError(REJECTED.range));
+  });
+
+  /** A client whose rpc() answers `rpc` and whose sections lookup finds `still` (a row, or null when gone). */
+  function mergeClient(rpc: { error: { code?: string; message: string } | null }, still: { id: string } | null = null) {
+    const calls: { op: string; args: unknown[] }[] = [];
+    const client = {
+      rpc: (...args: unknown[]) => (calls.push({ op: 'rpc', args }), Promise.resolve(rpc)),
+      from: (table: string) => ({
+        select: (...a: unknown[]) => ({
+          eq: (...e: unknown[]) => ({
+            maybeSingle: () => (calls.push({ op: `${table}.lookup`, args: [...a, ...e] }), Promise.resolve({ data: still, error: null })),
+          }),
+        }),
+      }),
+    } as never;
+    return { client, calls };
+  }
+
+  it('mergeSection calls merge_section with p_from and p_into', async () => {
+    const { client, calls } = mergeClient({ error: null });
+    await expect(supabaseBackend(client).mergeSection('from-1', 'into-1')).resolves.toBeUndefined();
+    expect(calls).toEqual([{ op: 'rpc', args: ['merge_section', { p_from: 'from-1', p_into: 'into-1' }] }]);
+  });
+
+  it('mergeSection counts a resend whose from is already gone as done', async () => {
+    const { client, calls } = mergeClient({ error: { code: 'P0001', message: 'section not found' } }, null);
+    await expect(supabaseBackend(client).mergeSection('from-1', 'into-1')).resolves.toBeUndefined();
+    expect(calls[1]).toEqual({ op: 'sections.lookup', args: ['id', 'id', 'from-1'] });
+  });
+
+  it('mergeSection rejects when from is still there but into is missing', async () => {
+    const { client } = mergeClient({ error: { code: 'P0001', message: 'section not found' } }, { id: 'from-1' });
+    await expect(supabaseBackend(client).mergeSection('from-1', 'into-1')).rejects.toThrow(new BackendError(REJECTED.missing));
+  });
+
+  it('mergeSection maps other failures like records do', async () => {
+    const offline = mergeClient({ error: { message: 'Failed to fetch' } });
+    await expect(supabaseBackend(offline.client).mergeSection('a', 'b')).rejects.toThrow(new BackendError(NO_SIGNAL));
+    const refused = mergeClient({ error: { code: 'P0001', message: 'the catch-all section can\'t be merged away' } });
+    await expect(supabaseBackend(refused.client).mergeSection('a', 'b')).rejects.toThrow(new BackendError(REJECTED.other('P0001')));
+  });
+});
