@@ -16,8 +16,8 @@ import { SECTION_ITEM_CLASS } from './SectionSelect';
 type Props = {
   mode: 'add' | 'edit';
   initial: RecordFormValues;
-  /** The shelf's sections, in shelf order, for the Section picker. */
-  sections: Section[];
+  /** The shelf's sections, in shelf order, for the Section picker; undefined while they load. */
+  sections: Section[] | undefined;
   /** For the duplicate check. */
   records: ShelfRecord[];
   /** Edit: the record itself, which is never its own duplicate. */
@@ -164,24 +164,25 @@ export function RecordForm({ mode, initial, sections, records, excludeId, onSave
 
       <div className="flex flex-col gap-2">
         <label htmlFor={fieldId('sectionId')} className={LABEL}>Section</label>
-        <Select value={values.sectionId} onValueChange={(id) => set('sectionId', id)} disabled={sections.length === 0}>
+        <Select value={values.sectionId} onValueChange={(id) => set('sectionId', id)} disabled={!sections?.length}>
           <SelectTrigger
             id={fieldId('sectionId')}
             className="w-full rounded-lg border-[1.5px] border-line-strong bg-surface-sunk px-4 text-base text-ink data-[size=default]:h-12 [&_svg]:text-ink-muted"
             {...err('sectionId')}
-            aria-describedby={errors.sectionId ? `${fieldId('sectionId')}-error` : sections.length === 0 ? `${fieldId('sectionId')}-loading` : undefined}
+            aria-describedby={errors.sectionId ? `${fieldId('sectionId')}-error` : sections?.length === 0 ? `${fieldId('sectionId')}-loading` : undefined}
           >
             <SelectValue placeholder="Choose a section" />
           </SelectTrigger>
           <SelectContent className="rounded-lg">
-            {sections.map((s) => (
+            {sections?.map((s) => (
               <SelectItem key={s.id} value={s.id} className={SECTION_ITEM_CLASS}>
                 {s.name}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        {sections.length === 0 && (
+        {/* Only once they've loaded and there are none: while they load the picker just waits, with no flash of words. */}
+        {sections?.length === 0 && (
           <p id={`${fieldId('sectionId')}-loading`} className="text-[15px] text-ink-muted">
             {SHELF_LOADING}
           </p>

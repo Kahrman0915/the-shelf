@@ -89,11 +89,22 @@ export function SectionsScreen() {
               <button
                 type="button"
                 aria-label={n === null ? s.name : `${s.name}, ${n} ${n === 1 ? 'record' : 'records'}`}
-                onClick={() => setOpenId(s.id)}
-                className="flex h-12 min-w-0 flex-1 items-center gap-3 text-left"
+                aria-describedby={s.isCatchAll ? `${s.id}-kept` : undefined}
+                onClick={() => {
+                  setFailure(null);
+                  setOpenId(s.id);
+                }}
+                className="flex min-h-12 min-w-0 flex-1 items-center gap-3 py-1 text-left"
               >
                 <span aria-hidden className="size-4 flex-none rounded-full" style={{ background: `var(--section-${s.color})` }} />
-                <span className="min-w-0 flex-1 truncate text-[17px] font-bold">{s.name}</span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-[17px] font-bold">{s.name}</span>
+                  {s.isCatchAll && (
+                    <span id={`${s.id}-kept`} className="text-[15px] text-ink-muted">
+                      Can’t be deleted
+                    </span>
+                  )}
+                </span>
                 {n !== null && <span aria-hidden className="text-[15px] text-ink-muted">{n}</span>}
               </button>
               {!s.isCatchAll && n !== null && (

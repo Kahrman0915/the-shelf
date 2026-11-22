@@ -89,7 +89,7 @@ export function ShowScreen() {
           ))}
         </div>
       )}
-      <BuyNewSheet open={buying} initialArtist={query.trim()} sections={sections ?? []} onOpenChange={setBuying} onSave={onSave} />
+      <BuyNewSheet open={buying} initialArtist={query.trim()} sections={sections} onOpenChange={setBuying} onSave={onSave} />
     </main>
   );
 }

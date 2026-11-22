@@ -37,8 +37,8 @@ export function BuyNewSheet({
 }: {
   open: boolean;
   initialArtist: string;
-  /** The shelf's sections, in shelf order, for the Section picker. */
-  sections: Section[];
+  /** The shelf's sections, in shelf order, for the Section picker; undefined while they load. */
+  sections: Section[] | undefined;
   onOpenChange: (open: boolean) => void;
   onSave: (buy: NewBuy) => Promise<void>;
 }) {
@@ -133,24 +133,25 @@ export function BuyNewSheet({
 
             <div className="flex flex-col gap-2">
               <label htmlFor="buy-section" className={LABEL}>Section</label>
-              <Select value={sectionId} onValueChange={setSectionId} disabled={sections.length === 0}>
+              <Select value={sectionId} onValueChange={setSectionId} disabled={!sections?.length}>
                 <SelectTrigger
                   id="buy-section"
                   aria-invalid={errors.sectionId ? true : undefined}
-                  aria-describedby={errors.sectionId ? 'buy-section-error' : sections.length === 0 ? 'buy-section-loading' : undefined}
+                  aria-describedby={errors.sectionId ? 'buy-section-error' : sections?.length === 0 ? 'buy-section-loading' : undefined}
                   className="w-full rounded-lg border-[1.5px] border-line-strong bg-surface-sunk px-4 text-base text-ink data-[size=default]:h-12 [&_svg]:text-ink-muted"
                 >
                   <SelectValue placeholder="Choose a section" />
                 </SelectTrigger>
                 <SelectContent className="rounded-lg">
-                  {sections.map((s) => (
+                  {sections?.map((s) => (
                     <SelectItem key={s.id} value={s.id} className={SECTION_ITEM_CLASS}>
                       {s.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {sections.length === 0 && <p id="buy-section-loading" className="text-[15px] text-ink-muted">{SHELF_LOADING}</p>}
+              {/* Only once they've loaded and there are none: while they load the picker just waits. */}
+              {sections?.length === 0 && <p id="buy-section-loading" className="text-[15px] text-ink-muted">{SHELF_LOADING}</p>}
               {errors.sectionId && <p id="buy-section-error" className={ERROR}>{errors.sectionId}</p>}
             </div>
 

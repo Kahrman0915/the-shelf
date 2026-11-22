@@ -90,7 +90,7 @@ export function AddScreen() {
         <RecordForm
           mode="add"
           initial={initial}
-          sections={sections ?? []}
+          sections={sections}
           records={records}
           onSave={onSave}
           onOpenDuplicate={(id) => leave(() => navigate(`/record/${id}`))}

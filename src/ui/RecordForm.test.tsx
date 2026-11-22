@@ -80,6 +80,12 @@ describe('RecordForm', () => {
     expect(screen.getByText('Your shelf is still loading. Try again in a moment.')).toBeInTheDocument();
   });
 
+  it('while the sections are still coming, the picker is disabled with no message', () => {
+    setup({ sections: undefined });
+    expect(screen.getByRole('combobox', { name: 'Section' })).toBeDisabled();
+    expect(screen.queryByText('Your shelf is still loading. Try again in a moment.')).toBeNull();
+  });
+
   it('the Section picker lists the shelf’s sections in order', async () => {
     setup();
     expect(screen.getByRole('combobox', { name: 'Section' })).toHaveTextContent('Choose a section');

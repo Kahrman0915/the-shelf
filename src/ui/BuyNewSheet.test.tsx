@@ -24,6 +24,12 @@ describe('BuyNewSheet', () => {
     expect(screen.getByText('Your shelf is still loading. Try again in a moment.')).toBeInTheDocument();
   });
 
+  it('while the sections are still coming, the picker is disabled with no message', () => {
+    render(<BuyNewSheet open initialArtist="" sections={undefined} onOpenChange={() => {}} onSave={async () => {}} />);
+    expect(screen.getByRole('combobox', { name: 'Section' })).toBeDisabled();
+    expect(screen.queryByText('Your shelf is still loading. Try again in a moment.')).toBeNull();
+  });
+
   it('lists the shelf’s sections in order', async () => {
     setup();
     await userEvent.click(screen.getByRole('combobox', { name: 'Section' }));

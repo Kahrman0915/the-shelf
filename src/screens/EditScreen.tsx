@@ -122,7 +122,7 @@ export function EditScreen() {
             mode="edit"
             formId={FORM_ID}
             initial={opened.values}
-            sections={sections ?? []}
+            sections={sections}
             records={records}
             excludeId={record.id}
             onSave={onSave}

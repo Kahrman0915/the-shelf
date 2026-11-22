@@ -33,6 +33,20 @@ describe('SectionSheet', () => {
     expect(screen.getByRole('checkbox', { name: 'Jazz (in Jazz / big band)' })).toBeInTheDocument();
   });
 
+  it('says which section has holiday records now, until this one takes them', async () => {
+    setup();
+    const holiday = screen.getByRole('switch', { name: 'Holiday records go here' });
+    expect(screen.getByText('(now in Christmas)')).toBeInTheDocument();
+    expect(holiday).toHaveAccessibleDescription('(now in Christmas)');
+    await userEvent.click(holiday);
+    expect(screen.queryByText('(now in Christmas)')).toBeNull();
+  });
+
+  it('says nothing about holiday on the section that has it', () => {
+    setup(christmas);
+    expect(screen.queryByText(/now in/)).toBeNull();
+  });
+
   it('will not save an empty or over-40 name', async () => {
     const { onSave } = setup();
     const name = screen.getByRole('textbox', { name: 'Name' });

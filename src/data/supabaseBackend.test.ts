@@ -166,6 +166,14 @@ describe('supabaseBackend().insertRecord', () => {
     await expect(supabaseBackend(client).insertRecord(NEW_ROW)).rejects.toThrow(new BackendError(NO_SIGNAL));
   });
 
+  it('a deadlock or serialization failure is try-again-later, not a refusal', async () => {
+    for (const code of ['40P01', '40001']) {
+      const { client } = writeClient({ insert: [{ error: { code, message: 'deadlock detected' } }], update: [{ error: { code, message: 'could not serialize access' } }] });
+      await expect(supabaseBackend(client).insertRecord(NEW_ROW)).rejects.toThrow(new BackendError(NO_SIGNAL));
+      await expect(supabaseBackend(client).patchRecord('rec-1', {})).rejects.toThrow(new BackendError(NO_SIGNAL));
+    }
+  });
+
   it('throws the plain-words permission reason when the shelf says no', async () => {
     const { client } = writeClient({ insert: [{ error: { code: '42501', message: 'permission denied for table records' } }] });
     await expect(supabaseBackend(client).insertRecord(NEW_ROW)).rejects.toThrow(new BackendError(REJECTED.permission));
@@ -664,6 +672,13 @@ describe('supabaseBackend() sections', () => {
     const { client, calls } = mergeClient({ error: { code: 'P0001', message: 'section not found' } }, null);
     await expect(supabaseBackend(client).mergeSection('from-1', 'into-1')).resolves.toBeUndefined();
     expect(calls[1]).toEqual({ op: 'sections.lookup', args: ['id', 'id', 'from-1'] });
+  });
+
+  it('mergeSection waits to try again after a deadlock or serialization failure', async () => {
+    for (const code of ['40P01', '40001']) {
+      const { client } = mergeClient({ error: { code, message: 'deadlock detected' } });
+      await expect(supabaseBackend(client).mergeSection('from-1', 'into-1')).rejects.toThrow(new BackendError(NO_SIGNAL));
+    }
   });
 
   it('mergeSection rejects when from is still there but into is missing', async () => {

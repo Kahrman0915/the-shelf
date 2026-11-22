@@ -151,6 +151,35 @@ describe('SectionsScreen', () => {
     expect(screen.queryByRole('button', { name: 'More for Miscellaneous' })).toBeNull();
   });
 
+  it('marks the catch-all as the one that can’t be deleted', async () => {
+    renderScreen();
+    const misc = await screen.findByRole('button', { name: /^Miscellaneous, / });
+    expect(within(misc).getByText('Can’t be deleted')).toBeInTheDocument();
+    expect(misc).toHaveAccessibleDescription('Can’t be deleted');
+    expect(screen.getAllByText('Can’t be deleted')).toHaveLength(1);
+  });
+
+  it('opens a sheet without a failure left over from before', async () => {
+    renderScreen();
+    await screen.findByRole('button', { name: /^Rock, / });
+    vi.spyOn(db.outbox, 'add').mockRejectedValueOnce(new Error('boom'));
+    await menu('Reggae');
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t save that.');
+    await userEvent.click(row('Rock'));
+    expect(within(screen.getByRole('dialog')).queryByRole('alert')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    vi.spyOn(db.outbox, 'add').mockRejectedValueOnce(new Error('boom'));
+    await menu('Reggae');
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t save that.');
+    await userEvent.click(screen.getByRole('button', { name: 'Add a section' }));
+    expect(await screen.findByRole('textbox', { name: 'Name' })).toHaveValue('New section');
+    expect(within(screen.getByRole('dialog')).queryByRole('alert')).toBeNull();
+  });
+
   it('+ Add makes New section and opens it', async () => {
     renderScreen();
     await screen.findByRole('button', { name: /^Rock, / });

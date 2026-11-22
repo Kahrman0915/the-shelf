@@ -43,6 +43,7 @@ export function SectionSheet({
   const [error, setError] = useState<string | null>(null);
 
   const others = sections.filter((s) => s.id !== section.id);
+  const holidayElsewhere = holiday ? undefined : others.find((s) => s.takesHoliday);
   const at = sections.findIndex((s) => s.id === section.id) + moves.reduce((n, m) => n + (m === 'up' ? -1 : 1), 0);
   const trimmed = name.trim();
   const sameName = trimmed !== '' && others.some((s) => s.name.trim().toLowerCase() === trimmed.toLowerCase());
@@ -123,9 +124,18 @@ export function SectionSheet({
           </fieldset>
 
           <div className="flex h-12 items-center justify-between gap-3">
-            <label htmlFor="section-holiday" className="text-base">Holiday records go here</label>
+            <span className="text-base">
+              <label htmlFor="section-holiday">Holiday records go here</label>
+              {holidayElsewhere && (
+                <>
+                  {' '}
+                  <span id="section-holiday-now" className="text-ink-muted">(now in {holidayElsewhere.name})</span>
+                </>
+              )}
+            </span>
             <Switch.Root
               id="section-holiday"
+              aria-describedby={holidayElsewhere ? 'section-holiday-now' : undefined}
               checked={holiday}
               onCheckedChange={setHoliday}
               className="relative h-12 w-14 flex-none rounded-full bg-line-strong data-[state=checked]:bg-bourbon"

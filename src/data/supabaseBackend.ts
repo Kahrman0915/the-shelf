@@ -48,8 +48,12 @@ export function rejectionReason(e: { code?: string; message: string }): string {
   return REJECTED.other(e.code ?? 'unknown');
 }
 
+/** Postgres gave up on the write because of another one at the same moment (a deadlock, or a
+ *  serialization failure): nothing was wrong with it, so it waits and goes again like no signal. */
+const TRY_AGAIN_CODES = new Set(['40P01', '40001']);
+
 function writeFailure(error: { code?: string; message: string }): never {
-  throw new BackendError(offlineLooking(error) ? NO_SIGNAL : rejectionReason(error));
+  throw new BackendError(offlineLooking(error) || TRY_AGAIN_CODES.has(error.code ?? '') ? NO_SIGNAL : rejectionReason(error));
 }
 
 /** Plain words for why Storage turned a photo request down. */
