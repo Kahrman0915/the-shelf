@@ -22,8 +22,9 @@ function Thumb({ side, photo, squaring, onRetake, onRemove }: { side: PhotoSide;
   );
 }
 
-/** The Add screen’s photo area: take front and back, see them squared, keep them as drafts. */
-export function PhotoCapture() {
+/** The Add screen’s photo area: take front and back, see them squared, keep them as drafts.
+ *  `onReady` hears whether the photos are done: shown, the back asked for no more, none being squared up. */
+export function PhotoCapture({ onReady }: { onReady?: (ready: boolean) => void } = {}) {
   const drafts = useDrafts();
   const tipsSeen = usePhotoTipsSeen();
   const [tipsOpen, setTipsOpen] = useState(false);
@@ -91,6 +92,12 @@ export function PhotoCapture() {
   }
 
   const shown = PHOTO_SIDES.filter((side) => drafts?.[side] || squaring[side]);
+  // Asking for the back only while there's a front and no back: a retaken front with a back already there doesn't ask.
+  const askingBack = askBack && !!drafts?.front && !drafts.back && !squaring.back;
+  const ready = shown.length > 0 && !askingBack && !squaring.front && !squaring.back;
+  useEffect(() => {
+    onReady?.(ready);
+  }, [ready, onReady]);
 
   return (
     <section className="flex flex-col gap-3 px-4">
@@ -118,16 +125,12 @@ export function PhotoCapture() {
       {drafts?.front && !drafts.back && !squaring.back && !askBack && (
         <Button onClick={() => back.open()} className={SMALL}>Take the back</Button>
       )}
-      {askBack && drafts?.front && !drafts.back && !squaring.back && (
+      {askingBack && (
         <div className="flex flex-col gap-2">
           <p className="text-[17px] font-semibold text-ink">Now the back</p>
           <Button onClick={() => back.open()} className={SMALL}>Take the back</Button>
           <Button variant="ghost" onClick={() => setAskBack(false)} className={SMALL}>Skip the back</Button>
         </div>
-      )}
-      {/* Until the app can recognise a sleeve itself, say what happens next once the photos are done. */}
-      {shown.length > 0 && !askBack && !squaring.front && !squaring.back && (
-        <p className="text-[15px] leading-[22px] text-ink-muted">Now find it below, and these photos go with it.</p>
       )}
       {failure && (
         <p role="alert" className="text-[15px] text-brick-ink">

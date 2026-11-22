@@ -5,7 +5,7 @@ import { BackendProvider } from '@/app/BackendContext';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
 import { UNDO_WINDOW_MS, UndoBar, UndoProvider } from '@/app/UndoContext';
 import * as actions from '@/data/actions';
-import type { FoundRecord } from '@/data/backend';
+import type { FoundRecord, Identified } from '@/data/backend';
 import { db } from '@/data/db';
 import type { Drafts } from '@/data/photos';
 import type { ShelfRecord } from '@/data/schema';
@@ -53,14 +53,15 @@ function onShelf(p: Partial<ShelfRecord> = {}): ShelfRecord {
   };
 }
 
-type PhotosProp = { drafts: Drafts; onUsed: () => void; onBack: (drafts: Drafts | null) => void };
+type PhotosProp = { drafts: Drafts; ready: boolean; onUsed: () => void; onBack: (drafts: Drafts | null) => void };
 
 /** Show FindRecord again with other photos waiting, as the Add screen does when the drafts change. */
 let rerenderPhotos: (photos: PhotosProp | undefined) => void = () => {};
 
-function setup({ records = [] as ShelfRecord[], onAdded = () => {}, photos = undefined as PhotosProp | undefined } = {}) {
+function setup({ records = [] as ShelfRecord[], onAdded = () => {}, photos = undefined as PhotosProp | undefined, prepare = (_b: FakeBackend) => {} } = {}) {
   const backend = new FakeBackend({});
   backend.discogsResults = [FORCES, SPARSE];
+  prepare(backend);
   const shelf = { shelfId: SHELF, userId: ME, email: 'k@example.com', signOut: async () => null, signOutAndDelete: async () => {} };
   const tree = (p: PhotosProp | undefined) => (
     <BackendProvider backend={backend}>
@@ -551,7 +552,7 @@ describe('FindRecord', () => {
     const deletes = async () => (await db.outbox.toArray()).filter((p) => p.kind === 'photo.delete').map((p) => (p.fields as { path: string }).path);
 
     function withPhotos(records: ShelfRecord[] = []) {
-      const photos = { drafts: drafts(), onUsed: vi.fn(), onBack: vi.fn() };
+      const photos = { drafts: drafts(), ready: false, onUsed: vi.fn(), onBack: vi.fn() };
       setup({ records, photos });
       return photos;
     }
@@ -622,7 +623,7 @@ describe('FindRecord', () => {
       await search('mccoy tyner forces of nature');
       await userEvent.click(await card(/Forces Of Nature/));
       await screen.findByText(/On the shelf:/);
-      rerenderPhotos({ drafts: drafts(), onUsed: vi.fn(), onBack: vi.fn() });
+      rerenderPhotos({ drafts: drafts(), ready: false, onUsed: vi.fn(), onBack: vi.fn() });
       await pickSahara();
       await screen.findByText('On the shelf: Sahara');
       const sahara = (await db.records.toArray()).find((r) => r.title === 'Sahara')!;
@@ -768,6 +769,220 @@ describe('FindRecord', () => {
           cleanup();
           await waitFor(async () => expect(await deletes()).toEqual([OLD]));
         });
+      });
+    });
+  });
+
+  describe('Claude reads the sleeve', () => {
+    const CHARLIE: FoundRecord = {
+      releaseId: 501, artist: 'Vince Guaraldi Trio', title: 'A Charlie Brown Christmas', label: 'Fantasy', catalog: 'F-8431', year: 1988,
+      format: 'Vinyl, LP, Album, Reissue', country: 'US', genres: ['Jazz'], styles: ['Cool Jazz'], thumb: null,
+    };
+    const CHARLIE_1965: FoundRecord = { ...CHARLIE, releaseId: 502, year: 1965, catalog: 'FANTASY 3381', format: 'Vinyl, LP, Album, Mono' };
+    const READ = { artist: 'Vince Guaraldi Trio', title: 'A Charlie Brown Christmas', barcode: null, catalog: 'F-8431', label: 'Fantasy' };
+    const WORDS = 'vince guaraldi trio a charlie brown christmas';
+    const HINT = 'Now find it below, and these photos go with it.';
+    const drafts = (): Drafts => ({
+      front: { side: 'front', bytes: new Uint8Array([1]).buffer, foundEdges: true },
+      back: { side: 'back', bytes: new Uint8Array([2]).buffer, foundEdges: true },
+    });
+
+    function reading(answer: Identified | null, { records = [] as ShelfRecord[], ready = true, prepare = (_b: FakeBackend) => {} } = {}) {
+      const photos = { drafts: drafts(), ready, onUsed: vi.fn(), onBack: vi.fn() };
+      const backend = setup({
+        records,
+        photos,
+        prepare: (b) => {
+          if (answer) b.identified = answer;
+          b.discogsResults = [CHARLIE, CHARLIE_1965];
+          prepare(b);
+        },
+      });
+      return { backend, photos };
+    }
+
+    /** Holds identifyRecord's answer until the returned function is called. */
+    function slowReading(b: FakeBackend) {
+      let release: () => void = () => {};
+      const real = b.identifyRecord.bind(b);
+      vi.spyOn(b, 'identifyRecord').mockImplementation(async (front, back) => {
+        await new Promise<void>((r) => (release = r));
+        return real(front, back);
+      });
+      return () => act(async () => release());
+    }
+
+    it('says it’s looking it up', async () => {
+      reading({ read: READ, match: 'exact', results: [CHARLIE] }, { prepare: (b) => void slowReading(b) });
+      expect(await screen.findByText('Looking it up…')).toBeInTheDocument();
+      expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+    });
+
+    it('an exact match saves the record with both photos and names the pressing', async () => {
+      const { backend, photos } = reading({ read: READ, match: 'exact', results: [CHARLIE] });
+      expect(await screen.findByText('On the shelf: A Charlie Brown Christmas')).toBeInTheDocument();
+      expect(screen.getByText('1988 · Fantasy · F-8431')).toBeInTheDocument();
+      const [record] = await db.records.toArray();
+      expect(record).toMatchObject({ artist: 'Vince Guaraldi Trio', title: 'A Charlie Brown Christmas', discogsReleaseId: 501, status: 'owned' });
+      expect(record.coverPath).toMatch(new RegExp(`^${SHELF}/${record.id}/front-`));
+      expect(record.backPath).toMatch(new RegExp(`^${SHELF}/${record.id}/back-`));
+      expect(photos.onUsed).toHaveBeenCalledOnce();
+      expect(backend.identifyCalls).toBe(1);
+      expect(backend.discogsCalls).toEqual([]);
+      await waitFor(async () => expect(JSON.parse((await db.meta.get('funFactQueue'))?.value ?? '[]')).toEqual([{ recordId: record.id, tries: 0 }]));
+    });
+
+    it('the pressing line leaves out what Discogs doesn’t know', async () => {
+      reading({ read: READ, match: 'exact', results: [{ ...CHARLIE, label: null, catalog: null }] });
+      await screen.findByText('On the shelf: A Charlie Brown Christmas');
+      expect(screen.getByText('1988')).toBeInTheDocument();
+    });
+
+    it('an exact match already on the shelf asks where the photos go', async () => {
+      const existing = onShelf({ artist: 'Vince Guaraldi Trio', title: 'A Charlie Brown Christmas' });
+      await db.records.put(existing);
+      const { photos } = reading({ read: READ, match: 'exact', results: [CHARLIE] }, { records: [existing] });
+      expect(await screen.findByRole('dialog', { name: 'Add these photos to the one on your shelf?' })).toBeInTheDocument();
+      expect(await db.records.count()).toBe(1);
+      expect(photos.onUsed).not.toHaveBeenCalled();
+      await userEvent.click(screen.getByRole('button', { name: 'Add to that one' }));
+      expect(await screen.findByText('Photos added: A Charlie Brown Christmas')).toBeInTheDocument();
+      expect(photos.onUsed).toHaveBeenCalledOnce();
+    });
+
+    it('several pressings: asks which, and the one tapped saves with the photos', async () => {
+      const { backend, photos } = reading({ read: READ, match: 'several', results: [CHARLIE, CHARLIE_1965] });
+      expect(await screen.findByText('Which pressing is yours?')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /1988 · Fantasy · F-8431/ })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Data provided by Discogs' })).toHaveAttribute('href', `https://www.discogs.com/search/?q=${encodeURIComponent(WORDS)}&type=release`);
+      expect(await db.records.count()).toBe(0);
+      expect(backend.discogsCalls).toEqual([]);
+      await userEvent.click(screen.getByRole('button', { name: /1965 · Fantasy · FANTASY 3381/ }));
+      expect(await screen.findByText('On the shelf: A Charlie Brown Christmas')).toBeInTheDocument();
+      const [record] = await db.records.toArray();
+      expect(record).toMatchObject({ discogsReleaseId: 502, year: 1965 });
+      expect(record.coverPath).not.toBeNull();
+      expect(photos.onUsed).toHaveBeenCalledOnce();
+    });
+
+    it('several pressings: one already on the shelf is tagged', async () => {
+      const existing = onShelf({ artist: 'Vince Guaraldi Trio', title: 'A Charlie Brown Christmas' });
+      reading({ read: READ, match: 'several', results: [CHARLIE, CHARLIE_1965] }, { records: [existing] });
+      await screen.findByText('Which pressing is yours?');
+      expect(screen.getAllByText('Already on the shelf')).toHaveLength(2);
+    });
+
+    it('a search of your own replaces the question', async () => {
+      reading({ read: READ, match: 'several', results: [CHARLIE, CHARLIE_1965] });
+      await screen.findByText('Which pressing is yours?');
+      await search('sahara');
+      await waitFor(() => expect(screen.queryByText('Which pressing is yours?')).not.toBeInTheDocument());
+    });
+
+    it('no match: fills the box with what was read and searches it', async () => {
+      const { backend } = reading({ read: READ, match: 'none', results: [] });
+      expect(await screen.findByText('Couldn’t pin it down. Check the search below.')).toBeInTheDocument();
+      expect(searchBox()).toHaveValue(WORDS);
+      await waitFor(() => expect(backend.discogsCalls).toEqual([WORDS]));
+      expect(await card(/1988 · Fantasy · F-8431/)).toBeInTheDocument();
+      expect(screen.queryByText('Which pressing is yours?')).not.toBeInTheDocument();
+      expect(await db.records.count()).toBe(0);
+    });
+
+    it('no match with nothing read: says so, and searches nothing', async () => {
+      const nothing = { artist: null, title: null, barcode: null, catalog: null, label: null };
+      const { backend } = reading({ read: nothing, match: 'none', results: [] });
+      expect(await screen.findByText('Couldn’t pin it down. Check the search below.')).toBeInTheDocument();
+      expect(searchBox()).toHaveValue('');
+      expect(backend.discogsCalls).toEqual([]);
+    });
+
+    it('Undo after an exact save doesn’t read again: it searches what was read', async () => {
+      const { backend, photos } = reading({ read: READ, match: 'exact', results: [CHARLIE] });
+      await screen.findByText('On the shelf: A Charlie Brown Christmas');
+      // The Add screen clears the drafts once a save has used them.
+      rerenderPhotos(undefined);
+      await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+      await waitFor(() => expect(photos.onBack).toHaveBeenCalledWith(photos.drafts));
+      // …and puts them back, as a new drafts object.
+      rerenderPhotos({ ...photos, drafts: drafts() });
+      expect(searchBox()).toHaveValue(WORDS);
+      await waitFor(() => expect(backend.discogsCalls).toEqual([WORDS]));
+      expect(await card(/1965 · Fantasy · FANTASY 3381/)).toBeInTheDocument();
+      await new Promise((r) => setTimeout(r, 400));
+      expect(backend.identifyCalls).toBe(1);
+      expect(screen.queryByText('Looking it up…')).not.toBeInTheDocument();
+      expect((await db.records.toArray())[0].deletedAt).not.toBeNull();
+    });
+
+    it('the photos taken after that are read as usual', async () => {
+      const { backend, photos } = reading({ read: READ, match: 'exact', results: [CHARLIE] });
+      await screen.findByText('On the shelf: A Charlie Brown Christmas');
+      rerenderPhotos(undefined);
+      await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+      await waitFor(() => expect(photos.onBack).toHaveBeenCalled());
+      rerenderPhotos({ ...photos, drafts: drafts() });
+      await new Promise((r) => setTimeout(r, 400));
+      rerenderPhotos({ ...photos, drafts: drafts() });
+      await waitFor(() => expect(backend.identifyCalls).toBe(2));
+    });
+
+    it('typing while it reads: the reading’s answer is ignored', async () => {
+      let finish: () => Promise<void> = async () => {};
+      const { backend, photos } = reading({ read: READ, match: 'exact', results: [CHARLIE] }, { prepare: (b) => void (finish = slowReading(b)) });
+      await waitFor(() => expect(backend.identifyRecord).toHaveBeenCalledOnce());
+      await userEvent.type(searchBox(), 'sa');
+      expect(screen.queryByText('Looking it up…')).not.toBeInTheDocument();
+      await finish();
+      await new Promise((r) => setTimeout(r, 50));
+      expect(await db.records.count()).toBe(0);
+      expect(photos.onUsed).not.toHaveBeenCalled();
+      expect(screen.queryByText(/On the shelf:/)).not.toBeInTheDocument();
+      expect(searchBox()).toHaveValue('sa');
+    });
+
+    it('offline: says the photos are kept, and Look it up reads once the signal is back', async () => {
+      setOnline(false);
+      const { backend } = reading({ read: READ, match: 'exact', results: [CHARLIE] });
+      expect(await screen.findByText('Needs signal to look it up. Your photos are kept.')).toBeInTheDocument();
+      expect(backend.identifyCalls).toBe(0);
+      const lookUp = screen.getByRole('button', { name: 'Look it up' });
+      expect(lookUp.className).toContain('h-12');
+      act(() => setOnline(true));
+      await userEvent.click(lookUp);
+      expect(await screen.findByText('On the shelf: A Charlie Brown Christmas')).toBeInTheDocument();
+      expect(backend.identifyCalls).toBe(1);
+    });
+
+    it('a failure says so, and Try again reads again', async () => {
+      const { backend } = reading({ read: READ, match: 'exact', results: [CHARLIE] }, { prepare: (b) => void (b.claudeFails = 'down') });
+      expect(await screen.findByText('Couldn’t read the sleeve. Try again, or search below.')).toBeInTheDocument();
+      backend.claudeFails = null;
+      await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+      expect(await screen.findByText('On the shelf: A Charlie Brown Christmas')).toBeInTheDocument();
+      expect(backend.identifyCalls).toBe(2);
+    });
+
+    describe('the line saying what happens next', () => {
+      it('isn’t there without photos', () => {
+        setup();
+        expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+      });
+
+      it('isn’t there while the photos aren’t done (asking for the back, or squaring one up)', async () => {
+        const { backend } = reading(null, { ready: false });
+        await new Promise((r) => setTimeout(r, 400));
+        expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+        expect(backend.identifyCalls).toBe(0);
+      });
+
+      it('shows once the photos are done and nothing is being looked up', async () => {
+        let finish: () => Promise<void> = async () => {};
+        reading({ read: READ, match: 'exact', results: [CHARLIE] }, { prepare: (b) => void (finish = slowReading(b)) });
+        await screen.findByText('Looking it up…');
+        await userEvent.type(searchBox(), 'sa');
+        expect(await screen.findByText(HINT)).toBeInTheDocument();
+        await finish();
       });
     });
   });

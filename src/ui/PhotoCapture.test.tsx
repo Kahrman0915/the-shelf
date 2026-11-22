@@ -95,24 +95,71 @@ describe('PhotoCapture', () => {
     expect(screen.queryByText('Now the back')).not.toBeInTheDocument();
   });
 
-  it('says to find the record once the photos are done, not while it is still asking for the back', async () => {
+  it('says the photos are ready once they’re done, not while it is still asking for the back', async () => {
     const user = userEvent.setup();
-    const next = 'Now find it below, and these photos go with it.';
-    render(<PhotoCapture />);
-    expect(screen.queryByText(next)).not.toBeInTheDocument();
+    const onReady = vi.fn();
+    render(<PhotoCapture onReady={onReady} />);
+    expect(onReady).toHaveBeenLastCalledWith(false);
     await user.upload(frontInput(), file());
     expect(await screen.findByText('Now the back')).toBeInTheDocument();
-    expect(screen.queryByText(next)).not.toBeInTheDocument();
+    expect(onReady).toHaveBeenLastCalledWith(false);
+    expect(onReady).not.toHaveBeenCalledWith(true);
     await user.upload(backInput(), file());
-    expect(await screen.findByText(next)).toBeInTheDocument();
+    expect(await screen.findByAltText('Back photo')).toBeInTheDocument();
+    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true));
   });
 
-  it('says to find the record after skipping the back', async () => {
+  it('says the photos are ready after skipping the back', async () => {
+    const user = userEvent.setup();
+    const onReady = vi.fn();
+    render(<PhotoCapture onReady={onReady} />);
+    await user.upload(frontInput(), file());
+    await user.click(await screen.findByRole('button', { name: 'Skip the back' }));
+    expect(onReady).toHaveBeenLastCalledWith(true);
+  });
+
+  it('a retaken front isn’t ready while it’s squared up, and is again once it lands next to the back', async () => {
+    const user = userEvent.setup();
+    const onReady = vi.fn();
+    await db.photoDrafts.put({ side: 'front', bytes: found.bytes, foundEdges: true });
+    await db.photoDrafts.put({ side: 'back', bytes: found.bytes, foundEdges: true });
+    render(<PhotoCapture onReady={onReady} />);
+    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true));
+    let resolve!: (v: typeof found) => void;
+    vi.mocked(squareUpPhoto).mockImplementationOnce(() => new Promise((r) => (resolve = r)));
+    await user.upload(frontInput(), file());
+    expect(onReady).toHaveBeenLastCalledWith(false);
+    resolve({ bytes: new Uint8Array([3]).buffer, foundEdges: true });
+    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true));
+    expect(screen.queryByText('Now the back')).not.toBeInTheDocument();
+  });
+
+  it('a retaken front with no back asks for the back again, and isn’t ready meanwhile', async () => {
+    const user = userEvent.setup();
+    const onReady = vi.fn();
+    await db.photoDrafts.put({ side: 'front', bytes: found.bytes, foundEdges: true });
+    render(<PhotoCapture onReady={onReady} />);
+    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true));
+    await user.upload(frontInput(), file());
+    expect(await screen.findByText('Now the back')).toBeInTheDocument();
+    expect(onReady).toHaveBeenLastCalledWith(false);
+  });
+
+  it('the photos stop being ready when they’re removed', async () => {
+    const onReady = vi.fn();
+    await db.photoDrafts.put({ side: 'front', bytes: found.bytes, foundEdges: true });
+    render(<PhotoCapture onReady={onReady} />);
+    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(onReady).toHaveBeenLastCalledWith(false));
+  });
+
+  it('no longer says what to do next itself: the find box does', async () => {
     const user = userEvent.setup();
     render(<PhotoCapture />);
     await user.upload(frontInput(), file());
     await user.click(await screen.findByRole('button', { name: 'Skip the back' }));
-    expect(screen.getByText('Now find it below, and these photos go with it.')).toBeInTheDocument();
+    expect(screen.queryByText('Now find it below, and these photos go with it.')).not.toBeInTheDocument();
   });
 
   it('says when it couldn’t find the edges', async () => {

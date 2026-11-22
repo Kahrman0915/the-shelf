@@ -28,6 +28,8 @@ export function AddScreen() {
   const initial = useMemo(() => emptyForm(), []);
   const [dirty, setDirty] = useState(false);
   const [byHand, setByHand] = useState(false);
+  // Whether the photos are done (PhotoCapture knows): Find has Claude read them then.
+  const [photosReady, setPhotosReady] = useState(false);
   const { leave, dialog } = useLeaveGuard(dirty);
   const back = () => leave(() => (location.key !== 'default' ? navigate(-1) : navigate('/')));
 
@@ -55,10 +57,19 @@ export function AddScreen() {
       </div>
       <SyncNotice />
       <h1 className="px-4 font-display text-[44px] leading-[44px] tracking-[0.01em]">Add a record</h1>
-      <PhotoCapture />
+      <PhotoCapture onReady={setPhotosReady} />
       <FindRecord
         records={records}
-        photos={waiting ? { drafts: waiting, onUsed: () => void clearDrafts().catch(console.error), onBack: (d) => void (d && restoreDrafts(d).catch(console.error)) } : undefined}
+        photos={
+          waiting
+            ? {
+                drafts: waiting,
+                ready: photosReady,
+                onUsed: () => void clearDrafts().catch(console.error),
+                onBack: (d) => void (d && restoreDrafts(d).catch(console.error)),
+              }
+            : undefined
+        }
       />
       <div className="px-4">
         <button

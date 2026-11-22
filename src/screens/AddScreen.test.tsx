@@ -7,6 +7,7 @@ import { CurrentShelfProvider } from '@/app/CurrentShelf';
 import type { FoundRecord } from '@/data/backend';
 import { db } from '@/data/db';
 import { saveDraft } from '@/data/photoDrafts';
+import { squareUpPhoto } from '@/photo/squareUp';
 import { FakeBackend } from '@/test/fakeBackend';
 import { AddScreen } from './AddScreen';
 import { RecordScreen } from './RecordScreen';
@@ -124,6 +125,54 @@ describe('AddScreen', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
     await waitFor(async () => expect(await db.photoDrafts.count()).toBe(1));
     expect(await screen.findByAltText('Front photo')).toBeInTheDocument();
+    expect((await db.records.toArray())[0].deletedAt).not.toBeNull();
+  });
+
+  it('taking the front and back finds the record and saves it with both photos', async () => {
+    let n = 0;
+    vi.mocked(squareUpPhoto).mockImplementation(async () => ({ bytes: new Uint8Array([++n]).buffer, foundEdges: true }));
+    const backend = new FakeBackend({});
+    backend.identified = { read: { artist: 'John Coltrane', title: 'Ascension', barcode: null, catalog: 'A-95', label: 'Impulse!' }, match: 'exact', results: [FOUND] };
+    const identify = vi.spyOn(backend, 'identifyRecord');
+    const user = userEvent.setup();
+    renderAdd('/add', backend);
+    const shot = () => new File([new Uint8Array([1])], 'shot.jpg', { type: 'image/jpeg' });
+    await user.upload(screen.getByLabelText('Front photo file'), shot());
+    expect(await screen.findByText('Now the back')).toBeInTheDocument();
+    await user.upload(screen.getByLabelText('Back photo file'), shot());
+    expect(await screen.findByText('On the shelf: Ascension')).toBeInTheDocument();
+    expect(screen.getByText('1966 · Impulse! · A-95')).toBeInTheDocument();
+    await waitFor(async () => expect(await db.photoDrafts.count()).toBe(0));
+    const records = await db.records.toArray();
+    expect(records).toHaveLength(1);
+    expect(records[0].coverPath).toMatch(new RegExp(`^${SHELF}/${records[0].id}/front-`));
+    expect(records[0].backPath).toMatch(new RegExp(`^${SHELF}/${records[0].id}/back-`));
+    // One reading, of both photos.
+    expect(identify).toHaveBeenCalledOnce();
+    expect(new Uint8Array(identify.mock.calls[0][0])[0]).toBe(1);
+    expect(new Uint8Array(identify.mock.calls[0][1]!)[0]).toBe(2);
+    expect(await screen.findByRole('button', { name: 'Take photos' })).toBeInTheDocument();
+  });
+
+  it('Undo after a recognised save brings the photos back without reading them again', async () => {
+    let n = 0;
+    vi.mocked(squareUpPhoto).mockImplementation(async () => ({ bytes: new Uint8Array([++n]).buffer, foundEdges: true }));
+    const backend = new FakeBackend({});
+    backend.identified = { read: { artist: 'John Coltrane', title: 'Ascension', barcode: null, catalog: 'A-95', label: 'Impulse!' }, match: 'exact', results: [FOUND] };
+    backend.discogsResults = [FOUND];
+    const user = userEvent.setup();
+    renderAdd('/add', backend);
+    const shot = () => new File([new Uint8Array([1])], 'shot.jpg', { type: 'image/jpeg' });
+    await user.upload(screen.getByLabelText('Front photo file'), shot());
+    await user.click(await screen.findByRole('button', { name: 'Skip the back' }));
+    await screen.findByText('On the shelf: Ascension');
+    await waitFor(async () => expect(await db.photoDrafts.count()).toBe(0));
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(await screen.findByAltText('Front photo')).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Find a record' })).toHaveValue('john coltrane ascension');
+    await waitFor(() => expect(backend.discogsCalls).toEqual(['john coltrane ascension']));
+    await new Promise((r) => setTimeout(r, 400));
+    expect(backend.identifyCalls).toBe(1);
     expect((await db.records.toArray())[0].deletedAt).not.toBeNull();
   });
 

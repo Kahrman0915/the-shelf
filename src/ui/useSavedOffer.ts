@@ -7,8 +7,10 @@ import { db } from '@/data/db';
 import type { NewPostcard } from '@/data/outbox';
 import type { Drafts } from '@/data/photos';
 
-/** A save that can still be undone: what to say, how to undo it, the photos it used, and what to send once it can't be undone. */
-export type SavedOffer = { text: string; undo: NewPostcard[]; drafts: Drafts | null; later: NewPostcard[] };
+/** A save that can still be undone: what to say, how to undo it, the photos it used, and what to send once it can't be undone.
+ *  A save Claude recognised also has the pressing it saved (`detail`, a second line) and what it read, as words for
+ *  the Find box (`readWords`), so Undo can search those instead of reading the sleeve again. */
+export type SavedOffer = { text: string; undo: NewPostcard[]; drafts: Drafts | null; later: NewPostcard[]; detail?: string | null; readWords?: string | null };
 
 export const NEEDS_SIGNAL = 'Needs signal';
 
@@ -20,9 +22,9 @@ export function messageFor(err: unknown): string {
 /**
  * The inline "On the shelf: … · Undo" for the save just made, for UNDO_WINDOW_MS.
  * An offer that ends without a successful Undo (its time runs out, a newer one replaces it, or the screen goes)
- * sends its `later` postcards. After a successful Undo, `onUndone` gets the offer's drafts.
+ * sends its `later` postcards. After a successful Undo, `onUndone` gets the offer, drafts and all.
  */
-export function useSavedOffer({ onUndone }: { onUndone: (drafts: Drafts | null) => void }) {
+export function useSavedOffer({ onUndone }: { onUndone: (undone: SavedOffer) => void }) {
   const { runNow } = useSyncStatus();
   const [saved, setSaved] = useState<SavedOffer | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +82,7 @@ export function useSavedOffer({ onUndone }: { onUndone: (drafts: Drafts | null) 
         setSaved(null);
         setError(null);
       }
-      undone.current(s.drafts);
+      undone.current(s);
     } catch (err) {
       if (open.current === s) setError(messageFor(err));
       else sendLater(s);
