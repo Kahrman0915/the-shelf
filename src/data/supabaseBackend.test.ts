@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BackendError, CLAUDE_DOWN, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED } from './backend';
+import { BackendError, CLAUDE_DOWN, DISCOGS_MESSAGES, NO_SIGNAL, NOT_ENOUGH_RATINGS, REJECTED, SUGGEST_DOWN } from './backend';
 import { StorageClient } from '@supabase/storage-js';
 import { AUTH_STORAGE_KEY } from './supabase';
-import { base64, DISCOGS_TIMEOUT_MS, offlineLooking, rejectionReason, supabaseBackend } from './supabaseBackend';
+import { base64, DISCOGS_TIMEOUT_MS, offlineLooking, rejectionReason, SUGGEST_TIMEOUT_MS, supabaseBackend } from './supabaseBackend';
 
 /** A chainable stand-in for a Supabase PostgrestFilterBuilder: every filter/order method returns
  *  the same object, and it resolves (like the real one does when awaited) when range() is called,
@@ -691,5 +691,122 @@ describe('supabaseBackend() sections', () => {
     await expect(supabaseBackend(offline.client).mergeSection('a', 'b')).rejects.toThrow(new BackendError(NO_SIGNAL));
     const refused = mergeClient({ error: { code: 'P0001', message: 'the catch-all section can\'t be merged away' } });
     await expect(supabaseBackend(refused.client).mergeSection('a', 'b')).rejects.toThrow(new BackendError(REJECTED.other('P0001')));
+  });
+});
+
+describe('supabaseBackend() suggestions', () => {
+  it('reads every suggestion on the shelf from the suggestions table, paged and in a stable order', async () => {
+    const tables: string[] = [];
+    const { builder, calls } = pagedQuery([Array.from({ length: 1000 }, (_, i) => ({ id: `g${i}` })), [{ id: 'g1000' }]]);
+    const client = { from: (t: string) => (tables.push(t), { select: () => builder }) } as never;
+    const rows = await supabaseBackend(client).suggestions('shelf-1');
+    expect(rows).toHaveLength(1001);
+    expect(tables[0]).toBe('suggestions');
+    expect(calls.filter((c) => c.method === 'eq')[0].args).toEqual(['shelf_id', 'shelf-1']);
+    expect(calls.filter((c) => c.method === 'order').map((c) => c.args[0]).slice(0, 2)).toEqual(['created_at', 'id']);
+    expect(calls.filter((c) => c.method === 'range')).toEqual([
+      { method: 'range', args: [0, 999] },
+      { method: 'range', args: [1000, 1999] },
+    ]);
+  });
+
+  it('patchSuggestion updates by id with snake_case columns, and says missing when no row matched', async () => {
+    const { client, calls } = writeClient({ update: [{ data: [{ id: 'sug-1' }], error: null }, { data: [], error: null }] });
+    const fields = { status: 'added', decided_by: 'u-1', decided_at: '2026-11-23T10:00:00.000Z' };
+    await expect(supabaseBackend(client).patchSuggestion('sug-1', fields)).resolves.toBe('patched');
+    expect(calls).toEqual([
+      { op: 'suggestions.update', args: [fields] },
+      { op: 'suggestions.eq', args: ['id', 'sug-1'] },
+      { op: 'suggestions.select', args: ['id'] },
+    ]);
+    await expect(supabaseBackend(client).patchSuggestion('sug-1', { status: 'dismissed' })).resolves.toBe('missing');
+  });
+
+  it('patchSuggestion throws NO_SIGNAL offline and the permission reason when refused', async () => {
+    const offline = writeClient({ update: [{ error: { message: 'Failed to fetch' } }] });
+    await expect(supabaseBackend(offline.client).patchSuggestion('sug-1', {})).rejects.toThrow(new BackendError(NO_SIGNAL));
+    const denied = writeClient({ update: [{ error: { code: '42501', message: 'permission denied' } }] });
+    await expect(supabaseBackend(denied.client).patchSuggestion('sug-1', {})).rejects.toThrow(new BackendError(REJECTED.permission));
+  });
+});
+
+describe('supabaseBackend().suggestRecords', () => {
+  const withSession = (session: { access_token: string } | null) =>
+    ({ auth: { getSession: vi.fn().mockResolvedValue({ data: { session }, error: null }) } }) as never;
+  const reply = (status: number, body: unknown = {}) => new Response(JSON.stringify(body), { status });
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
+    vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'pub-key');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('posts {} to suggest-records and returns how many were added', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(reply(200, { added: 6 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(supabaseBackend(withSession({ access_token: 'tok' })).suggestRecords()).resolves.toEqual({ added: 6 });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://example.supabase.co/functions/v1/suggest-records');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer tok', apikey: 'pub-key', 'Content-Type': 'application/json' });
+    expect(JSON.parse(init.body)).toEqual({});
+  });
+
+  it('waits 60 000 ms', async () => {
+    expect(SUGGEST_TIMEOUT_MS).toBe(60_000);
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(200, { added: 0 })));
+    await supabaseBackend(withSession({ access_token: 't' })).suggestRecords();
+    expect(timeout).toHaveBeenCalledWith(60_000);
+    timeout.mockRestore();
+  });
+
+  it('maps a 400 not-enough-ratings to its message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(400, { error: 'not-enough-ratings' })));
+    const failure = supabaseBackend(withSession({ access_token: 't' })).suggestRecords();
+    await expect(failure).rejects.toBeInstanceOf(BackendError);
+    await expect(failure).rejects.toThrow(NOT_ENOUGH_RATINGS);
+  });
+
+  it.each([
+    [400, { error: 'something-else' }],
+    [500, { error: 'not-configured' }],
+    [502, { error: 'down' }],
+    [429, {}],
+    [405, {}],
+  ])('maps %i to SUGGEST_DOWN', async (status, body) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(status, body)));
+    await expect(supabaseBackend(withSession({ access_token: 't' })).suggestRecords()).rejects.toThrow(SUGGEST_DOWN);
+  });
+
+  it('maps an unreadable 200 to SUGGEST_DOWN', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>', { status: 200 })));
+    await expect(supabaseBackend(withSession({ access_token: 't' })).suggestRecords()).rejects.toThrow(SUGGEST_DOWN);
+  });
+
+  it('maps a 401 to sign in again, and no session likewise', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(401, { error: 'not-signed-in' })));
+    await expect(supabaseBackend(withSession({ access_token: 't' })).suggestRecords()).rejects.toThrow('Sign in again to look it up.');
+    await expect(supabaseBackend(withSession(null)).suggestRecords()).rejects.toThrow('Sign in again to look it up.');
+  });
+
+  it('maps a timeout to SUGGEST_DOWN and a network failure to NO_SIGNAL', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('The request timed out.', 'AbortError')));
+    await expect(supabaseBackend(withSession({ access_token: 't' })).suggestRecords()).rejects.toThrow(SUGGEST_DOWN);
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    await expect(supabaseBackend(withSession({ access_token: 't' })).suggestRecords()).rejects.toThrow(NO_SIGNAL);
+  });
+
+  it('maps anything to NO_SIGNAL when offline', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
+    try {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('The request timed out.', 'AbortError')));
+      await expect(supabaseBackend(withSession({ access_token: 't' })).suggestRecords()).rejects.toThrow(NO_SIGNAL);
+    } finally {
+      delete (navigator as unknown as Record<string, unknown>).onLine;
+    }
   });
 });

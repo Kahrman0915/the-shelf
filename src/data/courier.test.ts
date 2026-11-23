@@ -4,7 +4,7 @@ import { REJECTED, type ShelfWriter } from './backend';
 import { discardPostcard, pushOutbox, retryPostcard, syncOnce } from './courier';
 import { clearPhoneIfNothingWaiting, ShelfDB, writeSession } from './db';
 import { savePostcards, type NewPostcard } from './outbox';
-import { recordToRow } from './rowMapping';
+import { recordToRow, suggestionToRow } from './rowMapping';
 import type { Section, ShelfRecord } from './schema';
 import { pullShelf } from './sync';
 import { sectionIdFor } from '@/domain/sections';
@@ -86,6 +86,7 @@ describe('pushOutbox', () => {
       deletePhoto: (path) => backend.deletePhoto(path),
       insertSection: (row) => backend.insertSection(row),
       patchSection: (id, fields) => backend.patchSection(id, fields),
+      patchSuggestion: (id, fields) => backend.patchSuggestion(id, fields),
       mergeSection: (from, into) => backend.mergeSection(from, into),
       patchRecord: async (id, fields) => {
         calls++;
@@ -193,6 +194,7 @@ describe('pushOutbox', () => {
       deletePhoto: (path) => backend.deletePhoto(path),
       insertSection: (row) => backend.insertSection(row),
       patchSection: (id, fields) => backend.patchSection(id, fields),
+      patchSuggestion: (id, fields) => backend.patchSuggestion(id, fields),
       mergeSection: (from, into) => backend.mergeSection(from, into),
       patchRecord: async () => {
         throw bug;
@@ -446,5 +448,42 @@ describe('section postcards', () => {
     await discardPostcard(db, backend, SHELF, rejected.seq);
     expect(await db.sections.get(S1)).toBeUndefined();
     expect(await db.outbox.count()).toBe(0);
+  });
+});
+
+describe('suggestion postcards', () => {
+  const SUG = '55555555-5555-4555-8555-555555555555';
+  const decide = (id: string, status = 'dismissed'): NewPostcard => ({
+    ...card, recordId: id, kind: 'suggestion.patch', fields: { status: status as 'dismissed', decidedBy: ME, decidedAt: WHEN },
+  });
+  const seeded = () => suggestionToRow({
+    id: SUG, shelfId: SHELF, artist: 'Sade', title: 'Love Deluxe', reason: 'Because you like Diamond Life.', discogsReleaseId: null, discogsGenres: [], discogsStyles: [],
+    status: 'pending', decidedBy: null, decidedAt: null, roundAt: WHEN, createdAt: WHEN, updatedAt: WHEN,
+  });
+
+  it('sends the decision through the writer', async () => {
+    backend.suggestionRows.push(seeded());
+    await pullShelf(db, backend, SHELF);
+    await savePostcards(db, [decide(SUG)]);
+    expect(await pushOutbox(db, backend)).toEqual({ sent: 1, rejected: 0, noSignal: false });
+    expect(backend.suggestionRows[0]).toMatchObject({ status: 'dismissed', decided_by: ME, decided_at: WHEN });
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('counts a suggestion the shelf no longer has as sent', async () => {
+    await savePostcards(db, [decide(SUG)]);
+    expect(await pushOutbox(db, backend)).toEqual({ sent: 1, rejected: 0, noSignal: false });
+    expect(await db.outbox.count()).toBe(0);
+  });
+
+  it('holds a later postcard for a suggestion behind a rejected earlier one', async () => {
+    backend.suggestionRows.push(seeded());
+    await pullShelf(db, backend, SHELF);
+    await savePostcards(db, [decide(SUG, 'added'), decide(SUG, 'dismissed')]);
+    backend.rejectNext = 'The shelf refused this change. (test)';
+    const result = await pushOutbox(db, backend);
+    expect(result).toEqual({ sent: 0, rejected: 1, noSignal: false });
+    expect((await db.outbox.orderBy('seq').toArray()).map((p) => p.state)).toEqual(['rejected', 'waiting']);
+    expect(backend.suggestionRows[0].status).toBe('pending');
   });
 });

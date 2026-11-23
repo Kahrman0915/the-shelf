@@ -1,4 +1,4 @@
-import { RatingSchema, RecordSchema, SectionSchema, type Rating, type Section, type ShelfRecord } from './schema';
+import { RatingSchema, RecordSchema, SectionSchema, SuggestionSchema, type Rating, type Section, type ShelfRecord, type Suggestion } from './schema';
 
 export type RecordRow = {
   id: string;
@@ -230,6 +230,82 @@ export function sectionFromRow(row: Record<string, unknown>): Section {
   if (!parsed.success) {
     const name = typeof row.id === 'string' ? row.id : 'section';
     throw new RowError(parsed.error.issues.map((i) => `${name}: ${i.path.join('.') || '(section)'} ${i.message}`));
+  }
+  return parsed.data;
+}
+
+export type SuggestionRow = {
+  id: string;
+  shelf_id: string;
+  artist: string;
+  title: string;
+  reason: string;
+  discogs_release_id: number | null;
+  discogs_genres: string[];
+  discogs_styles: string[];
+  status: Suggestion['status'];
+  decided_by: string | null;
+  decided_at: string | null;
+  round_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
+/** The columns a member may change on public.suggestions. */
+export type SuggestionPatchRow = Partial<{ status: string; decided_by: string | null; decided_at: string | null }>;
+
+export function suggestionToRow(s: Suggestion): SuggestionRow {
+  return {
+    id: s.id,
+    shelf_id: s.shelfId,
+    artist: s.artist,
+    title: s.title,
+    reason: s.reason,
+    discogs_release_id: s.discogsReleaseId,
+    discogs_genres: s.discogsGenres,
+    discogs_styles: s.discogsStyles,
+    status: s.status,
+    decided_by: s.decidedBy,
+    decided_at: s.decidedAt,
+    round_at: s.roundAt,
+    created_at: s.createdAt,
+    updated_at: s.updatedAt,
+  };
+}
+
+const SUGGESTION_PATCH_COLUMNS = { status: 'status', decidedBy: 'decided_by', decidedAt: 'decided_at' } as const;
+
+/** Only the decision fields may go into an update; anything else would be refused by the server, so fail here. */
+export function suggestionPatchToRow(fields: Partial<Pick<Suggestion, 'status' | 'decidedBy' | 'decidedAt'>>): SuggestionPatchRow {
+  const out: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(fields)) {
+    const column = (SUGGESTION_PATCH_COLUMNS as Record<string, string>)[name];
+    if (!column) throw new Error(`Not an editable suggestion field: ${name}`);
+    out[column] = value;
+  }
+  return out as SuggestionPatchRow;
+}
+
+export function suggestionFromRow(row: Record<string, unknown>): Suggestion {
+  const parsed = SuggestionSchema.safeParse({
+    id: row.id,
+    shelfId: row.shelf_id,
+    artist: row.artist,
+    title: row.title,
+    reason: row.reason,
+    discogsReleaseId: num(row.discogs_release_id),
+    discogsGenres: row.discogs_genres,
+    discogsStyles: row.discogs_styles,
+    status: row.status,
+    decidedBy: row.decided_by,
+    decidedAt: row.decided_at,
+    roundAt: row.round_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  });
+  if (!parsed.success) {
+    const name = typeof row.id === 'string' ? row.id : 'suggestion';
+    throw new RowError(parsed.error.issues.map((i) => `${name}: ${i.path.join('.') || '(suggestion)'} ${i.message}`));
   }
   return parsed.data;
 }

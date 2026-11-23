@@ -1,9 +1,9 @@
 import collection from '../../collection.json';
 import { KAHRMANS_NINE, type SectionSeed } from '@/domain/sections';
-import { BackendError, CLAUDE_DOWN, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED, type Backend, type FoundRecord, type Identified, type Invite, type Member, type SignedIn } from '@/data/backend';
+import { BackendError, CLAUDE_DOWN, DISCOGS_MESSAGES, NO_SIGNAL, NOT_ENOUGH_RATINGS, REJECTED, SUGGEST_DOWN, type Backend, type FoundRecord, type Identified, type Invite, type Member, type SignedIn } from '@/data/backend';
 import { sectionsFromSet } from '@/data/db';
 import { importCollection } from '@/data/importCollection';
-import { ratingToRow, recordToRow, sectionToRow, type NewRecordRow, type NewSectionRow, type RatingRow, type RecordPatchRow, type RecordRow, type SectionPatchRow, type SectionRow } from '@/data/rowMapping';
+import { ratingToRow, recordToRow, sectionToRow, type NewRecordRow, type NewSectionRow, type RatingRow, type RecordPatchRow, type RecordRow, type SectionPatchRow, type SectionRow, type SuggestionPatchRow, type SuggestionRow } from '@/data/rowMapping';
 
 type Options = {
   users?: Record<string, string>;
@@ -13,6 +13,7 @@ type Options = {
   ratings?: RatingRow[];
   members?: Member[];
   sections?: SectionRow[];
+  suggestions?: SuggestionRow[];
   signedIn?: SignedIn | null;
 };
 
@@ -39,6 +40,13 @@ export class FakeBackend implements Backend {
   funFacts = new Map<string, { fact: string; sourceUrl: string } | null>();
   /** Makes identifyRecord() and findFunFact() fail the way the real ones do. */
   claudeFails: 'down' | null = null;
+  /** What the next suggestRecords() adds to the signed-in person's shelf. */
+  suggested: { artist: string; title: string; reason: string; discogsGenres?: string[] }[] = [];
+  /** Makes suggestRecords() fail. 'lost-reply' adds the suggestions first, like a timed-out call whose function finished. */
+  suggestFails: 'down' | 'not-enough-ratings' | 'lost-reply' | null = null;
+  suggestCalls = 0;
+  /** The suggestions on the "server". */
+  suggestionRows: SuggestionRow[];
   identifyCalls = 0;
   funFactCalls: string[] = [];
   /** The photos on the "server", by storage path. */
@@ -61,6 +69,7 @@ export class FakeBackend implements Backend {
     this.ratingRows = [...(o.ratings ?? [])];
     this.memberList = [...(o.members ?? [])];
     this.sectionRows = (o.sections ?? []).map((r) => ({ ...r }));
+    this.suggestionRows = (o.suggestions ?? []).map((r) => ({ ...r }));
     this.signedIn = o.signedIn ?? null;
   }
 
@@ -126,6 +135,11 @@ export class FakeBackend implements Backend {
     return this.sectionRows.filter((s) => s.shelf_id === shelfId).map((s) => ({ ...s })) as unknown as Record<string, unknown>[];
   }
 
+  async suggestions(shelfId: string) {
+    this.guard();
+    return this.suggestionRows.filter((s) => s.shelf_id === shelfId).map((s) => ({ ...s })) as unknown as Record<string, unknown>[];
+  }
+
   async members(shelfId: string) {
     this.guard();
     return this.memberList.filter((m) => m.shelfId === shelfId).map((m) => ({ ...m }));
@@ -177,6 +191,25 @@ export class FakeBackend implements Backend {
     return found ? { ...found } : null;
   }
 
+  async suggestRecords() {
+    this.guard();
+    this.suggestCalls += 1;
+    if (this.suggestFails === 'down') throw new BackendError(SUGGEST_DOWN);
+    if (this.suggestFails === 'not-enough-ratings') throw new BackendError(NOT_ENOUGH_RATINGS);
+    const shelfId = this.signedIn ? this.shelfFor[this.signedIn.userId] : undefined;
+    if (!shelfId) throw new BackendError(SUGGEST_DOWN);
+    const now = this.stamp();
+    for (const s of this.suggested) {
+      this.suggestionRows.push({
+        id: crypto.randomUUID(), shelf_id: shelfId, artist: s.artist, title: s.title, reason: s.reason, discogs_release_id: null,
+        discogs_genres: [...(s.discogsGenres ?? [])], discogs_styles: [], status: 'pending', decided_by: null, decided_at: null,
+        round_at: now, created_at: now, updated_at: now,
+      });
+    }
+    if (this.suggestFails === 'lost-reply') throw new BackendError(SUGGEST_DOWN);
+    return { added: this.suggested.length };
+  }
+
   private stamp(): string {
     this.lastStamp = Math.max(Date.now(), this.lastStamp + 1);
     return new Date(this.lastStamp).toISOString();
@@ -215,6 +248,14 @@ export class FakeBackend implements Backend {
   async patchRecord(id: string, fields: RecordPatchRow) {
     this.beginWrite();
     const row = this.recordRows.find((r) => r.id === id);
+    if (row) Object.assign(row, fields, { updated_at: this.stamp() });
+    this.endWrite();
+    return row ? ('patched' as const) : ('missing' as const);
+  }
+
+  async patchSuggestion(id: string, fields: SuggestionPatchRow) {
+    this.beginWrite();
+    const row = this.suggestionRows.find((s) => s.id === id);
     if (row) Object.assign(row, fields, { updated_at: this.stamp() });
     this.endWrite();
     return row ? ('patched' as const) : ('missing' as const);

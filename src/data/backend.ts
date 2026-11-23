@@ -1,5 +1,5 @@
 import type { FoundRecord, Identified } from '../../supabase/functions/_shared/shape';
-import type { NewRecordRow, NewSectionRow, RecordPatchRow, SectionPatchRow } from './rowMapping';
+import type { NewRecordRow, NewSectionRow, RecordPatchRow, SectionPatchRow, SuggestionPatchRow } from './rowMapping';
 
 export type { FoundRecord, Identified, Read } from '../../supabase/functions/_shared/shape';
 
@@ -16,6 +16,8 @@ export interface ShelfSource {
   members(shelfId: string): Promise<Member[]>;
   /** Every section on the shelf, as raw rows. */
   sections(shelfId: string): Promise<Record<string, unknown>[]>;
+  /** Every suggestion on the shelf, as raw rows. */
+  suggestions(shelfId: string): Promise<Record<string, unknown>[]>;
 }
 
 /** Writes. A BackendError whose message is NO_SIGNAL means "try later"; any other BackendError message is a plain-words rejection reason. */
@@ -25,6 +27,8 @@ export interface ShelfWriter {
   /** One section per request: the server's claim trigger checks one row at a time. */
   insertSection(row: NewSectionRow): Promise<'inserted' | 'already-there'>;
   patchSection(id: string, fields: SectionPatchRow): Promise<'patched' | 'missing'>;
+  /** Decides a suggestion (status, who, when). */
+  patchSuggestion(id: string, fields: SuggestionPatchRow): Promise<'patched' | 'missing'>;
   /** Moves every record from one section into another, hands over its genres and holiday, removes it. A `from` that's already gone counts as done (a resend). */
   mergeSection(fromId: string, intoId: string): Promise<void>;
   setRating(recordId: string, userId: string, value: number): Promise<void>;
@@ -50,6 +54,8 @@ export interface Backend extends ShelfSource, ShelfWriter {
   identifyRecord(front: ArrayBuffer, back: ArrayBuffer | null): Promise<Identified>;
   /** A sourced fun fact about a record, or null when none was found or the answer came without a source. */
   findFunFact(r: { artist: string; title: string; year: number | null; label: string | null }): Promise<{ fact: string; sourceUrl: string } | null>;
+  /** Has Claude suggest records for the shelf's want list; they land on the shelf (read them with a pull). Resolves how many were added. */
+  suggestRecords(): Promise<{ added: number }>;
   /** The photo's bytes, or null when it isn't there (yet). Throws BackendError(NO_SIGNAL) offline. */
   downloadPhoto(path: string): Promise<ArrayBuffer | null>;
 }
@@ -78,6 +84,12 @@ export const DISCOGS_MESSAGES = {
 
 /** Shown when Claude couldn't read the sleeve or find a fact (other than having no signal). */
 export const CLAUDE_DOWN = 'Couldn’t read the sleeve. Try again, or search below.';
+
+/** Suggestions need at least 5 rated records to go on. */
+export const NOT_ENOUGH_RATINGS = 'Rate a few more records first. Suggestions need at least 5 ratings.';
+
+/** Shown when Claude couldn’t come up with suggestions (other than having no signal). */
+export const SUGGEST_DOWN = 'Couldn’t find suggestions just now. Try again in a minute.';
 
 export const REJECTED = {
   missing: 'That record is no longer on your shelf.',

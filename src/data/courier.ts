@@ -1,7 +1,7 @@
 import { BackendError, NO_SIGNAL, REJECTED, type ShelfSource, type ShelfWriter } from './backend';
 import type { ShelfDB } from './db';
 import type { Postcard } from './outbox';
-import { newRecordToRow, newSectionToRow, patchToRow, sectionPatchToRow } from './rowMapping';
+import { newRecordToRow, newSectionToRow, patchToRow, sectionPatchToRow, suggestionPatchToRow } from './rowMapping';
 import { forgetLastPull, pullShelf } from './sync';
 
 export type PushResult = { sent: number; rejected: number; noSignal: boolean };
@@ -22,6 +22,10 @@ async function send(db: ShelfDB, writer: ShelfWriter, p: Postcard): Promise<'sen
       return 'sent';
     case 'section.merge':
       await writer.mergeSection(p.recordId, p.fields.into);
+      return 'sent';
+    case 'suggestion.patch':
+      // A suggestion that's gone (a newer round replaced it) has nothing left to decide: done, not refused.
+      await writer.patchSuggestion(p.recordId, suggestionPatchToRow(p.fields));
       return 'sent';
     case 'rating.set':
       await writer.setRating(p.recordId, p.userId, p.fields.value);

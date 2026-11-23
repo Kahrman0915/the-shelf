@@ -1,7 +1,7 @@
 import { BackendError, REJECTED, type ShelfSource } from './backend';
 import { LAST_PULLED_PREFIX, readSession, type ShelfDB } from './db';
 import { applyPostcard } from './outbox';
-import { ratingFromRow, recordFromRow, sectionFromRow } from './rowMapping';
+import { ratingFromRow, recordFromRow, sectionFromRow, suggestionFromRow } from './rowMapping';
 
 /** Re-ask for the last five minutes each time, so a change committed a moment late isn't missed. */
 const OVERLAP_MS = 5 * 60 * 1000;
@@ -9,7 +9,7 @@ const OVERLAP_MS = 5 * 60 * 1000;
 const lastPulledKey = (shelfId: string) => `${LAST_PULLED_PREFIX}${shelfId}`;
 
 /**
- * The courier's pickup run: fetch what changed on the shelf since last time, plus every rating, member and section,
+ * The courier's pickup run: fetch what changed on the shelf since last time, plus every rating, member, section and suggestion,
  * check it all, then write it in one go. If anything fails, the phone keeps what it had.
  * Writes nothing unless the phone still holds this shelf (its remembered session).
  */
@@ -17,18 +17,20 @@ export async function pullShelf(db: ShelfDB, source: ShelfSource, shelfId: strin
   const last = (await db.meta.get(lastPulledKey(shelfId)))?.value ?? null;
   const since = last ? new Date(Date.parse(last) - OVERLAP_MS).toISOString() : null;
 
-  const [recordRows, ratingRows, members, sectionRows] = await Promise.all([
+  const [recordRows, ratingRows, members, sectionRows, suggestionRows] = await Promise.all([
     source.recordsSince(shelfId, since),
     source.ratings(shelfId),
     source.members(shelfId),
     source.sections(shelfId),
+    source.suggestions(shelfId),
   ]);
   const records = recordRows.map(recordFromRow);
   const ratings = ratingRows.map(ratingFromRow);
   const sections = sectionRows.map(sectionFromRow);
+  const suggestions = suggestionRows.map(suggestionFromRow);
   const newest = records.reduce<string | null>((max, r) => (max === null || Date.parse(r.updatedAt) > Date.parse(max) ? r.updatedAt : max), last);
 
-  await db.transaction('rw', [db.records, db.ratings, db.sections, db.members, db.meta, db.outbox], async () => {
+  await db.transaction('rw', [db.records, db.ratings, db.sections, db.suggestions, db.members, db.meta, db.outbox], async () => {
     // The phone was cleared, or opened someone else's shelf, while this pull was on its way: drop it.
     if ((await readSession(db))?.shelfId !== shelfId) return;
     await db.records.bulkPut(records);
@@ -37,6 +39,8 @@ export async function pullShelf(db: ShelfDB, source: ShelfSource, shelfId: strin
     await db.ratings.bulkPut(ratings);
     await db.sections.where('shelfId').equals(shelfId).delete();
     await db.sections.bulkPut(sections);
+    await db.suggestions.where('shelfId').equals(shelfId).delete();
+    await db.suggestions.bulkPut(suggestions);
     await db.members.where('shelfId').equals(shelfId).delete();
     await db.members.bulkPut(members);
     await reapplyOutbox(db);

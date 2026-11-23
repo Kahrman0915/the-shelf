@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BackendError, CLAUDE_DOWN, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED, type FoundRecord } from '@/data/backend';
+import { BackendError, CLAUDE_DOWN, DISCOGS_MESSAGES, NO_SIGNAL, NOT_ENOUGH_RATINGS, REJECTED, SUGGEST_DOWN, type FoundRecord } from '@/data/backend';
 import { newRecordToRow, newSectionToRow, sectionToRow, type SectionRow } from '@/data/rowMapping';
 import type { Section, ShelfRecord } from '@/data/schema';
 import { FakeBackend, collectionRows } from './fakeBackend';
@@ -292,5 +292,60 @@ describe('FakeBackend sections', () => {
     b.loseNextReply = true;
     await expect(b.patchSection(id(1), { name: 'x' })).rejects.toThrow(NO_SIGNAL);
     expect(b.sectionRow(id(1))?.name).toBe('x');
+  });
+});
+
+describe('FakeBackend suggestions', () => {
+  const ME = '22222222-2222-4222-8222-222222222222';
+  const made = () => {
+    const b = new FakeBackend({ shelfFor: { [ME]: SHELF }, signedIn: { userId: ME, email: 'me@example.com' } });
+    b.suggested = [{ artist: 'Sade', title: 'Love Deluxe', reason: 'Because you like Diamond Life.', discogsGenres: ['Funk / Soul'] }, { artist: 'Anita Baker', title: 'Rapture', reason: 'Smooth and warm.' }];
+    return b;
+  };
+
+  it('suggestRecords inserts what it was told to and says how many', async () => {
+    const b = made();
+    expect(await b.suggestRecords()).toEqual({ added: 2 });
+    expect(b.suggestCalls).toBe(1);
+    const rows = await b.suggestions(SHELF);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ shelf_id: SHELF, artist: 'Sade', status: 'pending', discogs_genres: ['Funk / Soul'], discogs_styles: [], discogs_release_id: null, decided_by: null });
+    expect(b.suggestionRows).toHaveLength(2);
+  });
+
+  it('fails offline with NO_SIGNAL', async () => {
+    const b = made();
+    b.online = false;
+    await expect(b.suggestRecords()).rejects.toThrow(NO_SIGNAL);
+    await expect(b.suggestions(SHELF)).rejects.toThrow(NO_SIGNAL);
+  });
+
+  it('down and not-enough-ratings insert nothing', async () => {
+    const b = made();
+    b.suggestFails = 'down';
+    await expect(b.suggestRecords()).rejects.toThrow(SUGGEST_DOWN);
+    b.suggestFails = 'not-enough-ratings';
+    await expect(b.suggestRecords()).rejects.toThrow(NOT_ENOUGH_RATINGS);
+    expect(b.suggestionRows).toHaveLength(0);
+    expect(b.suggestCalls).toBe(2);
+  });
+
+  it('lost-reply inserts, then throws SUGGEST_DOWN', async () => {
+    const b = made();
+    b.suggestFails = 'lost-reply';
+    await expect(b.suggestRecords()).rejects.toThrow(SUGGEST_DOWN);
+    expect(b.suggestionRows).toHaveLength(2);
+  });
+
+  it('patchSuggestion changes the decision fields; an unknown id is missing; a lost reply keeps the write', async () => {
+    const b = made();
+    await b.suggestRecords();
+    const id = b.suggestionRows[0].id;
+    expect(await b.patchSuggestion(id, { status: 'dismissed', decided_by: ME, decided_at: '2026-11-23T11:00:00.000Z' })).toBe('patched');
+    expect(b.suggestionRows[0]).toMatchObject({ status: 'dismissed', decided_by: ME });
+    expect(await b.patchSuggestion('00000000-0000-4000-8000-0000000000ff', { status: 'added' })).toBe('missing');
+    b.loseNextReply = true;
+    await expect(b.patchSuggestion(id, { status: 'added' })).rejects.toThrow(NO_SIGNAL);
+    expect(b.suggestionRows[0].status).toBe('added');
   });
 });

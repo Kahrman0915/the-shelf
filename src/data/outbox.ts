@@ -1,7 +1,7 @@
 import { BackendError } from './backend';
 import type { ShelfDB } from './db';
 import type { StoredPhoto } from './photos';
-import { RatingSchema, RecordSchema, checkSection, type Section, type ShelfRecord } from './schema';
+import { RatingSchema, RecordSchema, checkSection, type Section, type ShelfRecord, type Suggestion } from './schema';
 
 type Base = {
   seq: number;
@@ -20,6 +20,7 @@ export type Postcard =
   | (Base & { kind: 'section.create'; fields: Section })
   | (Base & { kind: 'section.patch'; fields: Partial<Section> })
   | (Base & { kind: 'section.merge'; fields: { into: string } })
+  | (Base & { kind: 'suggestion.patch'; fields: Pick<Suggestion, 'status' | 'decidedBy' | 'decidedAt'> })
   | (Base & { kind: 'rating.set'; fields: { value: number } })
   | (Base & { kind: 'photo.upload'; fields: { path: string } })
   | (Base & { kind: 'photo.delete'; fields: { path: string } });
@@ -53,7 +54,7 @@ async function claim(db: ShelfDB, claimer: Section, fields: Partial<Section>): P
 /**
  * Turns a postcard into notebook changes. The only code that does. Safe to apply again:
  * create only when missing, patch merges, rating.set overwrites with the same value.
- * Call inside a rw transaction over records + ratings + sections.
+ * Call inside a rw transaction over records + ratings + sections + suggestions.
  */
 export async function applyPostcard(db: ShelfDB, p: NewPostcard | Postcard): Promise<void> {
   switch (p.kind) {
@@ -102,6 +103,12 @@ export async function applyPostcard(db: ShelfDB, p: NewPostcard | Postcard): Pro
       await db.sections.delete(from.id);
       return;
     }
+    case 'suggestion.patch': {
+      const existing = await db.suggestions.get(p.recordId);
+      if (!existing) return;
+      await db.suggestions.put({ ...existing, ...p.fields });
+      return;
+    }
     case 'rating.set': {
       const rating = RatingSchema.safeParse({ recordId: p.recordId, userId: p.userId, value: p.fields.value, updatedAt: p.createdAt });
       if (!rating.success) {
@@ -123,7 +130,7 @@ export async function applyPostcard(db: ShelfDB, p: NewPostcard | Postcard): Pro
 
 /** Apply each postcard to the notebook and queue it, all in one transaction. Photo bytes are kept in the same go. */
 export async function savePostcards(db: ShelfDB, postcards: NewPostcard[], photos: StoredPhoto[] = []): Promise<void> {
-  await db.transaction('rw', [db.records, db.ratings, db.sections, db.outbox, db.photos], async () => {
+  await db.transaction('rw', [db.records, db.ratings, db.sections, db.suggestions, db.outbox, db.photos], async () => {
     await db.photos.bulkPut(photos);
     for (const p of postcards) await applyPostcard(db, p);
     for (const p of postcards) await db.outbox.add({ ...p, state: 'waiting', reason: null } as Postcard);

@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import type { Member } from './backend';
 import { db } from './db';
 import { storageKept, type Postcard } from './outbox';
-import type { Rating, Section, ShelfRecord } from './schema';
+import type { Rating, Section, ShelfRecord, Suggestion } from './schema';
 
 export type ShelfItem = { record: ShelfRecord; myRating: number | undefined };
 
@@ -45,6 +45,11 @@ export function useMembers(shelfId: string): Member[] | undefined {
 /** The shelf's sections in shelf order; undefined while loading. */
 export function useSections(shelfId: string): Section[] | undefined {
   return useLiveQuery(async () => (await db.sections.where('shelfId').equals(shelfId).toArray()).sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)), [shelfId]);
+}
+
+/** Every suggestion on the shelf, whatever its status; undefined while loading. */
+export function useSuggestions(shelfId: string): Suggestion[] | undefined {
+  return useLiveQuery(() => db.suggestions.where('shelfId').equals(shelfId).toArray(), [shelfId]);
 }
 
 /** How many live records each section holds, by section id (a section with none has no entry); undefined while loading. */

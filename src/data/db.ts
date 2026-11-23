@@ -3,7 +3,7 @@ import { BackendError, type Member } from './backend';
 import type { Postcard } from './outbox';
 import type { DraftPhoto, StoredPhoto } from './photos';
 import { KAHRMANS_NINE, LEGACY_GENRES, STARTER_SET, sectionIdFor, type LegacyGenre, type SectionSeed } from '@/domain/sections';
-import type { Rating, Section, ShelfRecord } from './schema';
+import type { Rating, Section, ShelfRecord, Suggestion } from './schema';
 
 export type Meta = { key: string; value: string };
 
@@ -17,6 +17,7 @@ export class ShelfDB extends Dexie {
   photos!: EntityTable<StoredPhoto, 'path'>;
   photoDrafts!: EntityTable<DraftPhoto, 'side'>;
   sections!: EntityTable<Section, 'id'>;
+  suggestions!: EntityTable<Suggestion, 'id'>;
 
   constructor(name = 'the-shelf') {
     super(name);
@@ -129,6 +130,17 @@ export class ShelfDB extends Dexie {
         // The first pull after updating fetches everything, sections included, and corrects anything seeded.
         await tx.table('meta').where('key').startsWith(LAST_PULLED_PREFIX).delete();
       });
+    this.version(8).stores({
+      records: 'id, shelfId, status, sectionId, importKey',
+      ratings: '[recordId+userId], recordId, userId',
+      members: '[shelfId+userId], shelfId',
+      meta: 'key',
+      outbox: '++seq, recordId, state',
+      photos: 'path',
+      photoDrafts: 'side',
+      sections: 'id, shelfId',
+      suggestions: 'id, shelfId',
+    });
   }
 }
 
@@ -193,7 +205,7 @@ export async function writeSession(database: ShelfDB, session: RememberedSession
   await database.meta.put({ key: SESSION_KEY, value: JSON.stringify(session) });
 }
 
-const everything = (d: ShelfDB) => [d.records, d.ratings, d.members, d.meta, d.outbox, d.photos, d.photoDrafts, d.sections];
+const everything = (d: ShelfDB) => [d.records, d.ratings, d.members, d.meta, d.outbox, d.photos, d.photoDrafts, d.sections, d.suggestions];
 
 /** Call inside a rw transaction over everything(). */
 async function clearAll(d: ShelfDB): Promise<void> {

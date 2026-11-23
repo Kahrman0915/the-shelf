@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendError } from './backend';
 import { ShelfDB } from './db';
 import { applyPostcard, ensureStorageKept, savePostcards, storageKept, type NewPostcard } from './outbox';
-import type { Section, ShelfRecord } from './schema';
+import type { Section, ShelfRecord, Suggestion } from './schema';
 import { sectionIdFor } from '@/domain/sections';
 
 const SHELF = '11111111-1111-4111-8111-111111111111';
@@ -59,7 +59,7 @@ afterEach(async () => {
   await db.delete();
 });
 
-const apply = (p: NewPostcard) => db.transaction('rw', [db.records, db.ratings, db.sections], () => applyPostcard(db, p));
+const apply = (p: NewPostcard) => db.transaction('rw', [db.records, db.ratings, db.sections, db.suggestions], () => applyPostcard(db, p));
 
 describe('applyPostcard', () => {
   it('record.create puts the record when it is missing', async () => {
@@ -344,5 +344,33 @@ describe('applyPostcard: sections', () => {
     await savePostcards(db, [sCreate(section(S1))]);
     expect(await db.sections.get(S1)).toBeDefined();
     expect((await db.outbox.toArray()).map((p) => [p.kind, p.recordId, p.state])).toEqual([['section.create', S1, 'waiting']]);
+  });
+});
+
+describe('suggestion.patch', () => {
+  const SUG = '55555555-5555-4555-8555-555555555555';
+  const suggestion: Suggestion = {
+    id: SUG, shelfId: SHELF, artist: 'Sade', title: 'Love Deluxe', reason: 'Because you like Diamond Life.', discogsReleaseId: null, discogsGenres: [], discogsStyles: [],
+    status: 'pending', decidedBy: null, decidedAt: null, roundAt: WHEN, createdAt: WHEN, updatedAt: WHEN,
+  };
+  const decide = (id: string): NewPostcard => ({ ...base, recordId: id, kind: 'suggestion.patch', fields: { status: 'dismissed', decidedBy: ME, decidedAt: WHEN } });
+
+  it('merges the decision into the stored suggestion, and again is harmless', async () => {
+    await db.suggestions.put(suggestion);
+    await apply(decide(SUG));
+    await apply(decide(SUG));
+    expect(await db.suggestions.toArray()).toEqual([{ ...suggestion, status: 'dismissed', decidedBy: ME, decidedAt: WHEN }]);
+  });
+
+  it('does nothing for a suggestion the phone does not have', async () => {
+    await apply(decide(SUG));
+    expect(await db.suggestions.count()).toBe(0);
+  });
+
+  it('savePostcards applies it and queues it', async () => {
+    await db.suggestions.put(suggestion);
+    await savePostcards(db, [decide(SUG)]);
+    expect((await db.suggestions.get(SUG))?.status).toBe('dismissed');
+    expect((await db.outbox.toArray()).map((p) => [p.kind, p.recordId, p.state])).toEqual([['suggestion.patch', SUG, 'waiting']]);
   });
 });

@@ -1,5 +1,5 @@
 import { isAuthRetryableFetchError, type SupabaseClient } from '@supabase/supabase-js';
-import { BackendError, CLAUDE_DOWN, COVERS_BUCKET, DISCOGS_MESSAGES, NO_SIGNAL, REJECTED, type Backend, type FoundRecord, type Identified, type Invite, type Member, type SignedIn } from './backend';
+import { BackendError, CLAUDE_DOWN, COVERS_BUCKET, DISCOGS_MESSAGES, NO_SIGNAL, NOT_ENOUGH_RATINGS, REJECTED, SUGGEST_DOWN, type Backend, type FoundRecord, type Identified, type Invite, type Member, type SignedIn } from './backend';
 import { AUTH_STORAGE_KEY, fetchWithTimeout, readConfig, supabase } from './supabase';
 
 const PAGE = 1000;
@@ -8,6 +8,8 @@ const PAGE = 1000;
 export const DISCOGS_TIMEOUT_MS = 20_000;
 const IDENTIFY_TIMEOUT_MS = 30_000;
 const FUN_FACT_TIMEOUT_MS = 45_000;
+/** The function's own budget is 50 s (Claude gets 35 s of it), so the app waits a little longer. */
+export const SUGGEST_TIMEOUT_MS = 60_000;
 
 /** Base64 of the bytes, built in chunks: spreading a 2 MB array into String.fromCharCode overflows the stack. */
 export function base64(bytes: ArrayBuffer): string {
@@ -70,8 +72,17 @@ function photoFailure(error: PhotoError): never {
 
 const SIGN_IN_AGAIN = 'Sign in again to look it up.';
 
+/** What a Claude-backed call says differently from the default. */
+type ClaudeCallOptions = {
+  /** Said when the function failed or its answer can't be read (default CLAUDE_DOWN). Setting it also stops 429 being read as Discogs rate-limiting. */
+  downMessage?: string;
+  /** Looks at a failed answer first: a message to throw for it, or null to leave it to the usual handling. */
+  onFailure?: (res: Response) => Promise<string | null>;
+};
+
 /** POSTs to a Claude-backed Edge Function and returns its JSON answer, mapping failures to plain words. */
-async function callClaudeFunction<T>(client: SupabaseClient, name: string, body: unknown, timeoutMs: number): Promise<T> {
+async function callClaudeFunction<T>(client: SupabaseClient, name: string, body: unknown, timeoutMs: number, options: ClaudeCallOptions = {}): Promise<T> {
+  const down = options.downMessage ?? CLAUDE_DOWN;
   const { data, error } = await client.auth.getSession();
   if (error) throw new BackendError(offlineLooking(error) ? NO_SIGNAL : error.message);
   if (!data.session) throw new BackendError(SIGN_IN_AGAIN);
@@ -86,15 +97,19 @@ async function callClaudeFunction<T>(client: SupabaseClient, name: string, body:
   } catch (e) {
     const err = e as Error;
     const offline = (typeof navigator !== 'undefined' && navigator.onLine === false) || err instanceof TypeError || (!abortedLooking(err) && offlineLooking(err));
-    throw new BackendError(offline ? NO_SIGNAL : CLAUDE_DOWN);
+    throw new BackendError(offline ? NO_SIGNAL : down);
   }
   if (res.status === 401) throw new BackendError(SIGN_IN_AGAIN);
-  if (res.status === 429) throw new BackendError(DISCOGS_MESSAGES.rateLimited);
-  if (!res.ok) throw new BackendError(CLAUDE_DOWN);
+  if (!res.ok) {
+    const special = await options.onFailure?.(res);
+    if (special) throw new BackendError(special);
+  }
+  if (res.status === 429 && options.downMessage === undefined) throw new BackendError(DISCOGS_MESSAGES.rateLimited);
+  if (!res.ok) throw new BackendError(down);
   try {
     return (await res.json()) as T;
   } catch {
-    throw new BackendError(CLAUDE_DOWN);
+    throw new BackendError(down);
   }
 }
 
@@ -182,6 +197,16 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
       }
     },
 
+    async suggestions(shelfId) {
+      const rows: Record<string, unknown>[] = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await client.from('suggestions').select('*').eq('shelf_id', shelfId).order('created_at').order('id').range(from, from + PAGE - 1);
+        if (error) fail('Couldn’t fetch suggestions', error);
+        rows.push(...(data as Record<string, unknown>[]));
+        if (data.length < PAGE) return rows;
+      }
+    },
+
     async members(shelfId): Promise<Member[]> {
       const { data, error } = await client.from('shelf_members').select('user_id, role, profiles(display_name)').eq('shelf_id', shelfId);
       if (error) fail('Couldn’t fetch who’s on the shelf', error);
@@ -224,6 +249,12 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
 
     async patchSection(id, fields) {
       const { data, error } = await client.from('sections').update(fields).eq('id', id).select('id');
+      if (error) writeFailure(error);
+      return data.length > 0 ? 'patched' : 'missing';
+    },
+
+    async patchSuggestion(id, fields) {
+      const { data, error } = await client.from('suggestions').update(fields).eq('id', id).select('id');
       if (error) writeFailure(error);
       return data.length > 0 ? 'patched' : 'missing';
     },
@@ -316,6 +347,18 @@ export function supabaseBackend(client: SupabaseClient = supabase()): Backend {
     async findFunFact(r) {
       const out = await callClaudeFunction<{ fact: string | null; sourceUrl?: string }>(client, 'fun-fact', r, FUN_FACT_TIMEOUT_MS);
       return out.fact && out.sourceUrl ? { fact: out.fact, sourceUrl: out.sourceUrl } : null;
+    },
+
+    async suggestRecords() {
+      const out = await callClaudeFunction<{ added: number }>(client, 'suggest-records', {}, SUGGEST_TIMEOUT_MS, {
+        downMessage: SUGGEST_DOWN,
+        onFailure: async (res) => {
+          if (res.status !== 400) return null;
+          const answer = (await res.json().catch(() => null)) as { error?: unknown } | null;
+          return answer?.error === 'not-enough-ratings' ? NOT_ENOUGH_RATINGS : null;
+        },
+      });
+      return { added: typeof out.added === 'number' ? out.added : 0 };
     },
 
     async signOut() {

@@ -321,3 +321,40 @@ describe('version 7', () => {
     db.close();
   });
 });
+
+describe('version 8', () => {
+  it('opens a version-7 notebook with its records, sections and outbox untouched, and an empty suggestions store', async () => {
+    const v7 = new Dexie(name);
+    v7.version(7).stores({
+      records: 'id, shelfId, status, sectionId, importKey',
+      ratings: '[recordId+userId], recordId, userId',
+      members: '[shelfId+userId], shelfId',
+      meta: 'key',
+      outbox: '++seq, recordId, state',
+      photos: 'path',
+      photoDrafts: 'side',
+      sections: 'id, shelfId',
+    });
+    const sectionId = sectionIdFor(SHELF, 'jazz');
+    const own: Section = {
+      id: sectionId, shelfId: SHELF, name: 'Jazz', color: 'sand', position: 0, discogsGenres: ['Jazz'],
+      takesHoliday: false, isCatchAll: false, legacyGenre: 'jazz', updatedAt: OLD,
+    };
+    const rec = { ...savedBeforeDetails(OLD_A), funFact: null, funFactSource: null, coverImageUrl: null, sectionId, genre: undefined };
+    delete (rec as Record<string, unknown>).genre;
+    await v7.table('records').put(rec);
+    await v7.table('sections').put(own);
+    await v7.table('meta').put({ key: `lastPulledAt:${SHELF}`, value: OLD });
+    await v7.table('outbox').add({ shelfId: SHELF, userId: ME, createdAt: OLD, state: 'waiting', reason: null, kind: 'record.patch', recordId: OLD_A, fields: { year: 1960 } });
+    v7.close();
+
+    const db = new ShelfDB(name);
+    expect(await db.records.toArray()).toEqual([rec]);
+    expect(await db.sections.toArray()).toEqual([own]);
+    expect((await db.outbox.toArray()).map((p) => [p.kind, p.fields])).toEqual([['record.patch', { year: 1960 }]]);
+    expect((await db.meta.get(`lastPulledAt:${SHELF}`))?.value).toBe(OLD);
+    expect(await db.suggestions.count()).toBe(0);
+    expect(db.verno).toBe(8);
+    db.close();
+  });
+});

@@ -87,3 +87,23 @@ export function checkSection(section: unknown): Section {
   }
   return parsed.data;
 }
+
+/** One record Claude suggested for the shelf's want list. Its id is a v4 uuid made by the database. */
+export const SuggestionSchema = z.object({
+  id: z.uuid(),
+  shelfId: z.uuid(),
+  artist: z.string().trim().min(1).max(200),
+  title: z.string().trim().min(1).max(200),
+  reason: z.string().trim().min(1).max(140),
+  discogsReleaseId: z.number().int().positive().nullable(),
+  discogsGenres: z.array(z.string()),
+  discogsStyles: z.array(z.string()),
+  status: z.enum(['pending', 'added', 'dismissed']),
+  decidedBy: z.uuid().nullable(),
+  decidedAt: z.string().nullable(),
+  roundAt: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type Suggestion = z.infer<typeof SuggestionSchema>;

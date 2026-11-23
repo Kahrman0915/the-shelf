@@ -3,7 +3,7 @@ import { FakeBackend, collectionRows } from '@/test/fakeBackend';
 import type { ShelfSource } from './backend';
 import { ShelfDB, clearPhone, writeSession } from './db';
 import { savePostcards } from './outbox';
-import { RowError, sectionToRow, type RecordRow } from './rowMapping';
+import { RowError, sectionToRow, suggestionToRow, type RecordRow, type SuggestionRow } from './rowMapping';
 import type { Section } from './schema';
 import { forgetLastPull, pullShelf } from './sync';
 
@@ -128,6 +128,7 @@ describe('pullShelf', () => {
       ratings: (shelfId) => backend.ratings(shelfId),
       members: (shelfId) => backend.members(shelfId),
       sections: (shelfId) => backend.sections(shelfId),
+      suggestions: (shelfId) => backend.suggestions(shelfId),
     };
     return { source, release };
   }
@@ -193,6 +194,49 @@ describe('pullShelf: sections', () => {
     const bad = withSections(section(S1, { color: 'mauve' as Section['color'] }));
     await expect(pullShelf(db, bad, SHELF)).rejects.toBeInstanceOf(RowError);
     expect(await db.sections.count()).toBe(0);
+    expect(await db.records.count()).toBe(0);
+  });
+});
+
+describe('pullShelf: suggestions', () => {
+  const G1 = '00000000-0000-4000-8000-0000000000a1';
+  const G2 = '00000000-0000-4000-8000-0000000000a2';
+  const row = (id: string, over: Partial<SuggestionRow> = {}): SuggestionRow => suggestionToRow({
+    id, shelfId: SHELF, artist: 'Sade', title: 'Love Deluxe', reason: 'Because you like Diamond Life.', discogsReleaseId: null, discogsGenres: [], discogsStyles: [],
+    status: 'pending', decidedBy: null, decidedAt: null, roundAt: WHEN, createdAt: WHEN, updatedAt: WHEN, ...over,
+  } as never);
+  const withSuggestions = (...suggestions: SuggestionRow[]) => new FakeBackend({ records: rows.records, ratings: rows.ratings, members: [], suggestions });
+
+  it('brings the shelf’s suggestions with a pull', async () => {
+    await pullShelf(db, withSuggestions(row(G1), row(G2, { title: 'Stronger Than Pride' })), SHELF);
+    expect((await db.suggestions.toArray()).map((s) => s.id).sort()).toEqual([G1, G2]);
+  });
+
+  it('drops a suggestion that was removed on the server', async () => {
+    await pullShelf(db, withSuggestions(row(G1), row(G2)), SHELF);
+    await pullShelf(db, withSuggestions(row(G1)), SHELF);
+    expect((await db.suggestions.toArray()).map((s) => s.id)).toEqual([G1]);
+  });
+
+  it('leaves another shelf’s suggestions on the phone alone', async () => {
+    const OTHER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    await pullShelf(db, withSuggestions(row(G2)), SHELF);
+    await db.suggestions.put({ ...(await db.suggestions.get(G2))!, shelfId: OTHER, id: '00000000-0000-4000-8000-0000000000a3' });
+    await pullShelf(db, withSuggestions(row(G1)), SHELF);
+    expect((await db.suggestions.toArray()).map((s) => s.id).sort()).toEqual([G1, '00000000-0000-4000-8000-0000000000a3']);
+  });
+
+  it('keeps a waiting suggestion.patch to dismissed on top of a pull that still says pending', async () => {
+    await pullShelf(db, withSuggestions(row(G1)), SHELF);
+    await savePostcards(db, [{ kind: 'suggestion.patch', shelfId: SHELF, recordId: G1, userId: K, createdAt: WHEN, fields: { status: 'dismissed', decidedBy: K, decidedAt: WHEN } }]);
+    await pullShelf(db, withSuggestions(row(G1)), SHELF);
+    expect(await db.suggestions.get(G1)).toMatchObject({ status: 'dismissed', decidedBy: K, decidedAt: WHEN });
+  });
+
+  it('writes nothing when a suggestion row is not understood', async () => {
+    const bad = withSuggestions(row(G1, { reason: 'x'.repeat(141) }));
+    await expect(pullShelf(db, bad, SHELF)).rejects.toBeInstanceOf(RowError);
+    expect(await db.suggestions.count()).toBe(0);
     expect(await db.records.count()).toBe(0);
   });
 });

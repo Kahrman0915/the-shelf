@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ShelfRecord } from './schema';
-import { RecordSchema } from './schema';
-import { RowError, newRecordToRow, patchToRow, ratingFromRow, ratingToRow, recordFromRow, recordToRow, sectionPatchToRow } from './rowMapping';
+import { RecordSchema, type Suggestion } from './schema';
+import { RowError, newRecordToRow, patchToRow, ratingFromRow, ratingToRow, recordFromRow, recordToRow, sectionPatchToRow, suggestionFromRow, suggestionPatchToRow, suggestionToRow } from './rowMapping';
 
 const record: ShelfRecord = {
   id: '00000000-0000-4000-8000-000000000001', shelfId: '00000000-0000-4000-8000-0000000000aa', status: 'owned',
@@ -121,5 +121,37 @@ describe('section patch rows', () => {
     expect(() => sectionPatchToRow({ isCatchAll: true })).toThrow();
     expect(() => sectionPatchToRow({ legacyGenre: 'rock' })).toThrow();
     expect(() => sectionPatchToRow({ shelfId: '00000000-0000-4000-8000-0000000000aa' })).toThrow();
+  });
+});
+
+describe('suggestion rows', () => {
+  const suggestion: Suggestion = {
+    id: '00000000-0000-4000-8000-0000000000c1', shelfId: record.shelfId, artist: 'Sade', title: 'Love Deluxe', reason: 'You rated Diamond Life highly.',
+    discogsReleaseId: 1234, discogsGenres: ['Funk / Soul'], discogsStyles: ['Smooth Jazz'], status: 'pending', decidedBy: null, decidedAt: null,
+    roundAt: '2026-11-23T10:00:00.000Z', createdAt: '2026-11-23T10:00:00.000Z', updatedAt: '2026-11-23T10:00:00.000Z',
+  };
+
+  it('round-trips through snake_case', () => {
+    const row = suggestionToRow(suggestion);
+    expect(row).toMatchObject({ shelf_id: record.shelfId, discogs_release_id: 1234, discogs_genres: ['Funk / Soul'], round_at: suggestion.roundAt });
+    expect(suggestionFromRow(row)).toEqual(suggestion);
+  });
+
+  it('accepts a release id that arrives as a string', () => {
+    expect(suggestionFromRow({ ...suggestionToRow(suggestion), discogs_release_id: '1234' }).discogsReleaseId).toBe(1234);
+  });
+
+  it('fails loudly on a 141-character reason, naming the suggestion and field', () => {
+    const row = { ...suggestionToRow(suggestion), reason: 'x'.repeat(141) };
+    expect(() => suggestionFromRow(row)).toThrow(RowError);
+    expect(() => suggestionFromRow(row)).toThrow(/00000000-0000-4000-8000-0000000000c1: reason/);
+  });
+
+  it('puts only the three decision fields into a patch row', () => {
+    expect(suggestionPatchToRow({ status: 'added', decidedBy: record.addedBy, decidedAt: '2026-11-23T11:00:00.000Z' })).toEqual({
+      status: 'added', decided_by: record.addedBy, decided_at: '2026-11-23T11:00:00.000Z',
+    });
+    expect(suggestionPatchToRow({ status: 'dismissed' })).toEqual({ status: 'dismissed' });
+    expect(() => suggestionPatchToRow({ reason: 'new' } as never)).toThrow();
   });
 });
