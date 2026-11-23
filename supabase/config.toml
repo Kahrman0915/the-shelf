@@ -422,3 +422,6 @@ verify_jwt = true
 
 [functions.fun-fact]
 verify_jwt = true
+
+[functions.suggest-records]
+verify_jwt = true
