@@ -183,3 +183,37 @@ The opening animation now shows three shelves of record-thin spines.
   - the fun-fact live region and focus need an accessibility pass;
   - `publicKey`/CORS code is copied into three functions;
   - `discard` sets `lastSyncedAt` before any pull.
+
+# Plan 5 → next handoff
+
+From Plan 5's go-live (2026-11-23). Plan 5 shipped "Your shelf sections": each shelf has its own sections, with name, colour, order, Discogs genres, a holiday flag and one catch-all. They're edited in Settings → Sections.
+
+## Must know
+- **Tables and records:**
+  - `public.sections` (per shelf) and `public.section_redirects` (`from → into`, written by `merge_section`);
+  - `records.section_id` is NOT NULL and references `sections`.
+- **Who has which set:** Kahrman's shelf (identified by records with `import_key`) has his nine: Jazz / big band … Christmas, with Miscellaneous as the catch-all at position 4. Every other shelf, and every new one through `bootstrap()`, has the starter set (Jazz, Rock, Soul & Funk, Pop, Country & Folk, Reggae, Soundtracks, Christmas, Everything else).
+- **Derived ids:** the seeded sections have ids `md5(shelf_id || ':' || legacy_genre)::uuid`, and the phone computes the same with `sectionIdFor` (`src/domain/sections.ts`, sync MD5 in `md5.ts`). Validate them with `z.guid()`, not `z.uuid()`.
+- **The changeover:**
+  - `records.genre` is still kept filled by the `records_fill_section` trigger, from each section's `legacy_genre`;
+  - an old-app genre write goes to that genre's own seeded section first, follows redirects (scoped to the record's shelf), and falls back to the catch-all;
+  - writes naming an unknown or merged section are rerouted, never refused.
+- **The claim trigger:**
+  - setting holiday, or claiming Discogs genres, takes them off the shelf's other sections;
+  - it needs **one section row per statement**;
+  - the phone mirrors it inside `applyPostcard`.
+- **Delete is a merge into the catch-all.** It also moves soft-deleted records, which can be restored. A member can't insert a section with an id that was merged away (`section_was_merged`).
+- **Dexie:** v6 adds the sections store; the v7 upgrade converts records and queued postcards offline, seeds the set and forgets the last pull.
+- **Deadlocks:** Postgres `40P01` and `40001` count as no signal, so they're retried later.
+- **Colours:** the nine section colours equal the old genre colours. There are 12 swatches (plus teal, slate and sand), as `--section-{key}`.
+
+## Carry-overs
+- **Later clean-up,** once every phone has updated: drop `records.genre`, the `public.genre` enum, `legacy_genre`, and the changeover parts of `records_fill_section`.
+- **Live check not done:** Kahrman merged without trying the test link. Check that the shelf looks unchanged, and try Settings → Sections on a phone.
+- **Deferred:**
+  - a resent `section.create` after a merge on another phone shows a "permission" reason;
+  - the holiday hint row is fixed at `h-12` and can wrap past it;
+  - a section removed by a raw SQL delete leaves no redirect, so its id can be taken by another shelf;
+  - tie-swaps with three sections sharing a position;
+  - P0001 refusals shown as "(P0001)";
+  - some loading-state screens have no tests.
