@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -167,6 +167,14 @@ describe('WantListScreen', () => {
     expect(await screen.findByRole('heading', { name: 'Wanted (0)' })).toBeInTheDocument();
   });
 
+  it('two quick taps on Add to want list make one wanted record', async () => {
+    await setup({ suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] });
+    const button = await screen.findByRole('button', { name: 'Add to want list' });
+    await Promise.all([userEvent.click(button), userEvent.click(button)]);
+    await screen.findByRole('heading', { name: 'Wanted (1)' });
+    expect(await db.records.where('status').equals('wanted').count()).toBe(1);
+  });
+
   it('Not for me hides the card and offers no Undo', async () => {
     await setup({ suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] });
     await userEvent.click(await screen.findByRole('button', { name: 'Not for me' }));
@@ -194,6 +202,18 @@ describe('WantListScreen', () => {
       await setup(fiveRated());
       const button = await screen.findByRole('button', { name: 'Needs signal' });
       expect(button).toBeDisabled();
+    });
+
+    it('follows the signal coming and going', async () => {
+      setOnline(false);
+      await setup(fiveRated());
+      expect(await screen.findByRole('button', { name: 'Needs signal' })).toBeDisabled();
+      setOnline(true);
+      act(() => void window.dispatchEvent(new Event('online')));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Suggest more' })).toBeEnabled());
+      setOnline(false);
+      act(() => void window.dispatchEvent(new Event('offline')));
+      expect(await screen.findByRole('button', { name: 'Needs signal' })).toBeDisabled();
     });
 
     it('is disabled with the running label while Claude works', async () => {

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { useBackend } from '@/app/BackendContext';
@@ -17,6 +17,7 @@ import { NEEDS_SIGNAL, messageFor } from '@/ui/useSavedOffer';
 import { SuggestionCard } from '@/ui/SuggestionCard';
 
 const MIN_RATED = 5;
+const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const RUNNING = 'Finding records you’d like…';
 const NOTHING_NEW = 'No new suggestions this time.';
 
@@ -43,6 +44,19 @@ export function WantListScreen() {
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const busy = useRef(false);
+  const [online, setOnline] = useState(isOnline);
+  // Suggestions being added or dismissed right now, so a second tap can't repeat the action on stale data.
+  const inFlight = useRef(new Set<string>());
+
+  useEffect(() => {
+    const update = () => setOnline(isOnline());
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
 
   const wanted = useMemo(() => (items ?? []).map((i) => i.record).filter((r) => r.status === 'wanted').sort(byName), [items]);
   const upgrades = useMemo(() => (items ?? []).map((i) => i.record).filter((r) => r.status === 'owned' && r.wantsUpgrade).sort(byName), [items]);
@@ -51,19 +65,30 @@ export function WantListScreen() {
     [suggestions],
   );
 
-  const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  const offline = !online;
   const tooFew = rated !== undefined && rated < MIN_RATED;
 
-  const add = async (s: Suggestion) => {
+  const once = async (s: Suggestion, run: () => Promise<void>) => {
+    if (inFlight.current.has(s.id)) return;
+    inFlight.current.add(s.id);
+    try {
+      await run();
+    } finally {
+      inFlight.current.delete(s.id);
+    }
+  };
+
+  const add = (s: Suggestion) => once(s, async () => {
     const result = addSuggestion(s, (items ?? []).map((i) => i.record), { me: userId, now: new Date().toISOString(), shelfId, newId: crypto.randomUUID(), sections: sections ?? [] });
     await perform(db, result.postcards, runNow);
     const undo = result.undo;
     if (undo) offer(`On your want list: ${s.title}`, () => perform(db, undo, runNow));
-  };
+  });
 
-  const dismiss = async (s: Suggestion) => {
-    await perform(db, dismissSuggestion(s, { me: userId, now: new Date().toISOString() }).postcards, runNow);
-  };
+  const dismiss = (s: Suggestion) =>
+    once(s, async () => {
+      await perform(db, dismissSuggestion(s, { me: userId, now: new Date().toISOString() }).postcards, runNow);
+    });
 
   const pendingNow = () => db.suggestions.where('shelfId').equals(shelfId).filter((s) => s.status === 'pending').count();
 
