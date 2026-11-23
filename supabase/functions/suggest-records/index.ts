@@ -9,6 +9,7 @@ import Anthropic from 'npm:@anthropic-ai/sdk@1.6.0';
 import { createClient } from 'npm:@supabase/supabase-js@2.116.0';
 import { signedInUser } from '../_shared/auth.ts';
 import { searchDiscogsWith } from '../_shared/discogs.ts';
+import { readAll } from '../_shared/pages.ts';
 import { checkProposals, keyOf } from './check.ts';
 import { claudeTimeoutMs, startBudget } from './deadline.ts';
 import { MIN_RATED, proposalsFromMessage, ratedCount, suggestRequest, type Taste } from './taste.ts';
@@ -93,13 +94,19 @@ Deno.serve(async (req) => {
   }
   const [members, records, ratings, suggestions] = await Promise.all([
     db.from('shelf_members').select('user_id, profiles(display_name)').eq('shelf_id', shelfId),
-    db.from('records').select('id, artist, title, year, status, sections(name)').eq('shelf_id', shelfId).is('deleted_at', null),
-    db.from('ratings').select('record_id, user_id, value').limit(10000),
-    db.from('suggestions').select('artist, title, status').eq('shelf_id', shelfId),
+    // Paged: PostgREST caps a response at 1000 rows, and a truncated read would let owned albums be suggested.
+    readAll<Row>((from, to) =>
+      db.from('records').select('id, artist, title, year, status, sections(name)').eq('shelf_id', shelfId).is('deleted_at', null)
+        .order('id').range(from, to)),
+    readAll<Row>((from, to) =>
+      db.from('ratings').select('record_id, user_id, value, records!inner(shelf_id)').eq('records.shelf_id', shelfId)
+        .order('record_id').order('user_id').range(from, to)),
+    readAll<Row>((from, to) =>
+      db.from('suggestions').select('id, artist, title, status').eq('shelf_id', shelfId).order('id').range(from, to)),
   ]);
   const failed = [members, records, ratings, suggestions].find((r) => r.error);
   if (failed) {
-    console.error(`suggest-records: read failed ${failed.error!.code ?? ''}`.trim());
+    console.error(`suggest-records: read failed ${failed.error?.code ?? ''}`.trim());
     return json(500, { error: 'read-failed' });
   }
 
@@ -111,7 +118,7 @@ Deno.serve(async (req) => {
   }
   const taste: Taste = {
     members: (members.data as Row[]).map((m) => ({ userId: m.user_id, name: m.profiles?.display_name ?? 'Someone' })),
-    records: (records.data as Row[]).map((r) => ({
+    records: records.data!.map((r) => ({
       artist: r.artist,
       title: r.title,
       year: r.year ?? null,
@@ -119,7 +126,7 @@ Deno.serve(async (req) => {
       status: r.status,
       ratings: byRecord.get(r.id) ?? [],
     })),
-    suggested: suggestions.data as Taste['suggested'],
+    suggested: suggestions.data!.map((s) => ({ artist: s.artist, title: s.title, status: s.status })),
   };
   if (ratedCount(taste) < MIN_RATED) return json(400, { error: 'not-enough-ratings' });
 
