@@ -1,7 +1,7 @@
 # Plan 6: Want list, upgrades and Claude's suggestions (design)
 
 Date: 2026-11-23
-Status: draft; awaiting builder check and Kahrman's approval
+Status: builder-checked; awaiting Kahrman's approval
 Builds on:
 - the original spec `2026-09-18-the-shelf-design.md` (want list; "wants upgrade"; AI want-list suggestions from both people's ratings);
 - Plan 3 (Bought it, New arrivals);
@@ -75,7 +75,8 @@ Want list
    You rated At the Top 4 · Megan rated Poinciana 5
    [Add to want list]  [Not for me]
 ```
-- **Wanted:** the shelf's `wanted` records, sorted by artist then title. A row opens the Record screen, which already shows the Want list tag and, at a show, Bought it.
+- **Wanted:** the shelf's `wanted` records, sorted by artist then title. A row opens the Record screen.
+- **Buying from the list.** *Our call:* the Record screen of a wanted record, or of an owned record marked for upgrade, gets a **Check price · Bought it** button that opens the existing price check (`/price/:id`), where Bought it already lives. Back returns to the Record screen. So at a show it's the list, the row, then Bought it, with no second search.
 - **Upgrades:** owned records with `wants_upgrade`, with their note. A row opens the Record screen.
 - **Suggested for you:** pending suggestions, newest round first. Each shows the artist, the title, the reason (one line, up to 140 characters) and two `h-12` buttons.
 - **Suggest more:**
@@ -90,7 +91,7 @@ Want list
 - **Tapping a card** makes a `wanted` record. Its artist and title come from the card, and its section comes from the shelf's sections, as on Add.
 - **This pressing only** is a switch above the cards, off by default. When on, the want also keeps the card's label, catalog number, year, format and Discogs release id.
 - **Feedback:** an inline `✓ On your want list: {title} · Undo`, as Find already does for the shelf.
-- **Records you already have:** a card for a record already **owned** shows `Already on the shelf`. One already **wanted** shows `Already on your want list`, and tapping it does nothing more than say so.
+- **Records you already have:** a card for a record already **owned** shows `Already on the shelf`. One already **wanted** shows `Already on your want list`. *Our call:* tapping either one makes nothing. An owned card's tap says `Already on the shelf. To hunt for a better copy, open it and turn on Want a better copy.` with a link to that record. So the same album is never both owned and wanted; better copies always go through upgrades.
 - **No photos and no fun facts for wants.** The fun fact comes when it's bought (§5).
 
 ### 4.3 Upgrades
@@ -116,7 +117,7 @@ A **Want list** button joins At the show and Add, in the same style. The shelf i
   - `status` (`pending` / `added` / `dismissed`, default `pending`)
   - `decided_by uuid null`, `decided_at timestamptz null`
   - `round_at timestamptz` (when the round ran), `created_at`, `updated_at` (with the touch trigger)
-- **RLS:** members can select, and can update `status`, `decided_by` and `decided_at` only. Inserts come only from the Edge Function, under the caller's own sign-in and an insert policy for members.
+- **RLS:** members can select; can insert on their own shelf; and can update `status`, `decided_by` and `decided_at` only. *Our call:* the Edge Function inserts under the caller's own sign-in through that member insert policy. A member could also insert a suggestion straight through the database API, but only onto their own shelf, which harms no one else, so it isn't worth a service-role write or a special database function.
 - **Grants:** revoke all from anon and authenticated, then grant select, insert and update of `(status, decided_by, decided_at)`.
 
 ### 6.2 Edge Function `suggest-records`
@@ -136,20 +137,20 @@ A **Want list** button joins At the show and Add, in the same style. The shelf i
     - only albums released on vinyl;
     - a reason of at most 140 characters that names the person or people and the records they rated highly.
   - Server-side refusal fallback: `fallbacks: "default"` with the `server-side-fallback-2026-07-01` beta header, as the Claude API docs recommend for Sonnet 5.5. A refusal that still happens gives `{ suggestions: [] }`.
-  - Timeout 60 s, no retries.
+  - *Our call:* Claude gets at most 35 s, no retries.
 - **Checking:**
   1. Drop anything whose normalised artist and title is already owned, wanted or suggested.
   2. For each remaining suggestion, in order, run a Discogs search (`q=artist title`, `format=Vinyl`, using the shared helper). Keep it only if a result's artist and title match after normalising. Store that result's release id, genres and styles.
   3. Stop at **8** kept.
 
-  This stays within a 50 s overall budget, as `identify-record`'s deadline does.
+  *Our call:* one 50 s deadline covers the whole request, Claude included, as `identify-record`'s does. Discogs checks run only in the time left and stop when it's up, so a slow round may save fewer than 8. Whatever was kept by then is saved.
 - **Saving and answering:** it inserts the kept ones (with `round_at = now()`) and returns `{ added: n }`. The app picks them up on the next pull.
 - **Logs:** name only status codes and error names.
 
 ## 7. App
 - **Schema:** `Suggestion` (Zod) with row mapping; a Dexie bump adds a `suggestions` store (`'id, shelfId'`); it's pulled in full with records on every sync, like sections.
 - **Backend:**
-  - `suggestRecords(): Promise<{ added: number }>`, by plain `fetch` with a 70 s timeout and the existing error mapping, plus `{ error: 'not-enough-ratings' }` → the §4.1 message;
+  - `suggestRecords(): Promise<{ added: number }>`, by plain `fetch` with a 60 s timeout and the existing error mapping, plus `{ error: 'not-enough-ratings' }` → the §4.1 message. *Our call:* if the call times out or the connection drops, the app pulls once before showing an error; if new pending suggestions arrived, it shows them and no error, so nobody taps again and pays for a second round;
   - `patchSuggestion(id, fields)`, one row per request;
   - FakeBackend support.
 - **Outbox:** a new kind, `suggestion.patch { status, decidedBy, decidedAt }`.
