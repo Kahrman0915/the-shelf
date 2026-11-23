@@ -1,5 +1,7 @@
 import { Check } from 'lucide-react';
+import { Switch } from 'radix-ui';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useBackend } from '@/app/BackendContext';
@@ -9,6 +11,7 @@ import { UNDO_WINDOW_MS } from '@/app/UndoContext';
 import { addFound, perform } from '@/data/actions';
 import { SHELF_LOADING, type FoundRecord, type Identified, type Read } from '@/data/backend';
 import { db } from '@/data/db';
+import { addWant } from '@/data/wantActions';
 import { useSections } from '@/data/hooks';
 import { wantFunFact } from '@/data/funFacts';
 import { addPhotosTo, PATH_FIELD, PHOTO_SIDES, type Drafts, type PhotoCtx } from '@/data/photos';
@@ -56,10 +59,23 @@ function replaces(record: ShelfRecord, drafts: Drafts): boolean {
   return PHOTO_SIDES.some((side) => drafts[side] !== undefined && record[PATH_FIELD[side]] !== null);
 }
 
-/** Search Discogs and put a record on the shelf with one tap. Results live only in this component's state.
+/** Search Discogs and put a record on the shelf with one tap (in `mode="want"`, on the want list). Results live only in this component's state.
  *  With photos waiting, the record saved takes them; if it's already on the shelf, it asks where they go first.
  *  `handFormEdited`: the person has started filling the record in by hand, which takes over from Claude's reading. */
-export function FindRecord({ records, onAdded, photos, handFormEdited = false }: { records: ShelfRecord[]; onAdded?: () => void; photos?: Photos; handFormEdited?: boolean }) {
+export function FindRecord({
+  records,
+  onAdded,
+  photos,
+  handFormEdited = false,
+  mode = 'shelf',
+}: {
+  records: ShelfRecord[];
+  onAdded?: () => void;
+  photos?: Photos;
+  handFormEdited?: boolean;
+  /** 'want' adds to the want list instead: no photos, no fun fact, and a record already owned is only pointed to. */
+  mode?: 'shelf' | 'want';
+}) {
   const backend = useBackend();
   const { shelfId, userId } = useCurrentShelf();
   const { runNow } = useSyncStatus();
@@ -97,6 +113,10 @@ export function FindRecord({ records, onAdded, photos, handFormEdited = false }:
   // A card that's already on the shelf, picked with photos waiting: the question of where the photos go.
   const [asking, setAsking] = useState<{ record: FoundRecord; existing: ShelfRecord; photos: Photos; searchBefore: number; recognisedAs?: Recognised } | null>(null);
   const [online, setOnline] = useState(isOnline);
+  // Want mode: keep the exact pressing, or just the album.
+  const [exactPressing, setExactPressing] = useState(false);
+  // Want mode: the owned card tapped, whose record the line points to.
+  const [ownedTapped, setOwnedTapped] = useState<ShelfRecord | null>(null);
   const box = useRef<HTMLInputElement>(null);
   // Only the latest search may show its answer: an older one that returns late is ignored.
   const latest = useRef(0);
@@ -144,6 +164,7 @@ export function FindRecord({ records, onAdded, photos, handFormEdited = false }:
 
   function edit(value: string) {
     setQuery(value);
+    setOwnedTapped(null);
     // Changing the words abandons a search still on its way, so a new one can start at once.
     latest.current++;
     setSearching(false);
@@ -206,6 +227,45 @@ export function FindRecord({ records, onAdded, photos, handFormEdited = false }:
     }
     void save(record, { kind: 'new', photos: waiting }, searchBefore, recognisedAs);
     return true;
+  }
+
+  /** Want mode: a card tapped. Owned records are only pointed to; a wanted one does nothing; any other becomes a want. */
+  async function pickWant(record: FoundRecord) {
+    // Inside the tap itself: iOS only opens the keyboard for a focus() made before any await.
+    box.current?.focus();
+    setOwnedTapped(null);
+    const have = findDuplicate(records.filter((r) => r.status !== 'wanted'), record.artist, record.title);
+    if (have) {
+      setOwnedTapped(have);
+      return;
+    }
+    if (findDuplicate(records.filter((r) => r.status === 'wanted'), record.artist, record.title)) return;
+    if (saving.current !== 'idle') return;
+    if (!sections || sections.length === 0) {
+      setMessage(SHELF_LOADING);
+      return;
+    }
+    saving.current = 'running';
+    const searchBefore = latest.current;
+    try {
+      const added = addWant(record, { me: userId, now: new Date().toISOString(), shelfId, newId: crypto.randomUUID(), sections }, { exactPressing });
+      await perform(db, added.postcards, runNow);
+      offer({ text: `On your want list: ${record.title}`, undo: added.undo ?? [], drafts: null, later: [] });
+      if (latest.current === searchBefore) {
+        saving.current = 'held';
+        latest.current++;
+        setQuery('');
+        setFound(null);
+        setMessage(null);
+        setSearching(false);
+      } else {
+        saving.current = 'idle';
+      }
+      onAdded?.();
+    } catch (err) {
+      setMessage(messageFor(err));
+      saving.current = 'idle';
+    }
   }
 
   /** Claude's answer for the photos showing. Exact saves as if its card were tapped; several shows those
@@ -334,6 +394,21 @@ export function FindRecord({ records, onAdded, photos, handFormEdited = false }:
           {again}
         </Button>
       )}
+      {mode === 'want' && (
+        <div className="flex min-h-12 items-center justify-between gap-3">
+          <label htmlFor="want-exact-pressing" className="text-[17px] font-semibold text-ink">
+            This pressing only
+          </label>
+          <Switch.Root
+            id="want-exact-pressing"
+            checked={exactPressing}
+            onCheckedChange={setExactPressing}
+            className="relative h-12 w-14 flex-none rounded-full bg-line-strong data-[state=checked]:bg-bourbon"
+          >
+            <Switch.Thumb className="block size-6 translate-x-1 rounded-full bg-surface-raised transition-transform data-[state=checked]:translate-x-7" />
+          </Switch.Root>
+        </div>
+      )}
       <form role="search" onSubmit={(e) => void search(e)} className="flex flex-col gap-2">
         <label htmlFor="find-record" className={LABEL}>
           Find a record
@@ -392,6 +467,16 @@ export function FindRecord({ records, onAdded, photos, handFormEdited = false }:
         </p>
       )}
 
+      {mode === 'want' && ownedTapped && (
+        <p role="status" className="text-[15px] leading-[22px] text-ink">
+          Already on the shelf. To hunt for a better copy,{' '}
+          <Link to={`/record/${ownedTapped.id}`} className="underline underline-offset-2">
+            open it
+          </Link>{' '}
+          and turn on Want a better copy.
+        </p>
+      )}
+
       {found && results.length > 0 && (
         <>
           {found.asked && <p className="text-[17px] font-semibold text-ink">{WHICH_PRESSING}</p>}
@@ -399,13 +484,14 @@ export function FindRecord({ records, onAdded, photos, handFormEdited = false }:
             {results.map((r) => {
               const first = joined([r.year, r.label, r.catalog]);
               const second = joined([r.format, r.country]);
-              const onShelf = findDuplicate(records, r.artist, r.title) !== null;
+              const owned = findDuplicate(records.filter((x) => x.status !== 'wanted'), r.artist, r.title) !== null;
+              const onWantList = !owned && findDuplicate(records.filter((x) => x.status === 'wanted'), r.artist, r.title) !== null;
               return (
                 <li key={r.releaseId}>
                   <button
                     type="button"
                     disabled={searching}
-                    onClick={() => pick(r)}
+                    onClick={() => (mode === 'want' ? void pickWant(r) : pick(r))}
                     className="flex min-h-12 w-full items-center gap-3 rounded-lg border-[1.5px] border-line-strong bg-surface-raised p-3 text-left text-ink"
                   >
                     {r.thumb && <img src={r.thumb} alt="" className="size-14 flex-none rounded object-cover" />}
@@ -413,7 +499,10 @@ export function FindRecord({ records, onAdded, photos, handFormEdited = false }:
                       <span className="font-bold">{`${r.artist} — ${r.title}`}</span>
                       {first && <span className="text-[15px] leading-[22px] text-ink-muted">{first}</span>}
                       {second && <span className="text-[15px] leading-[22px] text-ink-muted">{second}</span>}
-                      {onShelf && <span className="text-[15px] font-semibold leading-[22px] text-bourbon-ink">Already on the shelf</span>}
+                      {owned && <span className="text-[15px] font-semibold leading-[22px] text-bourbon-ink">Already on the shelf</span>}
+                      {onWantList && (
+                        <span className="text-[15px] font-semibold leading-[22px] text-bourbon-ink">{mode === 'want' ? 'Already on your want list' : 'On your want list'}</span>
+                      )}
                     </span>
                   </button>
                 </li>

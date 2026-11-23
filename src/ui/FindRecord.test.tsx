@@ -1,5 +1,6 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendProvider } from '@/app/BackendContext';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
@@ -59,7 +60,7 @@ type PhotosProp = { drafts: Drafts; ready: boolean; onUsed: () => void; onBack: 
 /** Show FindRecord again with other photos waiting, as the Add screen does when the drafts change. */
 let rerenderPhotos: (photos: PhotosProp | undefined) => void = () => {};
 
-function setup({ records = [] as ShelfRecord[], onAdded = () => {}, photos = undefined as PhotosProp | undefined, prepare = (_b: FakeBackend) => {} } = {}) {
+function setup({ mode = undefined as 'shelf' | 'want' | undefined, records = [] as ShelfRecord[], onAdded = () => {}, photos = undefined as PhotosProp | undefined, prepare = (_b: FakeBackend) => {} } = {}) {
   const backend = new FakeBackend({});
   backend.discogsResults = [FORCES, SPARSE];
   prepare(backend);
@@ -68,7 +69,9 @@ function setup({ records = [] as ShelfRecord[], onAdded = () => {}, photos = und
     <BackendProvider backend={backend}>
       <CurrentShelfProvider value={shelf}>
         <UndoProvider>
-          <FindRecord records={records} onAdded={onAdded} photos={p} />
+          <MemoryRouter>
+            <FindRecord mode={mode} records={records} onAdded={onAdded} photos={p} />
+          </MemoryRouter>
           <UndoBar />
         </UndoProvider>
       </CurrentShelfProvider>
@@ -1142,5 +1145,83 @@ describe('FindRecord: the shelf’s own sections', () => {
     await userEvent.click(await card(/Let’s Stay Together/));
     expect(await screen.findByText('On the shelf: Let’s Stay Together')).toBeInTheDocument();
     expect(await sectionNameOfSaved()).toBe('Soul & Funk');
+  });
+});
+
+describe('FindRecord in want mode', () => {
+  const wanted = (p: Partial<ShelfRecord> = {}) => onShelf({ status: 'wanted', discGrade: null, ...p });
+
+  it('a tap makes a wanted record with no label, and the saved line undoes it', async () => {
+    setup({ mode: 'want' });
+    await search('mccoy tyner');
+    await userEvent.click(await card(/Forces Of Nature/));
+    expect(await screen.findByText('On your want list: Forces Of Nature (Live At Slugs’)')).toBeInTheDocument();
+    const rows = await db.records.toArray();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'wanted', artist: 'McCoy Tyner', label: null, catalog: null, discogsReleaseId: null, deletedAt: null });
+    await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(async () => expect((await db.records.toArray())[0].deletedAt).not.toBeNull());
+  });
+
+  it('with This pressing only on, the label, catalog and release id are kept', async () => {
+    setup({ mode: 'want' });
+    const toggle = screen.getByRole('switch', { name: 'This pressing only' });
+    expect(toggle).not.toBeChecked();
+    await userEvent.click(toggle);
+    await search('mccoy tyner');
+    await userEvent.click(await card(/Forces Of Nature/));
+    await screen.findByText(/On your want list:/);
+    expect((await db.records.toArray())[0]).toMatchObject({ status: 'wanted', label: 'Blue Note', catalog: 'B0039362-01', discogsReleaseId: 28843512 });
+  });
+
+  it('an already-wanted card says so, and a tap adds nothing', async () => {
+    setup({ mode: 'want', records: [wanted()] });
+    await search('mccoy tyner');
+    const sahara = await card(/Sahara/);
+    expect(within(sahara).getByText('Already on your want list')).toBeInTheDocument();
+    await userEvent.click(sahara);
+    expect(screen.queryByText(/On your want list: /)).toBeNull();
+    expect(await db.records.count()).toBe(0);
+  });
+
+  it('an owned card says Already on the shelf; a tap shows the line with a link and adds nothing', async () => {
+    setup({ mode: 'want', records: [onShelf()] });
+    await search('mccoy tyner');
+    const sahara = await card(/Sahara/);
+    expect(within(sahara).getByText('Already on the shelf')).toBeInTheDocument();
+    await userEvent.click(sahara);
+    const link = await screen.findByRole('link', { name: 'open it' });
+    expect(link.parentElement).toHaveTextContent('Already on the shelf. To hunt for a better copy, open it and turn on Want a better copy.');
+    expect(link).toHaveAttribute('href', '/record/00000000-0000-4000-8000-000000000009');
+    expect(await db.records.count()).toBe(0);
+  });
+
+  it('a new arrival counts as on the shelf', async () => {
+    setup({ mode: 'want', records: [onShelf({ status: 'new_arrival' })] });
+    await search('mccoy tyner');
+    expect(within(await card(/Sahara/)).getByText('Already on the shelf')).toBeInTheDocument();
+  });
+
+  it('has no photo controls and no fun fact, and keeps the Discogs credit', async () => {
+    setup({ mode: 'want' });
+    await search('mccoy tyner');
+    await card(/Sahara/);
+    expect(screen.queryByText(/photo/i)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Data provided by Discogs' })).toBeInTheDocument();
+    await userEvent.click(await card(/Sahara/));
+    await screen.findByText(/On your want list:/);
+    expect(JSON.stringify(await db.meta.toArray())).not.toContain((await db.records.toArray())[0].id);
+  });
+});
+
+describe('FindRecord in shelf mode with a wanted record', () => {
+  it('says On your want list, and a tap still adds', async () => {
+    setup({ records: [onShelf({ status: 'wanted', discGrade: null })] });
+    await search('mccoy tyner');
+    const sahara = await card(/Sahara/);
+    expect(within(sahara).getByText('On your want list')).toBeInTheDocument();
+    expect(within(sahara).queryByText('Already on the shelf')).toBeNull();
+    await userEvent.click(sahara);
+    expect(await screen.findByText('On the shelf: Sahara')).toBeInTheDocument();
   });
 });
