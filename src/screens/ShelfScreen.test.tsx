@@ -80,4 +80,12 @@ describe('ShelfScreen', () => {
     expect(await screen.findByRole('button', { name: /^Art Blakey, / })).toBeInTheDocument();
     expect(spine('Bob Marley')).toBe('var(--section-misc)');
   });
+
+  it('links to the Want list, and wanted records are not on the shelf', async () => {
+    await db.records.put(record('00000000-0000-4000-8000-000000000009', 'Wanted Artist', 'jazz', { status: 'wanted' }));
+    renderShelf();
+    expect(await screen.findByRole('link', { name: 'Want list' })).toHaveAttribute('href', '/want');
+    expect(await screen.findByRole('button', { name: /^Art Blakey, / })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Wanted Artist, / })).toBeNull();
+  });
 });

@@ -1,5 +1,5 @@
 import { isAuthRetryableFetchError, type SupabaseClient } from '@supabase/supabase-js';
-import { BackendError, CLAUDE_DOWN, COVERS_BUCKET, DISCOGS_MESSAGES, NO_SIGNAL, NOT_ENOUGH_RATINGS, REJECTED, SUGGEST_DOWN, type Backend, type FoundRecord, type Identified, type Invite, type Member, type SignedIn } from './backend';
+import { BackendError, CLAUDE_DOWN, COVERS_BUCKET, DISCOGS_MESSAGES, NO_SIGNAL, NOT_ENOUGH_RATINGS, REJECTED, SIGN_IN_AGAIN, SUGGEST_DOWN, type Backend, type FoundRecord, type Identified, type Invite, type Member, type SignedIn } from './backend';
 import { AUTH_STORAGE_KEY, fetchWithTimeout, readConfig, supabase } from './supabase';
 
 const PAGE = 1000;
@@ -69,8 +69,6 @@ function photoFailure(error: PhotoError): never {
   if (error.statusCode === '413' || /too large|maximum allowed size/i.test(error.message)) throw new BackendError(REJECTED.photoTooBig);
   throw new BackendError(REJECTED.other(`photo ${error.statusCode ?? 'unknown'}`));
 }
-
-const SIGN_IN_AGAIN = 'Sign in again to look it up.';
 
 /** What a Claude-backed call says differently from the default. */
 type ClaudeCallOptions = {

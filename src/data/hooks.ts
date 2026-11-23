@@ -52,6 +52,15 @@ export function useSuggestions(shelfId: string): Suggestion[] | undefined {
   return useLiveQuery(() => db.suggestions.where('shelfId').equals(shelfId).toArray(), [shelfId]);
 }
 
+/** The distinct live, non-wanted records on the shelf with at least one rating (anyone's); undefined while loading. */
+export function useRatedCount(shelfId: string): number | undefined {
+  return useLiveQuery(async () => {
+    const records = await db.records.where('shelfId').equals(shelfId).filter((r) => r.deletedAt === null && r.status !== 'wanted').primaryKeys();
+    const rated = await db.ratings.where('recordId').anyOf(records).primaryKeys();
+    return new Set(rated.map(([recordId]) => recordId)).size;
+  }, [shelfId]);
+}
+
 /** How many live records each section holds, by section id (a section with none has no entry); undefined while loading. */
 export function useSectionCounts(shelfId: string): ReadonlyMap<string, number> | undefined {
   return useLiveQuery(async () => {

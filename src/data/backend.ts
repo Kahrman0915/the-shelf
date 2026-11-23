@@ -89,6 +89,8 @@ export const CLAUDE_DOWN = 'Couldn’t read the sleeve. Try again, or search bel
 export const NOT_ENOUGH_RATINGS = 'Rate a few more records first. Suggestions need at least 5 ratings.';
 
 /** Shown when Claude couldn’t come up with suggestions (other than having no signal). */
+/** Said when the session has lapsed and a Claude-backed call can't be made. */
+export const SIGN_IN_AGAIN = 'Sign in again to look it up.';
 export const SUGGEST_DOWN = 'Couldn’t find suggestions just now. Try again in a minute.';
 
 export const REJECTED = {

@@ -45,6 +45,8 @@ export class FakeBackend implements Backend {
   /** Makes suggestRecords() fail. 'lost-reply' adds the suggestions first, like a timed-out call whose function finished. */
   suggestFails: 'down' | 'not-enough-ratings' | 'lost-reply' | null = null;
   suggestCalls = 0;
+  /** While set, suggestRecords() waits for it before doing anything (to see the running state). */
+  suggestGate: Promise<void> | null = null;
   /** The suggestions on the "server". */
   suggestionRows: SuggestionRow[];
   identifyCalls = 0;
@@ -194,6 +196,7 @@ export class FakeBackend implements Backend {
   async suggestRecords() {
     this.guard();
     this.suggestCalls += 1;
+    if (this.suggestGate) await this.suggestGate;
     if (this.suggestFails === 'down') throw new BackendError(SUGGEST_DOWN);
     if (this.suggestFails === 'not-enough-ratings') throw new BackendError(NOT_ENOUGH_RATINGS);
     const shelfId = this.signedIn ? this.shelfFor[this.signedIn.userId] : undefined;

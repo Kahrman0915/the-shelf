@@ -36,6 +36,9 @@ export function ShelfScreen() {
             <Link to="/show">At the show</Link>
           </Button>
           <Button asChild variant="outline" className="h-12 rounded-lg border-[1.5px] border-line-strong bg-transparent px-5 text-[15px] font-semibold">
+            <Link to="/want">Want list</Link>
+          </Button>
+          <Button asChild variant="outline" className="h-12 rounded-lg border-[1.5px] border-line-strong bg-transparent px-5 text-[15px] font-semibold">
             <Link to="/add">Add</Link>
           </Button>
           <Button asChild variant="ghost" className="size-12 rounded-lg p-0">

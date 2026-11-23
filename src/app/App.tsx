@@ -9,6 +9,7 @@ import { EditScreen } from '@/screens/EditScreen';
 import { NameScreen } from '@/screens/NameScreen';
 import { PriceCheckScreen } from '@/screens/PriceCheckScreen';
 import { SectionsScreen } from '@/screens/SectionsScreen';
+import { WantListScreen } from '@/screens/WantListScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { ShelfScreen } from '@/screens/ShelfScreen';
 import { ShowScreen } from '@/screens/ShowScreen';
@@ -120,6 +121,7 @@ export default function App() {
               element={startInShow ? <RedirectOnce to="/show" onDone={() => setStartInShow(false)} /> : <ShelfScreen />}
             />
             <Route path="/add" element={<AddScreen />} />
+            <Route path="/want" element={<WantListScreen />} />
             <Route path="/want/add" element={<AddWantScreen />} />
             <Route path="/show" element={<ShowScreen />} />
             <Route path="/arrivals" element={<ArrivalsScreen />} />
