@@ -44,7 +44,7 @@ function patchCard(r: ShelfRecord, ctx: Ctx, fields: Partial<ShelfRecord>): NewP
 }
 
 /** Check a whole record against the record rules; throw naming the first broken field. */
-function checkRecord(candidate: ShelfRecord): ShelfRecord {
+export function checkRecord(candidate: ShelfRecord): ShelfRecord {
   const parsed = RecordSchema.safeParse(candidate);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
