@@ -12,6 +12,7 @@ import { useRatedCount, useSections, useShelfItems, useSuggestions } from '@/dat
 import type { Suggestion } from '@/data/schema';
 import { pullShelf } from '@/data/sync';
 import { addSuggestion, dismissSuggestion } from '@/data/wantActions';
+import { findDuplicate } from '@/domain/recordForm';
 import { normalise } from '@/domain/search';
 import { NEEDS_SIGNAL, messageFor } from '@/ui/useSavedOffer';
 import { SuggestionCard } from '@/ui/SuggestionCard';
@@ -79,10 +80,12 @@ export function WantListScreen() {
   };
 
   const add = (s: Suggestion) => once(s, async () => {
-    const result = addSuggestion(s, (items ?? []).map((i) => i.record), { me: userId, now: new Date().toISOString(), shelfId, newId: crypto.randomUUID(), sections: sections ?? [] });
+    const records = (items ?? []).map((i) => i.record);
+    const already = findDuplicate(records, s.artist, s.title);
+    const result = addSuggestion(s, records, { me: userId, now: new Date().toISOString(), shelfId, newId: crypto.randomUUID(), sections: sections ?? [] });
     await perform(db, result.postcards, runNow);
     const undo = result.undo;
-    if (undo) offer(`On your want list: ${s.title}`, () => perform(db, undo, runNow));
+    if (undo) offer(already && already.status !== 'wanted' ? `Already on the shelf: ${s.title}` : `On your want list: ${s.title}`, () => perform(db, undo, runNow));
   });
 
   const dismiss = (s: Suggestion) =>

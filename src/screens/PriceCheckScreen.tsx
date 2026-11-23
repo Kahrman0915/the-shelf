@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCurrentShelf } from '@/app/CurrentShelf';
@@ -13,6 +13,8 @@ import { PriceCheck, type BoughtInput } from '@/ui/PriceCheck';
 
 export function PriceCheckScreen() {
   const { id } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const { shelfId, userId } = useCurrentShelf();
   const record = useRecord(shelfId, id);
   const { runNow } = useSyncStatus();
@@ -21,7 +23,9 @@ export function PriceCheckScreen() {
   const [searchParams] = useSearchParams();
   const query = searchParams.get('q') ?? '';
   const fromRecord = searchParams.get('from') === 'record';
-  const backHref = fromRecord ? `/record/${id}` : query ? `/show?q=${encodeURIComponent(query)}` : '/show';
+  // Opened from a record, Back steps back to it (not forward to it again, which would loop); opened directly, it replaces itself.
+  const toRecord = () => (location.key !== 'default' ? navigate(-1) : navigate(`/record/${id}`, { replace: true }));
+  const backHref = query ? `/show?q=${encodeURIComponent(query)}` : '/show';
 
   async function onBought(input: BoughtInput) {
     if (!record) return;
@@ -46,12 +50,19 @@ export function PriceCheckScreen() {
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-2xl flex-col gap-6 px-4 pt-[max(1.5rem,calc(env(safe-area-inset-top)+1rem))] pb-[calc(3rem+env(safe-area-inset-bottom))]">
-      <Button asChild variant="ghost" className="h-12 w-fit rounded-lg px-3 text-[15px] font-semibold">
-        <Link to={backHref}>
+      {fromRecord ? (
+        <Button variant="ghost" className="h-12 w-fit rounded-lg px-3 text-[15px] font-semibold" onClick={toRecord}>
           <ArrowLeft className="size-5" />
-          {fromRecord ? 'Back' : 'Back to search'}
-        </Link>
-      </Button>
+          Back
+        </Button>
+      ) : (
+        <Button asChild variant="ghost" className="h-12 w-fit rounded-lg px-3 text-[15px] font-semibold">
+          <Link to={backHref}>
+            <ArrowLeft className="size-5" />
+            Back to search
+          </Link>
+        </Button>
+      )}
       {record === undefined ? null : record === null ? (
         <p className="text-ink-muted">That record isn’t on this phone.</p>
       ) : (

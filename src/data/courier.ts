@@ -24,7 +24,7 @@ async function send(db: ShelfDB, writer: ShelfWriter, p: Postcard): Promise<'sen
       await writer.mergeSection(p.recordId, p.fields.into);
       return 'sent';
     case 'suggestion.patch':
-      // A suggestion that's gone (a newer round replaced it) has nothing left to decide: done, not refused.
+      // A suggestion that's gone (removed, e.g. its shelf was deleted) has nothing left to decide: done, not refused.
       await writer.patchSuggestion(p.recordId, suggestionPatchToRow(p.fields));
       return 'sent';
     case 'rating.set':

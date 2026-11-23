@@ -167,6 +167,21 @@ describe('WantListScreen', () => {
     expect(await screen.findByRole('heading', { name: 'Wanted (0)' })).toBeInTheDocument();
   });
 
+  it('a suggestion already on the shelf offers Already on the shelf, and makes no new record', async () => {
+    await setup({ records: [record(1, 'Ahmad Jamal', 'The Awakening')], suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] });
+    await userEvent.click(await screen.findByRole('button', { name: 'Add to want list' }));
+    expect(await screen.findByText('Already on the shelf: The Awakening')).toBeInTheDocument();
+    expect(screen.queryByText('On your want list: The Awakening')).toBeNull();
+    expect(await db.records.count()).toBe(1);
+  });
+
+  it('a suggestion already on the want list still offers On your want list', async () => {
+    await setup({ records: [record(1, 'Ahmad Jamal', 'The Awakening', { status: 'wanted' })], suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] });
+    await userEvent.click(await screen.findByRole('button', { name: 'Add to want list' }));
+    expect(await screen.findByText('On your want list: The Awakening')).toBeInTheDocument();
+    expect(await db.records.count()).toBe(1);
+  });
+
   it('two quick taps on Add to want list make one wanted record', async () => {
     await setup({ suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] });
     const button = await screen.findByRole('button', { name: 'Add to want list' });

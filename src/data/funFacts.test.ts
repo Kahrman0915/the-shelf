@@ -189,6 +189,25 @@ describe('runFunFacts', () => {
     expect(await queue()).toEqual([]);
   });
 
+  it('a purchase that was undone (the record is a want again) gets no lookup and leaves the queue', async () => {
+    await db.records.put(record(A, { status: 'wanted' }));
+    await wantFunFact(db, A);
+    await runFunFacts(db, backend, ctx);
+    expect(backend.funFactCalls).toEqual([]);
+    expect(await queue()).toEqual([]);
+  });
+
+  it('a purchase undone while the request was out gets no patch', async () => {
+    await db.records.put(record(A, { status: 'new_arrival' }));
+    backend.funFacts.set('Miles Davis|Kind of Blue', FACT);
+    meanwhile(() => db.records.update(A, { status: 'wanted' }));
+    await wantFunFact(db, A);
+    await runFunFacts(db, backend, ctx);
+    expect((await db.records.get(A))?.funFact).toBeNull();
+    expect(await db.outbox.count()).toBe(0);
+    expect(await queue()).toEqual([]);
+  });
+
   it('no fact found: notes it and takes the record off the queue', async () => {
     await db.records.put(record(A));
     await wantFunFact(db, A);

@@ -106,7 +106,7 @@ async function funFactRun(
     tried.add(recordId);
 
     const record = await db.records.get(recordId);
-    if (!record || record.deletedAt !== null || record.funFact !== null) {
+    if (!record || record.deletedAt !== null || record.status === 'wanted' || record.funFact !== null) {
       await changeQueue(db, without(recordId));
       continue;
     }
@@ -140,7 +140,7 @@ async function funFactRun(
 
     // The answer can take a while: the fact may have been typed, or the record deleted (or undone), meanwhile.
     const now = await db.records.get(recordId);
-    const wanted = now && now.deletedAt === null && now.funFact === null ? now : null;
+    const wanted = now && now.deletedAt === null && now.status !== 'wanted' && now.funFact === null ? now : null;
     let postcards: NewPostcard[] | null = null;
     if (found !== null && wanted) {
       try {

@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { Link, MemoryRouter, Route, Routes, useNavigate } from 'react-router';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
 import { UndoBar, UndoProvider } from '@/app/UndoContext';
@@ -47,11 +47,56 @@ beforeEach(async () => {
 });
 
 describe('PriceCheckScreen', () => {
-  it('from=record goes back to the record', async () => {
+  it('from=record Back goes back through history: Want list, record, price, Back, Back ends on the Want list', async () => {
     await db.records.put(record());
-    renderPrice('?from=record&q=trane');
-    const back = await screen.findByRole('link', { name: 'Back' });
-    expect(back).toHaveAttribute('href', `/record/${ID}`);
+    const shelf = { shelfId: SHELF, userId: ME, email: 'k@example.com', signOut: async () => null, signOutAndDelete: async () => {} };
+    function RecordStub() {
+      const navigate = useNavigate();
+      return (
+        <div>
+          <p>record page</p>
+          <button onClick={() => navigate(-1)}>record back</button>
+          <Link to={`/price/${ID}?from=record`}>Check price</Link>
+        </div>
+      );
+    }
+    render(
+      <CurrentShelfProvider value={shelf}>
+        <UndoProvider>
+          <MemoryRouter initialEntries={['/want']}>
+            <Routes>
+              <Route path="/want" element={<Link to={`/record/${ID}`}>open record</Link>} />
+              <Route path="/record/:id" element={<RecordStub />} />
+              <Route path="/price/:id" element={<PriceCheckScreen />} />
+            </Routes>
+          </MemoryRouter>
+        </UndoProvider>
+      </CurrentShelfProvider>,
+    );
+    await userEvent.click(await screen.findByRole('link', { name: 'open record' }));
+    await userEvent.click(await screen.findByRole('link', { name: 'Check price' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Back' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'record back' }));
+    expect(await screen.findByRole('link', { name: 'open record' })).toBeInTheDocument();
+  });
+
+  it('from=record opened directly, Back goes to the record', async () => {
+    await db.records.put(record());
+    const shelf = { shelfId: SHELF, userId: ME, email: 'k@example.com', signOut: async () => null, signOutAndDelete: async () => {} };
+    render(
+      <CurrentShelfProvider value={shelf}>
+        <UndoProvider>
+          <MemoryRouter initialEntries={[`/price/${ID}?from=record`]}>
+            <Routes>
+              <Route path="/record/:id" element={<p>record page</p>} />
+              <Route path="/price/:id" element={<PriceCheckScreen />} />
+            </Routes>
+          </MemoryRouter>
+        </UndoProvider>
+      </CurrentShelfProvider>,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Back' }));
+    expect(await screen.findByText('record page')).toBeInTheDocument();
   });
 
   it('otherwise Back to search keeps the search', async () => {

@@ -117,6 +117,8 @@ export function FindRecord({
   const [exactPressing, setExactPressing] = useState(false);
   // Want mode: the owned card tapped, whose record the line points to.
   const [ownedTapped, setOwnedTapped] = useState<ShelfRecord | null>(null);
+  /** Shelf mode: the want a tapped card matched. Nothing is added, so the album is never both owned and wanted. */
+  const [wantedTapped, setWantedTapped] = useState<ShelfRecord | null>(null);
   const box = useRef<HTMLInputElement>(null);
   // Only the latest search may show its answer: an older one that returns late is ignored.
   const latest = useRef(0);
@@ -165,6 +167,7 @@ export function FindRecord({
   function edit(value: string) {
     setQuery(value);
     setOwnedTapped(null);
+    setWantedTapped(null);
     // Changing the words abandons a search still on its way, so a new one can start at once.
     latest.current++;
     setSearching(false);
@@ -209,6 +212,15 @@ export function FindRecord({
       box.current?.focus();
       // The person chose: a reading still on its way would only save a second record, or replace these cards.
       takeOver();
+      setWantedTapped(null);
+      // A want is logged as bought from its own record, never by adding a second copy here; waiting photos stay waiting.
+      if (!findDuplicate(records.filter((r) => r.status !== 'wanted'), record.artist, record.title)) {
+        const want = findDuplicate(records.filter((r) => r.status === 'wanted'), record.artist, record.title);
+        if (want) {
+          setWantedTapped(want);
+          return false;
+        }
+      }
     }
     if (saving.current !== 'idle') return false;
     // A fresh phone before its first sync has no sections to sort the record into yet.
@@ -474,6 +486,16 @@ export function FindRecord({
             open it
           </Link>{' '}
           and turn on Want a better copy.
+        </p>
+      )}
+
+      {mode !== 'want' && wantedTapped && (
+        <p role="status" className="text-[15px] leading-[22px] text-ink">
+          On your want list. To log it as bought,{' '}
+          <Link to={`/record/${wantedTapped.id}`} className="underline underline-offset-2">
+            open it
+          </Link>{' '}
+          and tap Check price · Bought it.
         </p>
       )}
 

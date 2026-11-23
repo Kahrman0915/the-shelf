@@ -1215,13 +1215,29 @@ describe('FindRecord in want mode', () => {
 });
 
 describe('FindRecord in shelf mode with a wanted record', () => {
-  it('says On your want list, and a tap still adds', async () => {
+  it('says On your want list, and a tap adds nothing but shows the way to log it as bought', async () => {
     setup({ records: [onShelf({ status: 'wanted', discGrade: null })] });
     await search('mccoy tyner');
     const sahara = await card(/Sahara/);
     expect(within(sahara).getByText('On your want list')).toBeInTheDocument();
     expect(within(sahara).queryByText('Already on the shelf')).toBeNull();
     await userEvent.click(sahara);
-    expect(await screen.findByText('On the shelf: Sahara')).toBeInTheDocument();
+    const link = await screen.findByRole('link', { name: 'open it' });
+    expect(link.parentElement).toHaveTextContent('On your want list. To log it as bought, open it and tap Check price · Bought it.');
+    expect(link).toHaveAttribute('href', '/record/00000000-0000-4000-8000-000000000009');
+    expect(screen.queryByText('On the shelf: Sahara')).toBeNull();
+    expect(await db.records.count()).toBe(0);
+  });
+
+  it('with photos waiting, a tap on a wanted card asks nothing and saves nothing', async () => {
+    const front = { side: 'front' as const, bytes: new Uint8Array([1]).buffer, foundEdges: true };
+    const photos = { drafts: { front, back: { ...front, side: 'back' as const } }, ready: false, onUsed: vi.fn(), onBack: vi.fn() };
+    setup({ records: [onShelf({ status: 'wanted', discGrade: null })], photos });
+    await search('mccoy tyner');
+    await userEvent.click(await card(/Sahara/));
+    expect(await screen.findByRole('link', { name: 'open it' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(await db.records.count()).toBe(0);
+    expect(photos.onUsed).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
--- Records Claude suggests for a shelf. Only the Edge Function (service role) writes new rows in
--- bulk; members read them and mark them added or dismissed.
+-- Records Claude suggests for a shelf. The Edge Function writes new rows with the caller's own
+-- sign-in, through the member insert policy; members read them and mark them added or dismissed.
 
 create table public.suggestions (
   id uuid primary key default gen_random_uuid(),
