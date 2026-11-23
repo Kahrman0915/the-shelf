@@ -289,4 +289,50 @@ describe('EditScreen', () => {
     expect(sent[0].fields).toEqual({ coverPath: null });
     expect(sent[1].fields).toEqual({ path: OLD });
   });
+
+  describe('upgrade', () => {
+    const save = () => userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    it('switching on with a note saves one patch with both', async () => {
+      await db.records.put(record());
+      renderEdit();
+      await screen.findByRole('heading', { name: 'Edit' });
+      expect(screen.queryByRole('textbox', { name: 'Upgrade note' })).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('switch', { name: 'Want a better copy' }));
+      await userEvent.type(box('Upgrade note'), '  Original pressing  ');
+      await save();
+      await waitFor(async () => expect(await db.outbox.count()).toBe(1));
+      expect((await db.outbox.toArray())[0].fields).toEqual({ wantsUpgrade: true, upgradeNote: 'Original pressing' });
+    });
+
+    it('switching off clears the note', async () => {
+      await db.records.put(record({ wantsUpgrade: true, upgradeNote: 'Mono' }));
+      renderEdit();
+      const sw = await screen.findByRole('switch', { name: 'Want a better copy' });
+      expect(box('Upgrade note')).toHaveValue('Mono');
+      await userEvent.click(sw);
+      expect(screen.queryByRole('textbox', { name: 'Upgrade note' })).not.toBeInTheDocument();
+      await save();
+      await waitFor(async () => expect(await db.outbox.count()).toBe(1));
+      expect((await db.outbox.toArray())[0].fields).toEqual({ wantsUpgrade: false, upgradeNote: null });
+    });
+
+    it('an unchanged switch sends nothing extra', async () => {
+      await db.records.put(record({ wantsUpgrade: true, upgradeNote: 'Mono' }));
+      renderEdit();
+      await screen.findByRole('switch', { name: 'Want a better copy' });
+      await userEvent.clear(box('Title'));
+      await userEvent.type(box('Title'), 'Ascension (Edition II)');
+      await save();
+      await waitFor(async () => expect(await db.outbox.count()).toBe(1));
+      expect((await db.outbox.toArray())[0].fields).toEqual({ title: 'Ascension (Edition II)' });
+    });
+
+    it('is not shown for a wanted record', async () => {
+      await db.records.put(record({ status: 'wanted' }));
+      renderEdit();
+      await screen.findByRole('heading', { name: 'Edit' });
+      expect(screen.queryByRole('switch', { name: 'Want a better copy' })).not.toBeInTheDocument();
+    });
+  });
 });

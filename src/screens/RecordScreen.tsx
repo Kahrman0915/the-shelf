@@ -4,7 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCurrentShelf } from '@/app/CurrentShelf';
 import { SyncNotice, useSyncStatus } from '@/app/SyncContext';
-import { didntBuyIt, perform, rate } from '@/data/actions';
+import { buyKind, didntBuyIt, perform, rate } from '@/data/actions';
 import { db } from '@/data/db';
 import { wantFunFact } from '@/data/funFacts';
 import { useFunFactStatus } from '@/app/useFunFacts';
@@ -153,6 +153,11 @@ export function RecordScreen() {
               </section>
             )}
             {error && <p role="alert" className="text-[15px] text-brick-ink">{error}</p>}
+            {buyKind(record) !== null && (
+              <Button asChild className="h-12 w-full rounded-lg text-base font-semibold">
+                <Link to={`/price/${record.id}?from=record`}>Check price · Bought it</Link>
+              </Button>
+            )}
             {record.status === 'new_arrival' && (
               <>
                 <Button variant="ghost" className="h-12 w-fit rounded-lg px-3 text-[15px] font-semibold text-brick-ink" onClick={() => setAsking(true)}>

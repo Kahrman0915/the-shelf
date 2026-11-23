@@ -147,6 +147,24 @@ describe('RecordScreen', () => {
     expect(screen.queryByText('Your rating')).not.toBeInTheDocument();
   });
 
+  it('Check price · Bought it shows for a want and an upgrade, not a plain owned record', async () => {
+    await db.records.put(record({ status: 'wanted' }));
+    const view = renderRecord();
+    const link = await screen.findByRole('link', { name: 'Check price · Bought it' });
+    expect(link).toHaveAttribute('href', `/price/${ID}?from=record`);
+    view.unmount();
+
+    await db.records.put(record({ status: 'owned', wantsUpgrade: true }));
+    const again = renderRecord();
+    expect(await screen.findByRole('link', { name: 'Check price · Bought it' })).toBeInTheDocument();
+    again.unmount();
+
+    await db.records.put(record({ status: 'owned', wantsUpgrade: false }));
+    renderRecord();
+    await screen.findByRole('heading', { name: 'John Coltrane' });
+    expect(screen.queryByRole('link', { name: 'Check price · Bought it' })).not.toBeInTheDocument();
+  });
+
   it('Didn’t buy it asks first', async () => {
     await db.records.put(record({ status: 'new_arrival', title: 'Moanin’' }));
     renderRecord();

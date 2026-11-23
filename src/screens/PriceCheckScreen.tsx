@@ -3,10 +3,11 @@ import { Link, useParams, useSearchParams } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCurrentShelf } from '@/app/CurrentShelf';
-import { useUndo } from '@/app/UndoContext';
+import { UNDO_WINDOW_MS, useUndo } from '@/app/UndoContext';
 import { useSyncStatus } from '@/app/SyncContext';
 import { boughtIt, buyKind, perform } from '@/data/actions';
 import { db } from '@/data/db';
+import { wantFunFact } from '@/data/funFacts';
 import { useRecord } from '@/data/hooks';
 import { PriceCheck, type BoughtInput } from '@/ui/PriceCheck';
 
@@ -19,7 +20,8 @@ export function PriceCheckScreen() {
   const [error, setError] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
   const query = searchParams.get('q') ?? '';
-  const backHref = query ? `/show?q=${encodeURIComponent(query)}` : '/show';
+  const fromRecord = searchParams.get('from') === 'record';
+  const backHref = fromRecord ? `/record/${id}` : query ? `/show?q=${encodeURIComponent(query)}` : '/show';
 
   async function onBought(input: BoughtInput) {
     if (!record) return;
@@ -29,6 +31,12 @@ export function PriceCheckScreen() {
       const result = boughtIt(record, input, { me: userId, now: new Date().toISOString() });
       await perform(db, result.postcards, runNow);
       const undo = result.undo;
+      if (kind === 'want') {
+        // Held back past the undo window, so an undone purchase isn't looked up. A failure costs only the fact.
+        wantFunFact(db, record.id, { notBefore: Date.now() + UNDO_WINDOW_MS + 1000 }).catch((e: unknown) =>
+          console.error('Could not queue a fun fact', e instanceof Error ? e.name : 'error'),
+        );
+      }
       if (undo) offer(kind === 'want' ? 'In New arrivals' : 'Upgrade logged', () => perform(db, undo, runNow));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -41,7 +49,7 @@ export function PriceCheckScreen() {
       <Button asChild variant="ghost" className="h-12 w-fit rounded-lg px-3 text-[15px] font-semibold">
         <Link to={backHref}>
           <ArrowLeft className="size-5" />
-          Back to search
+          {fromRecord ? 'Back' : 'Back to search'}
         </Link>
       </Button>
       {record === undefined ? null : record === null ? (

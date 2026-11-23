@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
+import { Switch } from 'radix-ui';
 import { Button } from '@/components/ui/button';
 import { useCurrentShelf } from '@/app/CurrentShelf';
 import { SyncNotice, useSyncStatus } from '@/app/SyncContext';
@@ -9,6 +10,7 @@ import { useUnsavedMark } from '@/app/useUnsavedMark';
 import { deleteRecord, editRecord, FORM_FIELDS, perform, restoreWithEdits, type RecordFields } from '@/data/actions';
 import { db } from '@/data/db';
 import { useRecordAnyState, useSections, useShelfItems } from '@/data/hooks';
+import { upgradeChange } from '@/data/wantActions';
 import { editPhotos, type PhotoChanges } from '@/data/photos';
 import type { ShelfRecord } from '@/data/schema';
 import { formFromRecord, parseRecordForm, type RecordFormValues } from '@/domain/recordForm';
@@ -18,7 +20,8 @@ import { RecordForm } from '@/ui/RecordForm';
 
 const FORM_ID = 'edit-record';
 
-type Opened = { values: RecordFormValues; fields: RecordFields };
+type Opened = { values: RecordFormValues; fields: RecordFields; upgrade: Upgrade };
+type Upgrade = { wants: boolean; note: string };
 
 /**
  * What the form opened with, read the way the form would save it, so legacy untrimmed or empty text can't look like a
@@ -28,7 +31,7 @@ function openedFrom(r: ShelfRecord): Opened {
   const values = formFromRecord(r);
   const parsed = parseRecordForm(values);
   const fields = parsed.ok ? parsed.fields : (Object.fromEntries(FORM_FIELDS.map((k) => [k, r[k]])) as RecordFields);
-  return { values, fields };
+  return { values, fields, upgrade: { wants: r.wantsUpgrade, note: r.upgradeNote ?? '' } };
 }
 
 export function EditScreen() {
@@ -52,8 +55,14 @@ export function EditScreen() {
   // along with any typed changes, as the form's already are.
   const [photoChanges, setPhotoChanges] = useState<PhotoChanges>({});
   const photosDirty = Object.keys(photoChanges).length > 0;
-  useUnsavedMark(photosDirty);
-  const { leave, dialog } = useLeaveGuard(formDirty || photosDirty);
+  // The upgrade switch and note (owned records only), until touched they are what the record opened with.
+  const [upgradeEdit, setUpgradeEdit] = useState<Upgrade | null>(null);
+  const upgrade = upgradeEdit ?? opened?.upgrade ?? { wants: false, note: '' };
+  const canUpgrade = record?.status === 'owned';
+  const upgradeDirty =
+    canUpgrade && opened !== null && (upgrade.wants !== opened.upgrade.wants || upgrade.note.trim() !== opened.upgrade.note.trim());
+  useUnsavedMark(photosDirty || upgradeDirty);
+  const { leave, dialog } = useLeaveGuard(formDirty || photosDirty || upgradeDirty);
   const [asking, setAsking] = useState(false);
   // Set before this screen deletes, so its own delete isn't taken for one from another phone.
   const [deleting, setDeleting] = useState(false);
@@ -69,10 +78,11 @@ export function EditScreen() {
     const ctx = { me: userId, now: new Date().toISOString() };
     // Deleted on another phone: saving brings it back with these changes, the same as Restore with your changes.
     const ph = editPhotos(record, photoChanges, { ...ctx, photoId: () => crypto.randomUUID() });
+    const extra = canUpgrade ? { ...ph.fields, ...upgradeChange(record, upgrade.wants, upgrade.note) } : ph.fields;
     const { postcards } =
       record.deletedAt !== null
-        ? restoreWithEdits(record, opened.fields, fields, ctx, ph.fields)
-        : editRecord(record, opened.fields, fields, ctx, ph.fields);
+        ? restoreWithEdits(record, opened.fields, fields, ctx, extra)
+        : editRecord(record, opened.fields, fields, ctx, extra);
     if (postcards.length > 0) await perform(db, [...ph.uploads, ...postcards, ...ph.deletes], runNow, ph.photos);
     toRecord();
   }
@@ -129,7 +139,40 @@ export function EditScreen() {
             onOpenDuplicate={(other) => leave(() => navigate(`/record/${other}`))}
             onDirtyChange={setFormDirty}
             footer={
-              deletedElsewhere ? null : (
+              <>
+                {canUpgrade && (
+                  <div className="flex flex-col gap-3">
+                    <div className="flex min-h-12 items-center justify-between gap-3">
+                      <label htmlFor="edit-wants-upgrade" className="text-[17px] font-semibold text-ink">
+                        Want a better copy
+                      </label>
+                      <Switch.Root
+                        id="edit-wants-upgrade"
+                        checked={upgrade.wants}
+                        onCheckedChange={(wants) => setUpgradeEdit({ ...upgrade, wants })}
+                        className="relative h-12 w-14 flex-none rounded-full bg-line-strong data-[state=checked]:bg-bourbon"
+                      >
+                        <Switch.Thumb className="block size-6 translate-x-1 rounded-full bg-surface-raised transition-transform data-[state=checked]:translate-x-7" />
+                      </Switch.Root>
+                    </div>
+                    {upgrade.wants && (
+                      <div className="flex flex-col gap-2">
+                        <label htmlFor="edit-upgrade-note" className="text-[13px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
+                          Upgrade note
+                        </label>
+                        <input
+                          id="edit-upgrade-note"
+                          type="text"
+                          maxLength={200}
+                          value={upgrade.note}
+                          onChange={(e) => setUpgradeEdit({ ...upgrade, note: e.target.value })}
+                          className="min-h-12 w-full rounded-lg border-[1.5px] border-line-strong bg-surface-sunk px-4 text-base text-ink focus-visible:outline-2 focus-visible:outline-ring"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+                {deletedElsewhere ? null : (
                 <Button
                   type="button"
                   variant="ghost"
@@ -138,7 +181,8 @@ export function EditScreen() {
                 >
                   Delete record
                 </Button>
-              )
+                )}
+              </>
             }
           />
           {error && <p role="alert" className="px-4 text-[15px] text-brick-ink">{error}</p>}
