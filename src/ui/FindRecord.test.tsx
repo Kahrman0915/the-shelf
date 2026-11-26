@@ -877,6 +877,19 @@ describe('FindRecord', () => {
       expect(photos.onUsed).toHaveBeenCalledOnce();
     });
 
+    it('an exact match on a want-only album saves nothing, asks nothing and keeps the photos waiting', async () => {
+      const want = onShelf({ status: 'wanted', discGrade: null, artist: 'Vince Guaraldi Trio', title: 'A Charlie Brown Christmas' });
+      await db.records.put(want);
+      const { photos } = reading({ read: READ, match: 'exact', results: [CHARLIE] }, { records: [want] });
+      const link = await screen.findByRole('link', { name: 'open it' });
+      expect(link.parentElement).toHaveTextContent('On your want list. To log it as bought, open it and tap Check price · Bought it.');
+      expect(link).toHaveAttribute('href', `/record/${want.id}`);
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.queryByText('On the shelf: A Charlie Brown Christmas')).toBeNull();
+      expect(await db.records.count()).toBe(1);
+      expect(photos.onUsed).not.toHaveBeenCalled();
+    });
+
     it('several pressings: asks which, and the one tapped saves with the photos', async () => {
       const { backend, photos } = reading({ read: READ, match: 'several', results: [CHARLIE, CHARLIE_1965] });
       expect(await screen.findByText('Which pressing is yours?')).toBeInTheDocument();

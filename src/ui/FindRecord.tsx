@@ -212,14 +212,15 @@ export function FindRecord({
       box.current?.focus();
       // The person chose: a reading still on its way would only save a second record, or replace these cards.
       takeOver();
-      setWantedTapped(null);
-      // A want is logged as bought from its own record, never by adding a second copy here; waiting photos stay waiting.
-      if (!findDuplicate(records.filter((r) => r.status !== 'wanted'), record.artist, record.title)) {
-        const want = findDuplicate(records.filter((r) => r.status === 'wanted'), record.artist, record.title);
-        if (want) {
-          setWantedTapped(want);
-          return false;
-        }
+    }
+    // A want is logged as bought from its own record, never by adding a second copy here (a card or Claude's
+    // exact match alike); waiting photos stay waiting.
+    setWantedTapped(null);
+    if (!findDuplicate(records.filter((r) => r.status !== 'wanted'), record.artist, record.title)) {
+      const want = findDuplicate(records.filter((r) => r.status === 'wanted'), record.artist, record.title);
+      if (want) {
+        setWantedTapped(want);
+        return false;
       }
     }
     if (saving.current !== 'idle') return false;
