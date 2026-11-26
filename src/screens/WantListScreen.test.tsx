@@ -1,7 +1,7 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendProvider } from '@/app/BackendContext';
 import { CurrentShelfProvider } from '@/app/CurrentShelf';
 import { SyncContext } from '@/app/SyncContext';
@@ -16,6 +16,9 @@ import type { FoundRecord } from '@/data/backend';
 import { clearDiscogsDetailCache } from '@/ui/useDiscogsDetail';
 import { FakeBackend } from '@/test/fakeBackend';
 import { WantListScreen } from './WantListScreen';
+
+// A lookup that never answers is given up on after this long (20 s in the app).
+vi.mock('@/data/supabaseBackend', async (orig) => ({ ...(await orig<typeof import('@/data/supabaseBackend')>()), DISCOGS_TIMEOUT_MS: 100 }));
 
 const SHELF = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ME = '11111111-1111-4111-8111-111111111111';
@@ -358,6 +361,61 @@ describe('WantListScreen suggestion details from Discogs', () => {
     const second = await setup({ ...fiveRated(), suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] }, { results: [found(7, 'Ahmad Jamal', 'The Awakening')] });
     expect(await screen.findByText('Ahmad Jamal — The Awakening')).toBeInTheDocument();
     expect(second.discogsCalls).toHaveLength(0);
+  });
+
+  it('still shows a detail whose lookup finishes after another card was dismissed', async () => {
+    const mk = (n: number, a: string, t: string) => suggestion(n, a, t);
+    const seed = { ...fiveRated(), suggestions: [mk(1, 'Ahmad Jamal', 'The Awakening'), mk(2, 'Bill Evans', 'Waltz for Debby')] };
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const original = FakeBackend.prototype.searchDiscogs;
+    FakeBackend.prototype.searchDiscogs = async function (this: FakeBackend, q: string) {
+      if (q.startsWith('Bill')) await gate;
+      return original.call(this, q);
+    };
+    try {
+      await setup(seed, { results: [found(7, 'Bill Evans', 'Waltz for Debby')] });
+      await screen.findByText('Bill Evans');
+      const cards = screen.getAllByRole('listitem');
+      await userEvent.click(within(cards[0]).getByRole('button', { name: 'Not for me' }));
+      await waitFor(() => expect(screen.queryByText('Ahmad Jamal')).toBeNull());
+      release();
+      expect(await screen.findByText('Bill Evans — Waltz for Debby')).toBeInTheDocument();
+    } finally {
+      FakeBackend.prototype.searchDiscogs = original;
+    }
+  });
+
+  it('does not remember a failed lookup: a later visit tries again', async () => {
+    const first = await setup({ ...fiveRated(), suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] }, { fails: 'down' });
+    await waitFor(() => expect(first.discogsCalls).toHaveLength(1));
+    await screen.findByText('Ahmad Jamal');
+    cleanup();
+    await setup({ ...fiveRated(), suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] }, { results: [found(7, 'Ahmad Jamal', 'The Awakening')] });
+    expect(await screen.findByText('Ahmad Jamal — The Awakening')).toBeInTheDocument();
+  });
+
+  it('stops looking up the other cards once Discogs says rate-limited', async () => {
+    const backend = await setup({ ...fiveRated(), suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening'), suggestion(2, 'Bill Evans', 'Waltz for Debby')] }, { fails: 'rate-limited' });
+    await screen.findByText('Ahmad Jamal');
+    await waitFor(() => expect(backend.discogsCalls).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(backend.discogsCalls).toHaveLength(1);
+  });
+
+  it('gives up on a lookup that never answers and lets a later visit try again', async () => {
+    const original = FakeBackend.prototype.searchDiscogs;
+    FakeBackend.prototype.searchDiscogs = () => new Promise(() => {});
+    try {
+      await setup({ ...fiveRated(), suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] });
+      await screen.findByText('Ahmad Jamal');
+      await new Promise((r) => setTimeout(r, 150));
+    } finally {
+      FakeBackend.prototype.searchDiscogs = original;
+    }
+    cleanup();
+    await setup({ ...fiveRated(), suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] }, { results: [found(7, 'Ahmad Jamal', 'The Awakening')] });
+    expect(await screen.findByText('Ahmad Jamal — The Awakening')).toBeInTheDocument();
   });
 
   it('writes nothing about the lookup to the suggestion row', async () => {
