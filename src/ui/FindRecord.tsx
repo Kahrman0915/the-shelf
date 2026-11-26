@@ -20,6 +20,7 @@ import { findDuplicate } from '@/domain/recordForm';
 import { cn } from '@/lib/utils';
 import { PhotoDuplicateDialog } from './PhotoDuplicateDialog';
 import { useReadSleeve } from './useReadSleeve';
+import { joined } from '@/ui/joined';
 import { messageFor, NEEDS_SIGNAL, useSavedOffer, type SavedOffer } from './useSavedOffer';
 
 const MAX_CARDS = 6;
@@ -40,7 +41,6 @@ const LABEL = 'text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-mu
 const FUN_FACT_AFTER_MS = UNDO_WINDOW_MS + 1_000;
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
-const joined = (parts: (string | number | null)[]) => parts.filter((p) => p !== null && p !== '').join(' · ');
 
 /** Photos waiting for the next record saved: `ready` once they're done (Claude reads them then), `onUsed` once
  *  a save took them, `onBack` with them after that save is undone. */

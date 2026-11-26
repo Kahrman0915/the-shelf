@@ -16,6 +16,7 @@ import { findDuplicate } from '@/domain/recordForm';
 import { normalise } from '@/domain/search';
 import { NEEDS_SIGNAL, messageFor } from '@/ui/useSavedOffer';
 import { SuggestionCard } from '@/ui/SuggestionCard';
+import { useDiscogsDetail } from '@/ui/useDiscogsDetail';
 
 const MIN_RATED = 5;
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -66,6 +67,7 @@ export function WantListScreen() {
     [suggestions],
   );
 
+  const details = useDiscogsDetail(pending);
   const offline = !online;
   const tooFew = rated !== undefined && rated < MIN_RATED;
 
@@ -181,9 +183,19 @@ export function WantListScreen() {
       ) : (
         <ul>
           {pending.map((s) => (
-            <SuggestionCard key={s.id} suggestion={s} onAdd={() => void add(s)} onDismiss={() => void dismiss(s)} />
+            <SuggestionCard key={s.id} suggestion={s} detail={details.get(s.id)} onAdd={() => void add(s)} onDismiss={() => void dismiss(s)} />
           ))}
         </ul>
+      )}
+      {details.size > 0 && (
+        <a
+          href="https://www.discogs.com/"
+          target="_blank"
+          rel="noopener"
+          className="flex min-h-12 w-fit items-center px-4 text-[15px] text-ink-muted underline underline-offset-2"
+        >
+          Data provided by Discogs
+        </a>
       )}
     </main>
   );

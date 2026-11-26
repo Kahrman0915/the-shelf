@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -12,6 +12,8 @@ import { pullShelf } from '@/data/sync';
 import { ratingToRow, recordToRow, sectionToRow, suggestionToRow } from '@/data/rowMapping';
 import type { Rating, ShelfRecord, Suggestion } from '@/data/schema';
 import { KAHRMANS_NINE, sectionIdFor } from '@/domain/sections';
+import type { FoundRecord } from '@/data/backend';
+import { clearDiscogsDetailCache } from '@/ui/useDiscogsDetail';
 import { FakeBackend } from '@/test/fakeBackend';
 import { WantListScreen } from './WantListScreen';
 
@@ -40,7 +42,7 @@ function suggestion(n: number, artist: string, title: string, p: Partial<Suggest
 
 type Seed = { records?: ShelfRecord[]; ratings?: Rating[]; suggestions?: Suggestion[] };
 
-async function setup(seed: Seed = {}, { followSync = false }: { followSync?: boolean } = {}) {
+async function setup(seed: Seed = {}, { followSync = false, results = [], fails = null }: { followSync?: boolean; results?: FoundRecord[]; fails?: 'down' | 'rate-limited' | null } = {}) {
   const sections = sectionsFromSet(SHELF, KAHRMANS_NINE, T);
   const backend = new FakeBackend({
     users: { 'k@example.com': ME },
@@ -51,6 +53,8 @@ async function setup(seed: Seed = {}, { followSync = false }: { followSync?: boo
     sections: sections.map(sectionToRow),
     suggestions: (seed.suggestions ?? []).map(suggestionToRow),
   });
+  backend.discogsResults = results;
+  backend.discogsFails = fails;
   await writeSession(db, { userId: ME, email: 'k@example.com', shelfId: SHELF });
   await pullShelf(db, backend, SHELF);
   const shelf = { shelfId: SHELF, userId: ME, email: 'k@example.com', signOut: async () => null, signOutAndDelete: async () => {} };
@@ -302,5 +306,64 @@ describe('WantListScreen', () => {
       await userEvent.click(button);
       expect(await screen.findByText('No new suggestions this time.')).toBeInTheDocument();
     });
+  });
+});
+
+describe('WantListScreen suggestion details from Discogs', () => {
+  const found = (releaseId: number, artist: string, title: string, p: Partial<FoundRecord> = {}): FoundRecord => ({
+    releaseId, artist, title, label: 'Argo', catalog: 'LP 628', year: 1970, format: 'Vinyl, LP', country: 'US', genres: ['Jazz'], styles: [], thumb: 'https://img.example/awakening.jpg', ...p,
+  });
+  beforeEach(() => clearDiscogsDetailCache());
+
+  it('shows the cover, album details and the credit when the release id matches', async () => {
+    const backend = await setup({ ...fiveRated(), suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening', { discogsReleaseId: 42 })] }, { results: [found(7, 'Other', 'Else'), found(42, 'Ahmad Jamal', 'The Awakening')] });
+    expect(await screen.findByText('Ahmad Jamal — The Awakening')).toBeInTheDocument();
+    expect(document.querySelector('img[src="https://img.example/awakening.jpg"]')).not.toBeNull();
+    expect(screen.getByText('1970 · Argo · LP 628')).toBeInTheDocument();
+    expect(screen.getByText('Vinyl, LP · US')).toBeInTheDocument();
+    expect(screen.getByText('Because of Ahmad Jamal')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add to want list' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Not for me' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Data provided by Discogs' })).toBeInTheDocument();
+    expect(backend.discogsCalls).toEqual(['Ahmad Jamal The Awakening']);
+  });
+
+  it('falls back to the first artist and title match, ignoring Discogs’ (2) suffix', async () => {
+    await setup({ ...fiveRated(), suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening', { discogsReleaseId: 42 })] }, { results: [found(7, 'Ahmad Jamal (2)', 'The Awakening', { label: 'Impulse!' })] });
+    expect(await screen.findByText('1970 · Impulse! · LP 628')).toBeInTheDocument();
+  });
+
+  it('shows the plain card when nothing matches', async () => {
+    const backend = await setup({ ...fiveRated(), suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] }, { results: [found(7, 'Other', 'Else')] });
+    await screen.findByText('Ahmad Jamal');
+    await waitFor(() => expect(backend.discogsCalls).toHaveLength(1));
+    expect(document.querySelector('img')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Data provided by Discogs' })).toBeNull();
+  });
+
+  it('shows the plain card, with no error text, when the search fails', async () => {
+    const backend = await setup({ ...fiveRated(), suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] }, { fails: 'down' });
+    await screen.findByText('Ahmad Jamal');
+    await waitFor(() => expect(backend.discogsCalls).toHaveLength(1));
+    expect(document.querySelector('img')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('Because of Ahmad Jamal')).toBeInTheDocument();
+  });
+
+  it('does not search again for a suggestion it already looked up', async () => {
+    const first = await setup({ ...fiveRated(), suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] }, { results: [found(7, 'Ahmad Jamal', 'The Awakening')] });
+    await screen.findByText('Ahmad Jamal — The Awakening');
+    expect(first.discogsCalls).toHaveLength(1);
+    cleanup();
+    const second = await setup({ ...fiveRated(), suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] }, { results: [found(7, 'Ahmad Jamal', 'The Awakening')] });
+    expect(await screen.findByText('Ahmad Jamal — The Awakening')).toBeInTheDocument();
+    expect(second.discogsCalls).toHaveLength(0);
+  });
+
+  it('writes nothing about the lookup to the suggestion row', async () => {
+    await setup({ ...fiveRated(), suggestions: [suggestion(1, 'Ahmad Jamal', 'The Awakening')] }, { results: [found(7, 'Ahmad Jamal', 'The Awakening')] });
+    const before = await db.suggestions.get(id(901));
+    await screen.findByText('Ahmad Jamal — The Awakening');
+    expect(await db.suggestions.get(id(901))).toEqual(before);
   });
 });
