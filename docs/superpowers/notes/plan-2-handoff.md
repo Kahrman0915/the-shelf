@@ -217,3 +217,36 @@ From Plan 5's go-live (2026-11-23). Plan 5 shipped "Your shelf sections": each s
   - tie-swaps with three sections sharing a position;
   - P0001 refusals shown as "(P0001)";
   - some loading-state screens have no tests.
+
+# Plan 6 → next handoff
+
+From Plan 6's go-live (2026-11-28). Plan 6 shipped the **Want list**, **upgrades** and **Claude's record suggestions**: a Want list screen (`/want`) with Wanted, Upgrades and Suggested for you; adding wants by Discogs search (`/want/add`); a Want a better copy switch on Edit; and Check price · Bought it from a record.
+
+## Must know
+- **Wants are records** with `status = 'wanted'`. The shelf still lists only owned records. An album is never both owned and wanted: in shelf mode, a card (or Claude's photo match) for a want-only album saves nothing and points to the want instead (rulings R9, R11).
+- **`public.suggestions`** (migration `20261123130000`): members select and insert (pending only) and update only `status, decided_by, decided_at`; no delete; anon has nothing. The phone pulls it in full on every sync (Dexie v8 store `suggestions`) and decides through the `suggestion.patch` postcard. A patch for a vanished row counts as sent (R6).
+- **Edge Function `suggest-records`**: Claude Sonnet 5.5 (`claude-sonnet-5-5`, effort medium, `fallbacks: "default"` with the `server-side-fallback-2026-07-01` beta, via `client.beta.messages.create`), asks for 12, keeps up to 8 that match a real Discogs vinyl release by normalised artist and title; 50 s budget, Claude ≤ 35 s, no retries. Reads with the caller's sign-in and pages past PostgREST's 1000-row cap. Logs name only statuses and error names. Needs 5 rated records.
+- **Suggest more** pulls once after a timeout or lost reply, so a round that finished server-side shows without a second charge.
+- **Suggestion cards** show the cover and album details by a live Discogs lookup (by stored release id, then normalised match), kept in memory only, never saved (Discogs terms). Lookups run one at a time, time out at 20 s, and stop on rate-limit or no signal (R12, R13). Offline cards show artist, title and reason.
+- **Bought it on a want** queues a fun fact after the undo window; an undone purchase (record back to `wanted`) is skipped by the fun-fact runner.
+- **Order matters:** the app's pull fails outright if a table it reads is missing, so ship migrations before the app.
+
+## Live checks (2026-11-26 → 28)
+- Migration applied; RLS on, anon refused (HTTP 401), column grants as above.
+- Function deployed; both secrets present; unsigned calls 401; boot 95 ms, no errors.
+- Kahrman ran Suggest more on the test link and approved the richer cards. The other want flows (add by search, upgrade, Bought it from the list) weren't reported on, and the Claude cost per round hasn't been read from the Console yet.
+
+## Carry-overs
+- **Flaky tests under load:** AddScreen "Undo after a recognised save brings the photos back without reading them again" and SectionsScreen "lists the sections in order with their live record counts" (and once useReadSleeve offline) sometimes miss the 1 s `findBy` wait; DB tests can hit 30 s hook timeouts when run alongside heavy work.
+- **Design calls for Kahrman:** at 390 px the settings gear wraps onto its own row; the upgrade switch sits below Save on Edit; a new arrival is told to turn on Want a better copy but Edit only shows it for owned records; a wanted record's screen still offers Find a fun fact.
+- **Deferred:**
+  - Want list calls `pullShelf` outside the sync queue (heals on next sync);
+  - one unparseable suggestion row fails the whole pull;
+  - two members tapping Suggest more together can save the same album twice (adding the second is handled);
+  - section counts on the Sections screen include wants;
+  - `upgradeDirty` false positive (switch on, type, switch off);
+  - missing direct tests: upgrade-only save, leave guard on upgrade change, `restoreWithEdits` path, swallowed fun-fact failure, offline branch of the card lookup, the no-pull short-circuits;
+  - `void add()/dismiss()` would leave an unhandled rejection if `perform` threw;
+  - Want list headings read (0) while loading;
+  - the card-lookup hook imports a constant from `supabaseBackend`;
+  - no `deno check` was run locally (Deno not installed); the live function booted and answered correctly.
