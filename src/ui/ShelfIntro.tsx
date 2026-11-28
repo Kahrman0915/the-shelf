@@ -73,6 +73,33 @@ function playedBefore(): boolean {
   }
 }
 
+/** The rows of spines behind the title. Each spine waits its turn, so the rows fill left to right, one after another. */
+function Wall({ shelves, perRow, rowStaggerMs, rowFillMs }: { shelves: Spine[][]; perRow: number; rowStaggerMs: number; rowFillMs: number }) {
+  return (
+    <div className="shelf-intro__wall" aria-hidden="true">
+      {shelves.map((row, r) => (
+        <div key={r} className="shelf-intro__row">
+          <div className="shelf-intro__spines">
+            {row.map((s, i) => (
+              <span
+                key={i}
+                className="shelf-intro__spine"
+                style={{
+                  width: s.width,
+                  height: `${s.height}%`,
+                  background: s.color,
+                  animationDelay: `${Math.round(r * rowStaggerMs + (i / perRow) * rowFillMs)}ms`,
+                }}
+              />
+            ))}
+          </div>
+          <div className="shelf-intro__plank" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** The opening: record spines fill the shelf, "The Shelf" drops in, then the sign-in panel rises over it. */
 export function ShelfIntro({ children }: { children: ReactNode }) {
   const [mode] = useState<'full' | 'quick' | 'still'>(() => (prefersReducedMotion() ? 'still' : playedBefore() ? 'quick' : 'full'));
@@ -103,31 +130,42 @@ export function ShelfIntro({ children }: { children: ReactNode }) {
 
   return (
     <div className="shelf-intro" data-intro={mode}>
-      <div className="shelf-intro__wall" aria-hidden="true">
-        {shelves.map((row, r) => (
-          <div key={r} className="shelf-intro__row">
-            <div className="shelf-intro__spines">
-              {row.map((s, i) => (
-                <span
-                  key={i}
-                  className="shelf-intro__spine"
-                  style={{
-                    width: s.width,
-                    height: `${s.height}%`,
-                    background: s.color,
-                    animationDelay: `${Math.round(r * 140 + (i / perRow) * ROW_FILL_MS)}ms`,
-                  }}
-                />
-              ))}
-            </div>
-            <div className="shelf-intro__plank" />
-          </div>
-        ))}
-      </div>
+      <Wall shelves={shelves} perRow={perRow} rowStaggerMs={140} rowFillMs={ROW_FILL_MS} />
       <h1 className="shelf-intro__title">The Shelf</h1>
       <div className="shelf-intro__panel" inert={panelInert} onAnimationEnd={onPanelAnimationEnd}>
         {children}
       </div>
+    </div>
+  );
+}
+
+/** How long the opening plays for someone already signed in, fade-out included. */
+export const OPENING_MS = 1200;
+
+/**
+ * The short opening when the app starts with someone already signed in: the spines fill, "The Shelf" drops in,
+ * then it fades away to show the shelf underneath. About a second; a tap skips it. Nothing for people who
+ * asked for less motion. Hidden from screen readers, which go straight to the shelf.
+ */
+export function OpeningSplash({ onDone }: { onDone: () => void }) {
+  const perRow = useMemo(() => spinesPerRow(window.innerWidth), []);
+  const shelves = useMemo(() => makeShelves(SHELVES, perRow), [perRow]);
+  const reduced = useMemo(prefersReducedMotion, []);
+
+  useEffect(() => {
+    if (reduced) {
+      onDone();
+      return;
+    }
+    const timer = setTimeout(onDone, OPENING_MS);
+    return () => clearTimeout(timer);
+  }, [reduced, onDone]);
+
+  if (reduced) return null;
+  return (
+    <div className="shelf-intro" data-intro="opening" aria-hidden="true" data-testid="opening-splash" onPointerDown={onDone}>
+      <Wall shelves={shelves} perRow={perRow} rowStaggerMs={60} rowFillMs={300} />
+      <div className="shelf-intro__title">The Shelf</div>
     </div>
   );
 }

@@ -70,6 +70,22 @@ beforeEach(async () => {
   localStorage.setItem('shelf:intro-played', '1');
 });
 
+describe('the opening', () => {
+  it('plays the short opening over the shelf when someone already signed in opens the app, then goes', async () => {
+    renderApp(returning());
+    await screen.findByText('Ahmad Jamal Trio');
+    expect(screen.getByTestId('opening-splash')).toHaveAttribute('data-intro', 'opening');
+    await waitFor(() => expect(screen.queryByTestId('opening-splash')).toBeNull(), { timeout: 3000 });
+  });
+
+  it('does not play it again after signing in, since the full one just played', async () => {
+    renderApp(kahrmansShelf({ profiles: { [K.userId]: 'Kahrman' } }));
+    await signInAs(K.email);
+    await screen.findByText('Ahmad Jamal Trio');
+    expect(screen.queryByTestId('opening-splash')).toBeNull();
+  });
+});
+
 describe('signing in', () => {
   it('takes a first-timer from email to code to name to their shelf', async () => {
     const backend = kahrmansShelf();

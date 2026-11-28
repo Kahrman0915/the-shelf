@@ -1,6 +1,6 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ShelfIntro, makeShelves, spinesPerRow } from './ShelfIntro';
+import { OPENING_MS, OpeningSplash, ShelfIntro, makeShelves, spinesPerRow } from './ShelfIntro';
 
 function mockReducedMotion(reduce: boolean) {
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: reduce && query.includes('reduce'), media: query, addEventListener() {}, removeEventListener() {} }));
@@ -91,5 +91,49 @@ describe('ShelfIntro', () => {
     mockReducedMotion(true);
     render(<ShelfIntro>form</ShelfIntro>);
     expect(document.querySelector('.shelf-intro__panel')).not.toHaveAttribute('inert');
+  });
+});
+
+describe('OpeningSplash', () => {
+  it('plays the short opening, then says it is done after about a second', () => {
+    vi.useFakeTimers();
+    try {
+      const onDone = vi.fn();
+      const { container } = render(<OpeningSplash onDone={onDone} />);
+      expect(container.querySelector('[data-intro]')).toHaveAttribute('data-intro', 'opening');
+      expect(container.querySelectorAll('.shelf-intro__row')).toHaveLength(3);
+      expect(OPENING_MS).toBe(1200);
+      act(() => {
+        vi.advanceTimersByTime(OPENING_MS - 1);
+      });
+      expect(onDone).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(onDone).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a tap skips it', () => {
+    const onDone = vi.fn();
+    render(<OpeningSplash onDone={onDone} />);
+    fireEvent.pointerDown(screen.getByTestId('opening-splash'));
+    expect(onDone).toHaveBeenCalled();
+  });
+
+  it('is hidden from screen readers', () => {
+    render(<OpeningSplash onDone={() => {}} />);
+    expect(screen.getByTestId('opening-splash')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.queryByRole('heading', { name: 'The Shelf' })).toBeNull();
+  });
+
+  it('shows nothing for people who asked for less motion', () => {
+    mockReducedMotion(true);
+    const onDone = vi.fn();
+    const { container } = render(<OpeningSplash onDone={onDone} />);
+    expect(container.querySelector('[data-intro]')).toBeNull();
+    expect(onDone).toHaveBeenCalled();
   });
 });

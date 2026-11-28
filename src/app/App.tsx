@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { db } from '@/data/db';
@@ -15,6 +15,7 @@ import { ShelfScreen } from '@/screens/ShelfScreen';
 import { ShowScreen } from '@/screens/ShowScreen';
 import { SignInScreen } from '@/screens/SignInScreen';
 import { ConfirmDialog } from '@/ui/ConfirmDialog';
+import { OpeningSplash } from '@/ui/ShelfIntro';
 import { RecordScreen } from '@/screens/RecordScreen';
 import { useBackend } from './BackendContext';
 import { CurrentShelfProvider } from './CurrentShelf';
@@ -76,6 +77,14 @@ export default function App() {
   // Read once, before useModeTheme overwrites the stored mode.
   const [startInShow, setStartInShow] = useState(() => readMode() === 'show' && pathname === '/');
   useModeTheme();
+  // The short opening plays once per app start, for someone already signed in. Anyone who passes through
+  // sign-in or naming has just watched the full one there, so they skip it.
+  const [opening, setOpening] = useState(true);
+  const openingDone = useCallback(() => setOpening(false), []);
+  const sawSignIn = session.state === 'signed-out' || session.state === 'needs-name';
+  useEffect(() => {
+    if (sawSignIn) setOpening(false);
+  }, [sawSignIn]);
 
   if (session.state === 'loading') return null;
   if (session.state === 'signed-out') return <SignInScreen backend={backend} onVerified={verified} />;
@@ -133,6 +142,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <UndoBar />
+          {opening && <OpeningSplash onDone={openingDone} />}
         </UndoProvider>
       </SyncProvider>
     </CurrentShelfProvider>
