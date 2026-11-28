@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '@/app/App';
 import { BackendProvider } from '@/app/BackendContext';
 import { db } from '@/data/db';
@@ -81,19 +81,78 @@ describe('Shelf settings', () => {
   it('lets the owner invite someone by email, and shows them as waiting', async () => {
     renderSettings(backendFor(K));
     await userEvent.type(await screen.findByLabelText('Their email'), 'Friend@Example.com');
-    await userEvent.click(screen.getByRole('button', { name: 'Send invite' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add to shelf' }));
     expect(await screen.findByText('friend@example.com')).toBeInTheDocument();
-    expect(screen.getByText('Waiting for them to sign in')).toBeInTheDocument();
+    expect(screen.getByText('Hasn’t signed in yet')).toBeInTheDocument();
+    expect(screen.getByText('Added. Now send friend@example.com the link.')).toBeInTheDocument();
+  });
+
+  it('says plainly that the app doesn’t email the invite', async () => {
+    renderSettings(backendFor(K));
+    expect(
+      await screen.findByText('The app doesn’t email them. Add their email, then send them the link. They join this shelf when they sign in with that email.'),
+    ).toBeInTheDocument();
+  });
+
+  describe('Send link', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    async function addFriend() {
+      renderSettings(backendFor(K));
+      await userEvent.type(await screen.findByLabelText('Their email'), 'friend@example.com');
+      await userEvent.click(screen.getByRole('button', { name: 'Add to shelf' }));
+      return screen.findByRole('button', { name: 'Send the link to friend@example.com' });
+    }
+
+    it('opens the share sheet with the link and the email to sign in with', async () => {
+      const share = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal('navigator', Object.assign(Object.create(navigator), { share }));
+      const button = await addFriend();
+      expect(button.className).toContain('h-12');
+      await userEvent.click(button);
+      expect(share).toHaveBeenCalledWith({
+        text: `I added you to my record shelf on The Shelf. Open ${window.location.origin} and sign in with friend@example.com.`,
+      });
+      expect(screen.queryByText('Copied. Paste it in a message to them.')).toBeNull();
+    });
+
+    it('copies the message where there is no share sheet', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal('navigator', Object.assign(Object.create(navigator), { share: undefined, clipboard: { writeText } }));
+      await userEvent.click(await addFriend());
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining('sign in with friend@example.com'));
+      expect(await screen.findByText('Copied. Paste it in a message to them.')).toBeInTheDocument();
+    });
+
+    it('says nothing when the share sheet is closed', async () => {
+      const share = vi.fn().mockRejectedValue(Object.assign(new Error('closed'), { name: 'AbortError' }));
+      const writeText = vi.fn();
+      vi.stubGlobal('navigator', Object.assign(Object.create(navigator), { share, clipboard: { writeText } }));
+      await userEvent.click(await addFriend());
+      expect(writeText).not.toHaveBeenCalled();
+      expect(screen.queryByText(/Copied|Couldn’t open sharing/)).toBeNull();
+    });
+
+    it('spells the link out when it can neither share nor copy', async () => {
+      const writeText = vi.fn().mockRejectedValue(new Error('denied'));
+      vi.stubGlobal('navigator', Object.assign(Object.create(navigator), { share: undefined, clipboard: { writeText } }));
+      await userEvent.click(await addFriend());
+      expect(
+        await screen.findByText(`Couldn’t open sharing. Send them ${window.location.origin} and tell them to sign in with friend@example.com.`),
+      ).toBeInTheDocument();
+    });
   });
 
   it('says so when an email is already invited', async () => {
     renderSettings(backendFor(K));
     const field = await screen.findByLabelText('Their email');
     await userEvent.type(field, 'friend@example.com');
-    await userEvent.click(screen.getByRole('button', { name: 'Send invite' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add to shelf' }));
     await screen.findByText('friend@example.com');
     await userEvent.type(field, 'friend@example.com');
-    await userEvent.click(screen.getByRole('button', { name: 'Send invite' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add to shelf' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('That email is already invited.');
   });
 

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { Invite } from '@/data/backend';
 import { useMembers, useStorageKept } from '@/data/hooks';
+import { shareInvite, type ShareResult } from '@/ui/shareInvite';
 
 const SECTION = 'font-display text-[28px] leading-7 tracking-[0.02em]';
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -23,6 +24,12 @@ export function SettingsScreen() {
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [added, setAdded] = useState<string | null>(null);
+  const [shared, setShared] = useState<{ email: string; result: ShareResult } | null>(null);
+
+  async function sendLink(to: string) {
+    setShared({ email: to, result: await shareInvite(to) });
+  }
 
   const loadInvites = useCallback(async () => {
     try {
@@ -46,9 +53,11 @@ export function SettingsScreen() {
     }
     setBusy(true);
     setError(null);
+    setAdded(null);
     try {
       await backend.invite(shelfId, clean, userId);
       setEmail('');
+      setAdded(clean);
       await loadInvites();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -94,10 +103,17 @@ export function SettingsScreen() {
               <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted">Their email</span>
               <Input type="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12 rounded-lg border-[1.5px] border-line-strong bg-surface-sunk text-base" />
             </label>
-            <p className="text-[15px] leading-[22px] text-ink-muted">They join this shelf the next time they sign in with that email.</p>
+            <p className="text-[15px] leading-[22px] text-ink-muted">
+              The app doesn’t email them. Add their email, then send them the link. They join this shelf when they sign in with that email.
+            </p>
             <Button type="submit" disabled={busy} className="h-12 rounded-lg font-display text-[22px] tracking-[0.04em]">
-              {busy ? 'Sending…' : 'Send invite'}
+              {busy ? 'Adding…' : 'Add to shelf'}
             </Button>
+            {added && (
+              <p role="status" className="text-[15px] leading-[22px]">
+                Added. Now send {added} the link.
+              </p>
+            )}
             {error && (
               <p role="alert" className="text-base text-brick-ink">
                 {error}
@@ -111,9 +127,29 @@ export function SettingsScreen() {
         {waiting.length > 0 && (
           <ul className="flex flex-col border-t border-line">
             {waiting.map((i) => (
-              <li key={i.email} className="flex min-h-12 flex-col justify-center border-b border-line py-2">
-                <span className="text-base">{i.email}</span>
-                <span className="text-[13px] text-ink-muted">Waiting for them to sign in</span>
+              <li key={i.email} className="flex flex-col gap-2 border-b border-line py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 flex-col">
+                    <span className="truncate text-base">{i.email}</span>
+                    <span className="text-[13px] text-ink-muted">Hasn’t signed in yet</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void sendLink(i.email)}
+                    aria-label={`Send the link to ${i.email}`}
+                    className="h-12 shrink-0 rounded-lg border-[1.5px] border-line-strong bg-transparent px-4 text-[15px] font-semibold"
+                  >
+                    Send link
+                  </Button>
+                </div>
+                {shared?.email === i.email && shared.result !== 'shared' && shared.result !== 'cancelled' && (
+                  <p role="status" className="text-[15px] leading-[22px] text-ink-muted">
+                    {shared.result === 'copied'
+                      ? 'Copied. Paste it in a message to them.'
+                      : `Couldn’t open sharing. Send them ${window.location.origin} and tell them to sign in with ${i.email}.`}
+                  </p>
+                )}
               </li>
             ))}
           </ul>
