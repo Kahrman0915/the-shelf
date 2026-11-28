@@ -224,13 +224,16 @@
 .shelf-intro[data-intro='full'] .shelf-intro__spine { animation: intro-spine 380ms cubic-bezier(0, 0, 0.2, 1) both; }
 .shelf-intro[data-intro='full'] .shelf-intro__title { animation: intro-title 520ms cubic-bezier(0, 0, 0.2, 1) 1500ms both; }
 .shelf-intro[data-intro='full'] .shelf-intro__panel { animation: intro-panel 500ms cubic-bezier(0, 0, 0.2, 1) 2000ms both; }
-/* Already signed in: about a second, laid over the shelf, then it fades away. */
+/* Already signed in: laid over the shelf. The spines fill, the title lands in the middle and holds for a
+   second, then it all fades to the shelf (fade starts at 1700ms, done at 2000ms: OPENING_MS). */
 .shelf-intro[data-intro='opening'] {
   position: fixed;
   inset: 0;
   z-index: 60;
-  animation: intro-fade-out 250ms ease-in 950ms both;
+  justify-content: center;
+  animation: intro-fade-out 300ms ease-in 1700ms both;
 }
+.shelf-intro[data-intro='opening'] .shelf-intro__title { margin-top: 0; }
 .shelf-intro[data-intro='opening'] .shelf-intro__spine { animation: intro-spine 260ms cubic-bezier(0, 0, 0.2, 1) both; }
 .shelf-intro[data-intro='opening'] .shelf-intro__title { animation: intro-title 350ms cubic-bezier(0, 0, 0.2, 1) 350ms both; }
 .shelf-intro[data-intro='quick'] .shelf-intro__title,

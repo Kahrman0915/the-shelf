@@ -139,12 +139,12 @@ export function ShelfIntro({ children }: { children: ReactNode }) {
   );
 }
 
-/** How long the opening plays for someone already signed in, fade-out included. */
-export const OPENING_MS = 1200;
+/** How long the opening plays for someone already signed in: the title lands by 700ms, holds a second, then fades for 300ms. */
+export const OPENING_MS = 2000;
 
 /**
  * The short opening when the app starts with someone already signed in: the spines fill, "The Shelf" drops in,
- * then it fades away to show the shelf underneath. About a second; a tap skips it. Nothing for people who
+ * holds in the middle for a second, then it fades away to show the shelf underneath. Two seconds; a tap skips it. Nothing for people who
  * asked for less motion. Hidden from screen readers, which go straight to the shelf.
  */
 export function OpeningSplash({ onDone }: { onDone: () => void }) {

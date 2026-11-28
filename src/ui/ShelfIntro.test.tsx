@@ -95,14 +95,14 @@ describe('ShelfIntro', () => {
 });
 
 describe('OpeningSplash', () => {
-  it('plays the short opening, then says it is done after about a second', () => {
+  it('plays the short opening, holds the title, then says it is done after two seconds', () => {
     vi.useFakeTimers();
     try {
       const onDone = vi.fn();
       const { container } = render(<OpeningSplash onDone={onDone} />);
       expect(container.querySelector('[data-intro]')).toHaveAttribute('data-intro', 'opening');
       expect(container.querySelectorAll('.shelf-intro__row')).toHaveLength(3);
-      expect(OPENING_MS).toBe(1200);
+      expect(OPENING_MS).toBe(2000);
       act(() => {
         vi.advanceTimersByTime(OPENING_MS - 1);
       });
